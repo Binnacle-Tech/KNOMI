@@ -21,6 +21,7 @@ Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint
 - **Auto-dim and screen-off**, saved brightness, and wake on touch or printer activity.
 - **Animations can follow the UI color** instead of always being red.
 - **Redesigned web settings page** with dark, medium, light and high-contrast modes.
+- **Dark boot and WiFi setup screens, with QR-code setup.** Scan the KNOMI's screen to join its setup network, then scan again to open the setup page.
 - **Update check.** The settings page tells you when a newer release is out and links the right `.bin`.
 - **Backup and restore** of all settings and custom animations as one file.
 - **WiFi fixes:**

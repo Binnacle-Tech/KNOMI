@@ -111,6 +111,8 @@ a banner with a download link for your board. Install it from `/update` as usual
 the KNOMI itself never contacts GitHub.
 
 ## WiFi behaviour
+- First-time setup: the KNOMI shows a QR code. Scan it with your phone camera to join the KNOMI's setup network
+  (`BTT-KNOMI` by default). Once your phone is connected, the QR switches to the setup page (`http://192.168.20.1/`).
 - If the saved network can't be reached (router rebooting, out of range), the KNOMI keeps its settings, opens its
   setup access point alongside, and retries every 30 s. Retries pause while someone is connected to the setup AP.
   When the network comes back, the setup AP closes again.

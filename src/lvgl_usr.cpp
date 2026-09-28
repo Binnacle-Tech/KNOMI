@@ -104,12 +104,10 @@ void lvgl_ui_task(void * parameter) {
     knomi_gif_show(ui_img_main_gif, GIF_SLOT_IDLE1);
     lv_obj_align(ui_img_main_gif, LV_ALIGN_CENTER, 0, 0);
 
-    // Add welcome gif
-    lv_obj_t * img_welcome_gif = lv_gif_create(ui_ScreenWelcome);
-    knomi_gif_show(img_welcome_gif, GIF_SLOT_WELCOME);
+    // Boot / WiFi setup / WiFi lost screens (dark, QR code setup)
+    lv_setup_screens_init();
     // built-in animations follow the UI color if enabled
     knomi_gif_apply_tint();
-    lv_obj_align(img_welcome_gif, LV_ALIGN_CENTER, 0, -36);
 
     // Create a QR Code
     lv_obj_t * qr = lv_qrcode_create(ui_ScreenQRCode, 130, LV_COLOR_MAKE(0xff, 0xff, 0xff), LV_COLOR_MAKE(0, 0, 0));
@@ -180,6 +178,7 @@ void lvgl_ui_task(void * parameter) {
         lv_loop_btn_event();
         knomi_gif_process();
         knomi_power_loop();
+        lv_setup_screens_loop();
         if (knomi_display_settings_dirty) {
             knomi_display_settings_dirty = false;
             apply_display_settings();

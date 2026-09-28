@@ -17,7 +17,7 @@ static const gif_slot_def_t slot_def[GIF_SLOT_NUM] = {
     {"idle2",    "Idle 2",                     &gif_standby},
     {"idle3",    "Idle 3 (optional)",          NULL},
     {"idle4",    "Idle 4 (optional)",          NULL},
-    {"welcome",  "Boot / WiFi setup",          &gif_welcome},
+    {"welcome",  "WiFi setup / connecting (small, about 100x66)", &gif_setup},
     {"homing",   "Homing",                     &gif_homing},
     {"probing",  "Probing / bed mesh",         &gif_probing},
     {"qgling",   "Gantry leveling (QGL)",      &gif_qgling},

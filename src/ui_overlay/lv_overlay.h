@@ -7,6 +7,7 @@ extern lv_obj_t * ui_img_main_gif;
 #include "knomi_gif.h"
 
 LV_IMG_DECLARE(gif_welcome);
+LV_IMG_DECLARE(gif_setup);
 LV_IMG_DECLARE(gif_voron);
 LV_IMG_DECLARE(gif_standby);
 LV_IMG_DECLARE(gif_homing);
@@ -17,6 +18,10 @@ LV_IMG_DECLARE(gif_print);
 LV_IMG_DECLARE(gif_print_ok);
 LV_IMG_DECLARE(gif_printed);
 
+// lv_setup_screens.cpp
+void lv_setup_screens_init(void);
+void lv_setup_screens_theme(void);
+void lv_setup_screens_loop(void);
 // lv_print_info.cpp
 void lv_print_info_init(void);
 void lv_print_info_apply(void);

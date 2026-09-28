@@ -221,6 +221,8 @@ static void sta_fallback_start(void) {
     sta_retry_at = millis() + STA_RETRY_MS;
 }
 
+bool knomi_wifi_sta_fallback(void) { return sta_fallback; }
+
 static void sta_fallback_loop(void) {
     if (!sta_fallback) return;
     if (WiFi.status() == WL_CONNECTED) {
