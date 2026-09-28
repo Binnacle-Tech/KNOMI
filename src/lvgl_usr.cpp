@@ -55,6 +55,7 @@ static void apply_display_settings(void) {
     knomi_gif_apply_tint();
     lv_extrude_rollers_rebuild(false);
     lv_roller_preheat_rebuild();
+    print_layout_request_reload();  // "UI color" elements
 }
 
 // extruder speed

@@ -2,6 +2,7 @@
 #include "knomi.h"
 #include "moonraker.h"
 #include "lv_overlay.h"
+#include "../knomi_power.h"
 
 typedef enum {
     LV_MOONRAKER_STATE_IDLE = 0,
@@ -94,6 +95,15 @@ bool moonraker_bed_is_heating(void) {
 void lv_loop_moonraker_change_screen(void) {
 
     static lv_screen_state_t screen_state = LV_SCREEN_STATE_INIT;
+    // "Preview on KNOMI" from the print screen designer
+    static bool previewing = false;
+    if (print_layout_preview_active() && !moonraker.data.printing) {
+        if (!previewing) knomi_power_wake();
+        previewing = true;
+        lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PRINTING, GIF_NONE);
+        return;
+    }
+    previewing = false;
     // if (moonraker.data.printing) {
     //     if (lv_screen_state == 0) {
     //         lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PRINTING, GIF_NONE);

@@ -8,6 +8,8 @@
 #include "binnacle_css.h"
 #include "knomi_ble.h"
 #include "backup.h"
+#include "layout_html.h"
+#include "ui_overlay/lv_overlay.h"
 #include <LittleFS.h>
 
 static AsyncWebServer server(SERVER_PORT);
@@ -315,7 +317,7 @@ static String gifs_page(void) {
     String page = String("<!DOCTYPE html><html lang='en'><head><title>KNOMI · Animations</title>") + BINNACLE_HEAD +
         "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
         "<a class='n' href='/'>KNOMI<span class='dot'>.</span></a><span class='f'>Printer display</span></div>"
-        "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a>"
+        "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a><a href='/layout'>Print screen</a>"
         "<a href='/update'>Firmware</a></nav>" BINNACLE_MODES "</div></header><main class='wrap'>"
         "<section class='mast'><span class='label'>Animations</span><h1>Animations<span class='dot'>.</span></h1>"
         "<p class='lede'>Upload a GIF to any slot to replace it. It shows on the display right away. "
@@ -550,6 +552,81 @@ static void screen_routes(void) {
     });
 }
 
+extern const char layout_default_json[];
+
+static void layout_routes(void) {
+    server.on("/layout", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send_P(200, "text/html", layout_html);
+    });
+    server.on("/layout.json", HTTP_GET, [](AsyncWebServerRequest *request){
+        if (!request->hasParam("default") && LittleFS.exists("/layout.json")) {
+            request->send(LittleFS, "/layout.json", "application/json");
+        } else {
+            request->send(200, "application/json", layout_default_json);
+        }
+    });
+    // body collected in a malloc'd buffer: the server free()s _tempObject if the request is aborted
+    server.on("/layout.json", HTTP_POST, [](AsyncWebServerRequest *request){
+        char *body = (char *)request->_tempObject;
+        size_t len = body ? strlen(body) : 0;
+        const char *err = !body ? "Layout too large or empty" : print_layout_validate(body, len);
+        if (!err) {
+            File f = LittleFS.open("/layout.tmp", "w");
+            if (!f || f.write((const uint8_t *)body, len) != len) err = "Couldn't write to flash";
+            if (f) f.close();
+            if (!err) {
+                LittleFS.remove("/layout.json");
+                LittleFS.rename("/layout.tmp", "/layout.json");
+                print_layout_request_reload();
+            }
+        }
+        if (err) request->send(400, "text/plain", err);
+        else request->send(200, "text/plain", "ok");
+    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        if (total == 0 || total > 12288) return;
+        if (index == 0) {
+            char *b = (char *)malloc(total + 1);
+            if (b) b[0] = 0;
+            request->_tempObject = b;
+        }
+        char *b = (char *)request->_tempObject;
+        if (!b || index + len > total) return;
+        memcpy(b + index, data, len);
+        b[index + len] = 0;
+    });
+    server.on("/layout/reset", HTTP_POST, [](AsyncWebServerRequest *request){
+        LittleFS.remove("/layout.json");
+        print_layout_request_reload();
+        request->send(200, "text/plain", "ok");
+    });
+    server.on("/layout/preview", HTTP_POST, [](AsyncWebServerRequest *request){
+        print_layout_preview(20);
+        request->send(200, "text/plain", "ok");
+    });
+    server.on("/status.json", HTTP_GET, [](AsyncWebServerRequest *request){
+        lv_color32_t c;
+        c.full = lv_color_to32(knomi_config.theme_color);
+        char hex[8];
+        snprintf(hex, sizeof(hex), "#%02x%02x%02x", c.ch.red, c.ch.green, c.ch.blue);
+        String s = print_layout_status_json();   // {"printing":..,"tokens":{..}}
+        s.remove(s.length() - 1);
+        s += ",\"theme\":\"";
+        s += hex;
+        s += "\",\"gifs\":[";
+        for (int i = 0; i < GIF_SLOT_NUM; i++) {
+            knomi_gif_info_t info;
+            knomi_gif_get_info((knomi_gif_slot_t)i, &info);
+            if (!info.has_builtin && !info.has_custom) continue;
+            if (s[s.length() - 1] != '[') s += ",";
+            s += "{\"name\":\"" + String(info.name) + "\",\"label\":\"" + html_escape(info.label) + "\"}";
+        }
+        s += "]}";
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", s);
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
+}
+
 static void gif_routes(void) {
     server.on("/binnacle.css", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", binnacle_css);
@@ -564,12 +641,19 @@ static void gif_routes(void) {
         if (slot < 0) { request->send(404); return; }
         String path = knomi_gif_path((knomi_gif_slot_t)slot);
         if (LittleFS.exists(path)) {
-            request->send(LittleFS, path, "image/gif");
+            AsyncWebServerResponse *r = request->beginResponse(LittleFS, path, "image/gif");
+            r->addHeader("Cache-Control", "max-age=300"); // pages add a version parameter
+            request->send(r);
             return;
         }
         const lv_img_dsc_t *b = knomi_gif_builtin((knomi_gif_slot_t)slot);
-        if (b) request->send_P(200, "image/gif", b->data, b->data_size);
-        else request->send(404);
+        if (b) {
+            AsyncWebServerResponse *r = request->beginResponse_P(200, "image/gif", b->data, b->data_size);
+            r->addHeader("Cache-Control", "max-age=300");
+            request->send(r);
+        } else {
+            request->send(404);
+        }
     });
     server.on("/gif/upload", HTTP_POST, [](AsyncWebServerRequest *request){
         gif_upload_state_t *st = (gif_upload_state_t *)request->_tempObject;
@@ -608,6 +692,7 @@ void webserver_setup(void) {
     gif_routes();
     display_routes();
     screen_routes();
+    layout_routes();
     bluetooth_routes();
     backup_routes(server);
 

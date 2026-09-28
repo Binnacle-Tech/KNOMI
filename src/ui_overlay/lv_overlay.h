@@ -33,6 +33,19 @@ void lv_setup_screens_loop(void);
 void lv_print_info_init(void);
 void lv_print_info_apply(void);
 void lv_print_info_update(void);
+// lv_print_layout.cpp: printing screen from the web designer
+void print_layout_init(void);
+void print_layout_update(void);
+void print_layout_set_visible(bool visible);
+void print_layout_next_page(void);
+void print_layout_request_reload(void);   // any task
+void print_layout_preview(uint16_t secs); // any task: show the printing screen with sample data
+bool print_layout_preview_active(void);
+#ifdef __cplusplus
+#include <WString.h>
+String print_layout_status_json(void);
+const char * print_layout_validate(const char * json, size_t len);
+#endif
 // lv_button_style.cpp
 void lv_btn_add_style(void);
 void lv_roller_preheat_rebuild(void);

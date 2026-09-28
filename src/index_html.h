@@ -123,7 +123,7 @@ async function discoverOcto(){
 <header class="rail"><div class="wrap rail-in">
   <div class="brand"><a class="n" href="/">KNOMI<span class="dot">.</span></a><span class="f">Printer display</span></div>
   <span class="rail-sp"></span>
-  <nav><a class="on" href="/">Settings</a><a href="/gifs">Animations</a><a href="/update">Firmware</a></nav>
+  <nav><a class="on" href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a href="/update">Firmware</a></nav>
   )rawliteral" BINNACLE_MODES R"rawliteral(
 </div></header>
 
@@ -219,9 +219,10 @@ async function discoverOcto(){
         <div class="row">
           <label class="field-label" for="print_view">Printing screen</label>
           <select id="print_view" name="print_view">
-            <option value="0" $pv_0$>Info: time left, temps, Z</option>
+            <option value="0" $pv_0$>Your layout (Print screen designer)</option>
             <option value="1" $pv_1$>Accelerometer bars (stock)</option>
           </select>
+          <div class="hint">Design your layout on the <a href="/layout">Print screen</a> page.</div>
         </div>
         <div class="row" style="grid-column:1/-1">
           <label class="field-label" for="gif_tint">Animations follow the UI color</label>

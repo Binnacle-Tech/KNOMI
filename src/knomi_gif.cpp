@@ -39,7 +39,7 @@ static bool fs_ok = false;
 static volatile uint32_t pending_reload = 0;
 
 // objects showing a slot, so a reload can swap them before freeing memory
-#define GIF_OBJ_MAX 4
+#define GIF_OBJ_MAX 16
 static struct { lv_obj_t * obj; int slot; } shown[GIF_OBJ_MAX];
 
 String knomi_gif_path(knomi_gif_slot_t slot) {
@@ -258,6 +258,11 @@ knomi_gif_slot_t knomi_gif_idle_slot(uint8_t n) {
         }
     }
     return GIF_SLOT_IDLE1;
+}
+
+void knomi_gif_forget(lv_obj_t * obj) {
+    for (int i = 0; i < GIF_OBJ_MAX; i++)
+        if (shown[i].obj == obj) shown[i].obj = NULL;
 }
 
 int knomi_gif_shown_slot(lv_obj_t * obj) {

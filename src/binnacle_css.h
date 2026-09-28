@@ -44,8 +44,8 @@ a{color:var(--cyan)}
 .brand .dot{color:var(--amber)}
 .brand .f{font-size:var(--t-small);color:var(--muted-2);white-space:nowrap;border-left:1px solid var(--line-2);padding-left:10px}
 .rail-sp{flex:1}
-.rail nav{display:flex;gap:4px}
-.rail nav a{font-size:var(--t-small);color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:var(--r-ctrl)}
+.rail nav{display:flex;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.rail nav a{white-space:nowrap;font-size:var(--t-small);color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:var(--r-ctrl)}
 .rail nav a:hover{color:var(--text);background:var(--panel-2)}
 .rail nav a.on{color:var(--amber)}
 .modes select{width:auto;padding:5px 8px;font-size:12px}

@@ -75,6 +75,17 @@ Everything the touchscreen menus set, plus a few things they can't. Changes appl
 - **Animation lengths:** heated, print finished, after print finished (0 = skip).
 - **Preheat presets:** names and nozzle/bed temperatures for Temperature › Preheat.
 - **Extrude choices:** the five lengths and speeds on the extruder screen, and which are selected at boot.
+## Print screen designer
+Open `http://<knomi-ip>/layout` (the **Print screen** tab). Drag elements around a preview of the round screen:
+- **Text** with live values: `{pct}` `{time}` `{left}` `{elapsed}` `{total}` `{file}` `{noz}` `{noz_t}` `{bed}` `{bed_t}` `{deg}` `{z}` `{layer}` `{layers}` `{pos}` `{state}`. Pick the size, color, alignment and width. Long text can scroll.
+- **Rings and arcs:** full rings, gauges or any angle range. They can show progress or just be decoration.
+- **Progress bar.**
+- **Animation:** any animation slot, including GIFs you uploaded.
+
+Up to 4 **pages**, each shown for its own number of seconds, for example a face for 30 s and then stats for 8 s. Tapping the KNOMI skips to the next page.
+
+**Save & preview on KNOMI** shows the layout on the real screen for 20 s, using sample values if nothing is printing. You can also start from a few ready-made layouts, and download or load layout files to share them. The layout is included in backups. Settings › Printing screen switches between your layout and the stock accelerometer bars.
+
 ## Paused animation
 While a print is paused, the printing screen plays the **Paused** animation (its own slot on /gifs).
 Swipe down to resume, swipe up to cancel, same as before. The plugin treats these as paused:
