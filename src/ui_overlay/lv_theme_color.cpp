@@ -7,6 +7,7 @@ void lv_theme_update_color(lv_color_t c) {
     knomi_config_require_change(LOCAL_POST_LV_THEME_COLOR);
     lv_btn_add_style();
     lv_theme_color_style();
+    knomi_gif_apply_tint();
 }
 
 lv_color_t lv_theme_color(void) {

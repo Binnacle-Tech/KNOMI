@@ -20,7 +20,32 @@ typedef struct {
     char moonraker_tool[7]; // "tool0"
     char mode[6]; // "ap":WIFI_MODE_AP, "sta":WIFI_MODE_STA, "apsta":WIFI_MODE_APSTA
     lv_color_t theme_color;
+    // --- appended for OctoPrint support (keep at end: EEPROM layout migration) ---
+    char backend[10];  // "moonraker" or "octoprint"
+    char api_key[65];  // OctoPrint API key (X-Api-Key), unused for moonraker
+    // --- appended for display settings (layout V3) ---
+    uint8_t backlight;        // 1..16
+    uint8_t dim_level;        // 1..16, brightness when dimmed
+    uint16_t dim_after_min;   // 0 = never
+    uint16_t sleep_after_min; // 0 = never (backlight off)
+    uint8_t awake_printing;   // 1 = never dim/sleep while the printer is busy
+    uint8_t print_view;       // PRINT_VIEW_*
+    uint8_t gif_tint;         // GIF_TINT_*
+    // --- appended for Bluetooth (layout V4) ---
+    uint8_t bt_enabled;       // 1 = advertise + talk to the OctoPrint plugin over BLE
+    uint8_t bt_wifi_off;      // 1 = WiFi off while the BLE link is up
+    uint16_t bt_fallback_s;   // WiFi comes back if BLE isn't connected within this long
 } knomi_config_t;
+
+#define PRINT_VIEW_INFO  0   // time left, temps, file, Z/layer
+#define PRINT_VIEW_ACCEL 1   // stock accelerometer bars
+#define GIF_TINT_OFF  0
+#define GIF_TINT_IDLE 1      // idle faces follow the UI color
+#define GIF_TINT_ALL  2      // every built-in animation follows the UI color
+
+#define BACKEND_MOONRAKER "moonraker"
+#define BACKEND_OCTOPRINT "octoprint"
+bool knomi_backend_is_octoprint(void);
 
 typedef struct {
     int32_t rssi[SCAN_SSIDS_NUM]; // RSSI returned RSSI values
@@ -43,12 +68,14 @@ extern knomi_wifi_scan_t wifi_scan;
 #define WEB_POST_RESTART              BIT(6)
 
 #define LOCAL_POST_LV_THEME_COLOR     BIT(7)
+#define LOCAL_POST_SETTINGS           BIT(8)  // display settings changed (web or backlight slider)
 #define EEPROM_PARA_CHANGED     (WEB_POST_WIFI_CONFIG_AP   | \
                                  WEB_POST_WIFI_CONFIG_STA  | \
                                  WEB_POST_WIFI_CONFIG_MODE | \
                                  WEB_POST_LOCAL_HOSTNAME   | \
                                  WEB_POST_MOONRAKER        | \
-                                 LOCAL_POST_LV_THEME_COLOR)
+                                 LOCAL_POST_LV_THEME_COLOR | \
+                                 LOCAL_POST_SETTINGS)
 
 
 void knomi_config_require_change(uint16_t require);
@@ -66,6 +93,7 @@ typedef enum {
 }wifi_status_t;
 
 wifi_status_t wifi_get_connect_status(void);
+bool knomi_wifi_suspended(void); // WiFi turned off because Bluetooth is carrying the link
 
 extern int32_t lis2dw12_acc[3];
 

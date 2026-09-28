@@ -64,7 +64,7 @@ void lv_dialog_goto_cancel(lv_event_t * e) {
 }
 
 void lv_dialog_goto_pause_resume(lv_event_t * e) {
-    if (moonraker.data.pause) {
+    if (moonraker.data.pause || moonraker.data.paused_ext) {
         lv_dialog_goto(UI_DIALOG_RESUME_PRINT);
     } else {
         lv_dialog_goto(UI_DIALOG_PAUSE_PRINT);

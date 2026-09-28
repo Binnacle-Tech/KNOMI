@@ -28,6 +28,18 @@ typedef struct {
     bool qgling;
     bool heating_nozzle;
     bool heating_bed;
+    bool shaping;     // input shaper calibration
+    bool pid_tuning;
+    bool cleaning;    // nozzle wipe/brush
+    bool filament;    // filament load/unload
+    bool paused_ext;  // paused outside the print job API (M600, MMU, macro) per plugin/_KNOMI_STATUS
+
+    // printing screen extras
+    uint32_t print_time;   // seconds elapsed
+    int32_t time_left;     // seconds, -1 = unknown
+    int32_t z_um;          // current Z in micrometers, INT32_MIN = unknown
+    uint16_t layer;        // 0 = unknown
+    uint16_t layer_total;
 } moonraker_data_t;
 
 #define QUEUE_LEN 5
@@ -42,13 +54,17 @@ class MOONRAKER {
     public:
         bool unconnected;   // is KNOMI connected to moonraker
         bool unready; // is moonraker connected to klipper
+        bool auth_failed; // OctoPrint rejected the API key (401/403)
+        int last_code;    // HTTP status of the last send_request()
         bool data_unlock; //
         moonraker_data_t data;
         void http_get_loop(void);
         void http_post_loop(void);
         bool post_to_queue(String path);
         bool post_gcode_to_queue(String gcode);
-        String send_request(const char * type, String path);
+        String send_request(const char * type, String path, String body = "");
+        // Fill `out` with newline separated printable file paths. Returns false on failure.
+        bool get_file_list(String &out);
 
     private:
         post_queue_t post_queue;
@@ -56,6 +72,14 @@ class MOONRAKER {
         void get_printer_info(void);
         void get_progress(void);
         void get_knomi_status(void);
+        // OctoPrint backend
+        uint32_t octo_plugin_retry_ms; // when to retry /api/plugin/knomi after a 404
+        void octoprint_get_loop(void);
+        void octoprint_parse_printer(const String &printer_info);
+        void octoprint_get_knomi_status(void);
+        void octoprint_get_progress(void);
+        void octoprint_post(String path);
+        void octoprint_send_gcode(String gcode);
 };
 
 extern MOONRAKER moonraker;

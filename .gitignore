@@ -1,0 +1,5 @@
+.pio/
+.vscode/
+mapfile.map
+build.log
+knomi.log

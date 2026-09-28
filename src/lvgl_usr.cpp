@@ -5,14 +5,31 @@
 #include "lvgl_usr.h"
 #include "ui/ui.h"
 #include "moonraker.h"
+#include "knomi.h"
 #include "ui_overlay/lv_overlay.h"
+#include "knomi_power.h"
+#include "knomi_ble.h"
 
 
 /****************** lvgl ui call function ******************/
 //
 void lv_tft_set_backlight(lv_event_t * e) {
     int32_t light = lv_slider_get_value(ui_slider_backlight);
-    tft_set_backlight(light);
+    knomi_power_set_brightness(light);
+}
+
+// save brightness once the finger lifts, not on every slider step
+static void backlight_released_cb(lv_event_t * e) {
+    knomi_config_require_change(LOCAL_POST_SETTINGS);
+}
+
+// Web page changed display settings (set from the web server task)
+volatile bool knomi_display_settings_dirty = false;
+static void apply_display_settings(void) {
+    lv_slider_set_value(ui_slider_backlight, knomi_config.backlight, LV_ANIM_OFF);
+    knomi_power_wake();
+    lv_print_info_apply();
+    knomi_gif_apply_tint();
 }
 
 // extruder speed
@@ -47,6 +64,7 @@ void lv_popup_remove(lv_event_t * e) ;
 void lvgl_ui_task(void * parameter) {
     lv_btn_init();
     lvgl_hal_init();
+    knomi_gif_init(); // custom GIFs must be in memory before the UI uses them
     ui_init();
 
 #ifndef LIS2DW_SUPPORT
@@ -73,14 +91,24 @@ void lvgl_ui_task(void * parameter) {
     // Set theme color
     lv_theme_color_style();
 
+    // Printing screen info view + paused overlay
+    lv_print_info_init();
+
+    // Saved brightness, and persist slider changes
+    lv_slider_set_value(ui_slider_backlight, knomi_config.backlight, LV_ANIM_OFF);
+    lv_obj_add_event_cb(ui_slider_backlight, backlight_released_cb, LV_EVENT_RELEASED, NULL);
+    knomi_power_init();
+
     // Add logo gif
     ui_img_main_gif = lv_gif_create(ui_ScreenMainGif);
-    lv_gif_set_src(ui_img_main_gif, gif_idle[0]);
+    knomi_gif_show(ui_img_main_gif, GIF_SLOT_IDLE1);
     lv_obj_align(ui_img_main_gif, LV_ALIGN_CENTER, 0, 0);
 
     // Add welcome gif
     lv_obj_t * img_welcome_gif = lv_gif_create(ui_ScreenWelcome);
-    lv_gif_set_src(img_welcome_gif, &gif_welcome);
+    knomi_gif_show(img_welcome_gif, GIF_SLOT_WELCOME);
+    // built-in animations follow the UI color if enabled
+    knomi_gif_apply_tint();
     lv_obj_align(img_welcome_gif, LV_ALIGN_CENTER, 0, -36);
 
     // Create a QR Code
@@ -116,6 +144,22 @@ void lvgl_ui_task(void * parameter) {
         lv_timer_handler();
 
         wifi_status_t status = wifi_get_connect_status();
+        // a live Bluetooth link to the plugin counts as connected (WiFi may be off)
+        if (knomi_ble_link_active()) status = WIFI_STATUS_CONNECTED;
+
+        uint32_t passkey = knomi_ble_take_passkey();
+        if (passkey) {
+            static char pk_msg[64];
+            snprintf(pk_msg, sizeof(pk_msg), "Bluetooth pairing\n%03u %03u\nEnter this on the Pi",
+                     (unsigned)(passkey / 1000), (unsigned)(passkey % 1000));
+            knomi_power_wake();
+            lv_popup_warning(pk_msg, true);
+        }
+        int paired = knomi_ble_take_pair_result();
+        if (paired) {
+            knomi_power_wake();
+            lv_popup_warning(paired > 0 ? "Bluetooth paired" : "Bluetooth pairing failed", true);
+        }
 
         lv_loop_wifi_change_screen(status);
 
@@ -134,6 +178,12 @@ void lvgl_ui_task(void * parameter) {
 
         lv_loop_auto_idle(status);
         lv_loop_btn_event();
+        knomi_gif_process();
+        knomi_power_loop();
+        if (knomi_display_settings_dirty) {
+            knomi_display_settings_dirty = false;
+            apply_display_settings();
+        }
 
         delay(5);
     }

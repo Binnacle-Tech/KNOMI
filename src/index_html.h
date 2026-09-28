@@ -1,566 +1,345 @@
-const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html>
-<html style="font-family: Arial, Helvetica, sans-serif;
-display: inline-block;
-text-align: center;">
-<head>
-  <title>BTT KNOMI SETTINGS MANAGER</title>
-  <link rel='shortcut icon' type='image/x-icon' href='/favicon.ico' />
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    h1 {
-      font-size: 1.8rem;
-      color: white;
-    }
-    h2 {
-      font-size: 0.8rem;
-      color: white;
-    }
-    p {
-      font-size: 1.4rem;
-    }
-    .topnav {
-      overflow: hidden;
-      background-color: #C02E2F;
-    }
-    body {
-      margin: 0;
-    }
-    .content {
-      padding: 5%;
-    }
-    .card-grid {
-      max-width: 800px;
-      margin: 0 auto;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      display: block;
-    }
-    .card {
-      background-color: white;
-      box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);
-      padding: 15px 15px;
-      border: 1px solid lightgrey;
-      flex: 1;
-      min-height: 100px;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      flex-direction: column;
-    }
-    .card-title {
-      font-size: 1.2rem;
-      font-weight: bold;
-      color: #034078
-    }
-    input[id="sys-btn"] {
-      border: none;
-      color: #FEFCFB;
-      padding: 15px 15px;
-      text-align: center;
-      text-decoration: none;
-      display: inline-block;
-      font-size: 16px;
-      width: 230px;
-      height: 45;
-      margin-right: 0px;
-      margin-bottom: 0px;
-      border-radius: 5px;
-      transition-duration: 0.4s;
-    }
-    input[id="submit-btn"] {
-      border: none;
-      color: #FEFCFB;
-      background-color: #C02E2F;
-      padding: 10px 10px;
-      text-align: center;
-      text-decoration: none;
-      display: inline-block;
-      font-size: 16px;
-      width: 100px;
-      height: 45;
-      margin-left: 20px;
-      margin-right: 0px;
-      margin-bottom: 0px;
-      border-radius: 5px;
-      transition-duration: 0.4s;
-    }
-    input[type=submit]:active {
-      opacity: 0.8;
-    }
-    p {
-      display: flex;
-      flex-flow: column;
-      height: 100%;
-      width: 100%;
-    }
-    input[type=text], input[type=password], select {
-      width: 100%;
-      padding: 12px 12px;
-      border: 1px solid #ccc;
-      margin-right: 0px;
-      margin-left: 0px;
-      border-radius: 5px;
-      box-sizing: border-box;
-      display: table-cell;
-    }
-    label {
-      font-size: 1.2rem;
-      text-align: center;
-      padding: 10px;
-      display: flex;
-    }
-    .value{
-      font-size: 1.2rem;
-      color: #1282A2;
-    }
-    .refresh-btn{
-      max-width: 800px;
-      margin: 0 auto;
-      position: relative;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      width: 100%;
-      border: none;
-      color: #FEFCFB;
-      background-color: #C02E2F;
-      text-align: center;
-      text-decoration: none;
-      font-size: 16px;
-      border-radius: 5px;
-      transition-duration: 0.4s;
-    };
-    .state {
-      font-size: 1.2rem;
-      color: #1282A2;
-    }
-    .table-container {
-        height: 13em;
-        box-shadow: 2px 2px 12px 1px rgba(140,140,140,.5);
-        max-width: 800px;
-        margin: 0 auto;
-        position: relative;
-    }
-    table {
-        display: flex;
-        flex-flow: column;
-        height: 100%;
-        width: 100%;
-        padding: 5px;
-    }
-    table thead {
-        /* head takes the height it requires,
-        and it's not scaled when table is resized */
-        flex: 0 0 auto;
-        width: calc(100% - 0.9em);
-    }
-    table tbody {
-        /* body takes all the remaining available space */
-        flex: 1 1 auto;
-        display: block;
-        overflow-y: scroll;
-    }
-    table tbody tr {
-        width: 100%;
-    }
-    table thead,
-    table tbody tr {
-        display: table;
-        table-layout: fixed;
-    }
-    table {
-        border: 1px solid lightgrey;
-    }
-    table td, table th {
-        padding: 0.3em;
-        text-align: center;
-    }
-    table th {
-        background-color: #C02E2F;
-        color: white;
-    }
-    tr:nth-child(even) {background-color: #f2f2f2;}
-    .modal {
-      display: none;
-      position: fixed;
-      z-index: 8;
-      left: 0;
-      top: 0;
-      width: 100%;
-      height: 100%;
-      overflow: auto;
-      background-color: rgb(0, 0, 0);
-      background-color: rgba(0, 0, 0, 0.4);
-    }
-    .modal-content {
-      margin: 300px auto;
-      border: 0px solid #999;
-      width: 60%;
-    }
-    h2,
-    p {
-      margin: 0 0 20px;
-      font-weight: 400;
-      color: #999;
-    }
-    span {
-      color: #666;
-      display: block;
-      padding: 0 0 5px;
-      white-space: nowrap;
-    }
-    .modal_form {
-      padding: 25px;
-      margin: 25px;
-      box-shadow: 0 2px 5px #f5f5f5;
-      background: #eee;
-    }
-    input,
-    textarea {
-      width: 90%;
-      padding: 10px;
-      border: 1px solid #1c87c9;
-      outline: none;
-    }
-    .contact-form button {
-      width: 100%;
-      padding: 10px;
-      border: none;
-      background: #C02E2F;
-      font-size: 16px;
-      font-weight: 400;
-      color: #fff;
-    }
-    button:active {
-      opacity: 0.8;
-    }
-    .close {
-      color: #aaa;
-      float: right;
-      font-size: 28px;
-      font-weight: bold;
-    }
-    .close:hover,
-    .close:focus {
-      color: black;
-      text-decoration: none;
-      cursor: pointer;
-    }
-    .ant-form-item-row{
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      margin: 20px 0;
-    }
-    body {
-        padding: 0;
-        margin: 0;
-    }
+#include "binnacle_css.h"
 
-    .btn_confirm {
-        background-color: Blue;
-        color: #fff;
-        padding: 5px 10px;
-        border: 1px solid blue;
-        border-radius: 5px;
-        margin-right: 10px;
-        cursor: pointer;
+// Settings page. $name$ placeholders are filled by knomi_html_processor() in webserver.cpp,
+// so no literal dollar signs anywhere in here.
+const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><head>
+<title>KNOMI · Settings</title>
+<link rel='shortcut icon' type='image/x-icon' href='/favicon.ico'>
+)rawliteral" BINNACLE_HEAD R"rawliteral(
+<script>
+var popup_clicked = false, popup_btn = false;
+function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+async function waitPopupBtn(){
+  await new Promise(function(resolve){
+    var timer = setInterval(function(){ if (popup_clicked) { clearInterval(timer); resolve(true); } }, 100);
+  });
+  document.getElementById("popup_id").style.display = "none";
+  return true;
+}
+async function confirmSubmit(title, rows, formId, note){
+  popup_clicked = false; popup_btn = false;
+  document.getElementById("popup_title_id").textContent = title;
+  var html = "";
+  if (rows.length) {
+    html = "<dl class='kv'>";
+    rows.forEach(function(r){ html += "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1] === "" ? "(empty)" : r[1]) + "</dd>"; });
+    html += "</dl>";
+  }
+  if (note) html += "<p class='hint' style='margin-top:12px'>" + note + "</p>";
+  document.getElementById("popup_content_id").innerHTML = html;
+  document.getElementById("popup_id").style.display = "block";
+  await waitPopupBtn();
+  if (popup_btn) document.getElementById(formId).submit();
+  return popup_btn;
+}
+function showPopupKlipper(){
+  var be = document.getElementById("backend");
+  var key = document.getElementById("api_key").value;
+  return confirmSubmit("Save printer connection", [
+    ["Backend", be.options[be.selectedIndex].text],
+    ["Host", document.getElementById("ip").value],
+    ["Port", document.getElementById("port").value],
+    ["Tool", document.getElementById("tool").value],
+    ["API key", key ? key.substring(0, 4) + "…" : "(none)"]
+  ], "klipper-form");
+}
+function showPopupKnomi(){
+  var m = document.getElementById("mode");
+  return confirmSubmit("Save KNOMI network", [
+    ["WiFi mode", m.options[m.selectedIndex].text],
+    ["AP SSID", document.getElementById("ap-ssid").value],
+    ["AP password", document.getElementById("ap-pwd").value],
+    ["Hostname", document.getElementById("hostname").value]
+  ], "knomi-form");
+}
+function showPopupRestart(){
+  return confirmSubmit("Restart KNOMI", [], "restart-form",
+    "KNOMI will drop its network connection and restart. Reconnect once it's back.");
+}
+function popupConfirm(){ popup_clicked = true; popup_btn = true; }
+function popupCancel(){ popup_clicked = true; popup_btn = false; }
+function syncBackend(){
+  var octo = document.getElementById("backend").value == "octoprint";
+  document.getElementById("octo-only").style.display = octo ? "" : "none";
+}
+function pickOcto(ip, port){
+  document.getElementById("ip").value = ip;
+  document.getElementById("port").value = port;
+  document.getElementById("backend").value = "octoprint";
+  syncBackend();
+  document.getElementById("discover-status").innerHTML = "<span class='pill ok'>selected " + esc(ip) + ":" + esc(port) + "</span> Add your API key, then Save.";
+  document.getElementById("api_key").focus();
+}
+async function discoverOcto(){
+  var st = document.getElementById("discover-status");
+  var list = document.getElementById("discover-list");
+  var btn = document.getElementById("discover-btn");
+  st.innerHTML = "<span class='pill now'>searching</span>";
+  list.innerHTML = ""; btn.disabled = true;
+  try {
+    var r = await (await fetch("/discover?start=1")).json();
+    for (var i = 0; i < 15 && r.scanning; i++) {
+      await new Promise(function(res){ setTimeout(res, 1000); });
+      r = await (await fetch("/discover")).json();
     }
-
-    .btn_cancel {
-        background-color: #fff;
-        padding: 5px 10px;
-        border: 1px solid #000;
-        border-radius: 5px;
-        margin-right: 10px;
-        cursor: pointer;
+    if (!r.results.length) {
+      st.innerHTML = "<span class='pill held'>none found</span> Is OctoPrint's discovery plugin on?";
+    } else {
+      st.innerHTML = "<span class='pill ok'>" + r.results.length + " found</span>";
+      r.results.forEach(function(o){
+        var b = document.createElement("button");
+        b.type = "button"; b.className = "btn-ghost";
+        b.innerHTML = "<span>" + esc(o.name) + "</span><span class='ip'>" + esc(o.ip) + ":" + esc(o.port) + "</span>";
+        b.onclick = function(){ pickOcto(o.ip, o.port); };
+        list.appendChild(b);
+      });
     }
-
-    .form_item span {
-        display: inline-block;
-        width: 100px;
-    }
-
-    .form_item input{
-        width: 200px;
-        height: 25px;
-        line-height: 25px;
-        outline: none;
-        border-radius: 5px;
-    }
-
-    .form_item {
-        margin-bottom: 10px;
-    }
-
-    .form_item:last-child {
-        margin-bottom: 0;
-    }
-
-    .overlap {
-        background: #000;
-        opacity: 0.6;
-        width: 100%;
-        height: 100%;
-        display: none;
-        position: absolute;
-    }
-
-    #popup_id {
-        position: fixed;
-        left: 0px;
-        top: 0px;
-        width: 100%;
-        height: 100%;
-        font-size: 16px;
-        background-color: rgba(0, 0, 0, 0.5);
-        filter: progid:DXImageTransform.Microsoft.gradient(startColorstr=#7f000000,endColorstr=#7f000000);
-        display: none;
-    }
-    .popup {
-        background-color: #ffffff;
-        max-width: 400px;
-        min-width: 200px;
-        height: auto;
-        border-radius: 5px;
-        margin: 100px auto;
-        text-align: center;
-    }
-    .popup_title {
-        height: 60px;
-        line-height: 60px;
-        border-bottom: solid 1px #cccccc;
-    }
-    .popup_content {
-        height: auto;
-        line-height: 25px;
-        padding: 15px 10px;
-        text-align: left;
-        color: #000000;
-    }
-    .popup_btn {
-        padding-bottom: 10px;
-    }
-    .popup_btn button {
-        color: #778899;
-        width: 40%;
-        height: 40px;
-        cursor: pointer;
-        border: solid 1px #cccccc;
-        border-radius: 5px;
-        margin: 5px 10px;
-        color: #ffffff;
-        background-color: #C02E2F;
-    }
-</style>
-  <script>
-        var popup_clicked = false;
-        var popup_btn = false;
-        async function waitPopupBtn(){
-            await new Promise( (resolve) =>{
-                let timer = setInterval(() =>{
-                    if(popup_clicked){
-                        clearInterval(timer)
-                        resolve(true)
-                    }
-                },100)
-            })
-            var popup_id = document.getElementById("popup_id");
-            popup_id.style.display = "none";
-            return Promise.resolve(true)
-        }
-        async function showPopupKlipper(){
-            popup_clicked = false;
-            popup_btn = false;
-            var ip = document.getElementById("ip").value;
-            var port = document.getElementById("port").value;
-            var tool = document.getElementById("tool").value;
-            document.getElementById("popup_title_id").innerHTML="Klipper Config";
-            document.getElementById("popup_content_id").innerHTML="<div>" + "Klipper IP: "+ "<font color='#C02E2F'>" + ip + "</font><br>"
-                                                                + "Klipper Port: " + "<font color='#C02E2F'>" + port + "</font><br>"
-                                                                + "Tool ID: " + "<font color='#C02E2F'>" + tool + "</font><br></div>";
-
-            var popup_id = document.getElementById("popup_id");
-            popup_id.style.display = "block";
-            await waitPopupBtn();
-            if (popup_btn) {
-                document.getElementById('klipper-form').submit();
-            }
-            return popup_btn;
-        }
-        async function showPopupKnomi(){
-            popup_clicked = false;
-            popup_btn = false;
-            var obj_mode = document.getElementById("mode");
-            var mode = obj_mode.options[obj_mode.selectedIndex].text;
-            var ssid = document.getElementById("ap-ssid").value;
-            var pwd = document.getElementById("ap-pwd").value;
-            var name = document.getElementById("hostname").value;
-            document.getElementById("popup_title_id").innerHTML="KNOMI Config";
-            document.getElementById("popup_content_id").innerHTML="<div>" + "WiFi mode: "+ "<font color='#C02E2F'>" + mode + "</font><br>"
-                                                                + "AP SSID: " + "<font color='#C02E2F'>" + ssid + "</font><br>"
-                                                                + "AP PWD: " + "<font color='#C02E2F'>" + pwd + "</font><br>"
-                                                                + "Hostname: " + "<font color='#C02E2F'>" + name + "</font><br></div>";
-
-            var popup_id = document.getElementById("popup_id");
-            popup_id.style.display = "block";
-            await waitPopupBtn();
-            if (popup_btn) {
-                document.getElementById('knomi-form').submit();
-            }
-            return popup_btn;
-        }
-        async function showPopupRestart(){
-            popup_clicked = false;
-            popup_btn = false;
-            document.getElementById("popup_title_id").innerHTML="Restart?";
-            document.getElementById("popup_content_id").innerHTML="KNOMI will disconnect the network connection and restart<br>Please reconnect after KNOMI restart."
-
-            var popup_id = document.getElementById("popup_id");
-            popup_id.style.display = "block";
-            await waitPopupBtn();
-            if (popup_btn) {
-                document.getElementById('restart-form').submit();
-            }
-            return popup_btn;
-        }
-        function popupConfirm(){
-            popup_clicked = true;
-            popup_btn = true;
-        }
-        function popupCancel(){
-            popup_clicked = true;
-            popup_btn = false;
-        }
-  </script>
+  } catch (e) { st.innerHTML = "<span class='pill bad'>search failed</span>"; }
+  btn.disabled = false;
+}
+</script>
 </head>
 <body>
-  <div class="topnav">
-    <h1>BTT KNOMI SETTINGS MANAGER ;)</h1>
-  </div>
-  <div class="content">
-    <div class="card-grid">
-      <div class="card">
-        <form id="klipper-form" name="klipper-form" action="/" method="POST">
-            <label class="ant-form-item-row">
-                <span>Klipper IP:&nbsp</span>
-                <input type="text" id ="ip" name="ip" $ip$ maxlength="64" placeholder="1.2.3.4 or printer.local">
-            </label>
-            <label class="ant-form-item-row">
-                <span>Klipper Port:&nbsp</span>
-                <input type="text" id ="port" name="port" $port$ maxlength="5">
-            </label>
-            <label class="ant-form-item-row">
-                <span>Tool ID:&nbsp</span>
-                <input type="text" id ="tool" name="tool" $tool$ maxlength="6">
-            </label>
-        </form>
-        <input type ="submit" id="submit-btn" value ="Submit" onclick="showPopupKlipper()">
-      </div>
-    </div>
-    <div id="modalOne" class="modal">
-      <div class="modal-content">
-        <div class="contact-form">
-          <a class="close">&times;</a>
-          <form class="modal_form" action="/" method="POST">
-            <div>
-              <input readonly id ="ssid" class="fname" type="text" name="ssid" placeholder="ssid" />
-              <span></span>
-              <input class="fname" type="text" name="password" placeholder="password" />
-              <span></span>
-            </div>
-            <button type="submit" >Connect</button>
-          </form>
-        </div>
-      </div>
-    </div>
-    <div class="table-container">
-      <table>
-        <thead>
-          <tr>
-            <th>SSID</th>
-            <th>RSSI</th>
-            <th>STATUS</th>
-          </tr>
-        </thead>
-        <tbody>
-          $wifi_list$
-        </tbody>
-      </table>
-    </div>
-    <form name="refresh" action="/" method="POST">
-      <input type ="submit" class="refresh-btn" name="refresh" value="Refresh">
-    </form>
+<header class="rail"><div class="wrap rail-in">
+  <div class="brand"><a class="n" href="/">KNOMI<span class="dot">.</span></a><span class="f">Printer display</span></div>
+  <span class="rail-sp"></span>
+  <nav><a class="on" href="/">Settings</a><a href="/gifs">Animations</a><a href="/update">Firmware</a></nav>
+  )rawliteral" BINNACLE_MODES R"rawliteral(
+</div></header>
 
-    <div class="card-grid">
-      <div class="card">
-        <form id="knomi-form" name="knomi-form" action="/" method="POST">
-          <select id ="mode" name="mode">
-            <option value="ap" $ap$>AP</option>
-            <option value="sta" $sta$>STA</option>
-            <option value="apsta" $apsta$>AP+STA</option>
+<main class="wrap">
+  <section class="mast">
+    <span class="label">Settings</span>
+    <h1>KNOMI<span class="dot">.</span></h1>
+    <p class="lede">Where the display gets its printer status, how the screen behaves, how it joins your network, and system controls.</p>
+    <div class="strip">$backend_pill$ <span class="pill">$fw$</span> <span class="pill">$sta_ip$</span></div>
+    <div class="rule"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><span class="idx">01</span><span class="k">Printer connection</span></div>
+    <div class="card-b">
+      <form id="klipper-form" name="klipper-form" action="/" method="POST">
+        <div class="row">
+          <label class="field-label" for="backend">Backend</label>
+          <select id="backend" name="backend" onchange="syncBackend()">
+            <option value="moonraker" $be_moonraker$>Moonraker (Klipper)</option>
+            <option value="octoprint" $be_octoprint$>OctoPrint</option>
           </select>
-          <label class="ant-form-item-row">
-              <span>AP SSID:&nbsp</span>
-              <input type="text" id ="ap-ssid" name="ap_ssid" $ap_ssid$ minlength="1" maxlength="32" required="required">
-          </label>
-          <label class="ant-form-item-row">
-              <span>AP PWD:&nbsp</span>
-              <input type="text" id ="ap-pwd" name="ap_password" $ap_password$ minlength="6" maxlength="64">
-          </label>
-          <label class="ant-form-item-row">
-              <span>Hostname:&nbsp</span>
-              <input type="text" id ="hostname" name="hostname" $hostname$ maxlength="15">
-          </label>
-        </form>
-        <input type ="submit" id="submit-btn" value ="Submit" onclick="showPopupKnomi()">
-      </div>
+        </div>
+        <div class="cols">
+          <div class="row">
+            <label class="field-label" for="ip">Host</label>
+            <input type="text" class="mono" id="ip" name="ip" $ip$ maxlength="64" placeholder="192.168.1.20 or octopi.local">
+          </div>
+          <div class="row">
+            <label class="field-label" for="port">Port</label>
+            <input type="text" class="mono" id="port" name="port" $port$ maxlength="5" placeholder="80">
+          </div>
+        </div>
+        <div class="row">
+          <button type="button" class="btn-ghost" id="discover-btn" onclick="discoverOcto()">Find OctoPrint on network</button>
+          <span id="discover-status" class="hint" style="margin-left:8px"></span>
+          <div id="discover-list" class="found"></div>
+        </div>
+        <div class="cols">
+          <div class="row">
+            <label class="field-label" for="tool">Tool</label>
+            <input type="text" class="mono" id="tool" name="tool" $tool$ maxlength="6" placeholder="tool0">
+          </div>
+          <div class="row" id="octo-only">
+            <label class="field-label" for="api_key">OctoPrint API key</label>
+            <input type="password" class="mono" id="api_key" name="api_key" $api_key$ maxlength="64" placeholder="Application key" autocomplete="off">
+            <div class="hint">OctoPrint &rsaquo; User Settings &rsaquo; Application Keys</div>
+          </div>
+        </div>
+      </form>
     </div>
-    <div class="card-grid">
-      <div class="card">
-        <a href="update"><input type="submit" style="background-color: #C02E2F" id="sys-btn" value ="Update Firmware"></a>
-        <span style="width: 10px;"></span>
-        <form id="restart-form" name="restart-form" action="/" method="POST">
-            <input type="hidden" name="restart">
-        </form>
-        <input type ="submit" style="background-color: #000000" id="sys-btn" value="Restart" onclick="showPopupRestart()">
-      </div>
-    </div>
-    <div id="popup_id">
-      <div class="popup">
-        <p id="popup_title_id" class="popup_title"></p>
-        <p id="popup_content_id" class="popup_content"></p>
-        <div class="popup_btn">
-          <button style="background-color: #525252" onclick="popupCancel()">Cancel</button>
-          <button onclick="popupConfirm()">Confirm</button>
+    <div class="card-f"><button type="button" class="btn-primary" onclick="showPopupKlipper()">Save connection</button></div>
+  </section>
+
+  <section class="card" id="display">
+    <div class="card-h"><span class="idx">02</span><span class="k">Display</span></div>
+    <form id="display-form" action="/display" method="POST">
+    <div class="card-b">
+      <div class="cols">
+        <div class="row">
+          <label class="field-label" for="bl">Brightness <span class="mono" id="bl-v">$bl$</span>/16</label>
+          <input type="range" id="bl" name="bl" min="1" max="16" value="$bl$" oninput="document.getElementById('bl-v').textContent=this.value">
+        </div>
+        <div class="row">
+          <label class="field-label" for="dim_lvl">Dimmed brightness <span class="mono" id="dl-v">$dim_lvl$</span>/16</label>
+          <input type="range" id="dim_lvl" name="dim_lvl" min="1" max="16" value="$dim_lvl$" oninput="document.getElementById('dl-v').textContent=this.value">
+        </div>
+        <div class="row">
+          <label class="field-label" for="dim_min">Dim after (minutes)</label>
+          <input type="number" class="mono" id="dim_min" name="dim_min" min="0" max="1440" value="$dim_min$">
+          <div class="hint">0 = never. Any touch or printer activity wakes it.</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="sleep_min">Screen off after (minutes)</label>
+          <input type="number" class="mono" id="sleep_min" name="sleep_min" min="0" max="1440" value="$sleep_min$">
+          <div class="hint">0 = never. The tap that wakes it doesn't press anything.</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="awake_print">While the printer is busy</label>
+          <select id="awake_print" name="awake_print">
+            <option value="1" $aw_1$>Stay awake</option>
+            <option value="0" $aw_0$>Dim and sleep as usual</option>
+          </select>
+        </div>
+        <div class="row">
+          <label class="field-label" for="print_view">Printing screen</label>
+          <select id="print_view" name="print_view">
+            <option value="0" $pv_0$>Info: time left, temps, Z</option>
+            <option value="1" $pv_1$>Accelerometer bars (stock)</option>
+          </select>
+        </div>
+        <div class="row" style="grid-column:1/-1">
+          <label class="field-label" for="gif_tint">Animations follow the UI color</label>
+          <select id="gif_tint" name="gif_tint">
+            <option value="0" $tint_0$>Off: stock colors</option>
+            <option value="1" $tint_1$>Idle faces only</option>
+            <option value="2" $tint_2$>All built-in animations</option>
+          </select>
+          <div class="hint">Uses the UI color picked on the KNOMI (Settings &rsaquo; UI color). Has no effect on the default red or on your uploaded GIFs.</div>
         </div>
       </div>
     </div>
-  </div>
+    <div class="card-f"><button type="submit" class="btn-primary">Save display</button></div>
+    </form>
+  </section>
 
-  <script>
-    let modalBtns = [...document.querySelectorAll(".showpop")];
-    modalBtns.forEach(function (btn, index) {
-      btn.onclick = function (event) {
-        let modal = btn.getAttribute("data-modal");
-        document.getElementById(modal).style.display = "block";
-        console.log(modalBtns[index].getElementsByClassName("ssid")[0].innerHTML,document.getElementById("ssid"))
-        document.getElementById("ssid").value = modalBtns[index].getElementsByClassName("ssid")[0].innerHTML;
-      };
-    });
-    let closeBtns = [...document.querySelectorAll(".close")];
-    closeBtns.forEach(function (btn) {
-      btn.onclick = function () {
-        let modal = btn.closest(".modal");
-        modal.style.display = "none";
-      };
-    });
-    window.onclick = function (event) {
-      if (event.target.className === "modal") {
-        event.target.style.display = "none";
-      }
-    };
-  </script>
+  <section class="card" id="bluetooth">
+    <div class="card-h"><span class="idx">03</span><span class="k">Bluetooth</span><span class="sp"></span>$bt_state$</div>
+    <form action="/bluetooth" method="POST">
+    <div class="card-b">
+      <div class="cols">
+        <div class="row">
+          <label class="field-label" for="bt_enabled">Bluetooth link to OctoPrint</label>
+          <select id="bt_enabled" name="bt_enabled">
+            <option value="0" $bt_off$>Off</option>
+            <option value="1" $bt_on$>On: prefer Bluetooth, WiFi as fallback</option>
+          </select>
+          <div class="hint">Needs the OctoPrint-KNOMI plugin with Bluetooth enabled. Takes effect after a restart.</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="bt_address">KNOMI Bluetooth address</label>
+          <input type="text" class="mono" id="bt_address" value="$bt_addr$" readonly placeholder="Bluetooth is off">
+          <div class="hint">Pair from the Pi: <span class="mono">bluetoothctl</span>, then <span class="mono">pair</span> this address and type the code the KNOMI shows.</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="bt_wifi_off">WiFi while Bluetooth is connected</label>
+          <select id="bt_wifi_off" name="bt_wifi_off" $wo_lock$>
+            <option value="0" $wo_0$>Keep WiFi on</option>
+            <option value="1" $wo_1$>Turn WiFi off</option>
+          </select>
+          <div class="hint">$wo_hint$</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="bt_fallback">WiFi fallback (seconds)</label>
+          <input type="number" class="mono" id="bt_fallback" name="bt_fallback" min="15" max="3600" value="$bt_fb$">
+          <div class="hint">If Bluetooth isn't connected for this long, including after boot, WiFi turns back on.</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-f">
+      <button type="submit" class="btn-primary">Save Bluetooth</button>
+      <button type="submit" class="btn-ghost btn-danger" formaction="/bluetooth/forget" onclick="return confirm('Forget all paired devices? The Pi will need to pair again.')">Forget paired devices</button>
+    </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><span class="idx">04</span><span class="k">WiFi networks</span><span class="sp"></span>
+      <form name="refresh" action="/" method="POST" style="margin:0"><button type="submit" class="btn-ghost" name="refresh" value="1">Rescan</button></form>
+    </div>
+    <div class="card-b">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Network</th><th>Signal</th><th>Status</th></tr></thead>
+        <tbody>$wifi_list$</tbody>
+      </table></div>
+      <div class="hint">Pick a network to connect the KNOMI to it.</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><span class="idx">05</span><span class="k">KNOMI network</span></div>
+    <div class="card-b">
+      <form id="knomi-form" name="knomi-form" action="/" method="POST">
+        <div class="cols">
+          <div class="row">
+            <label class="field-label" for="mode">WiFi mode</label>
+            <select id="mode" name="mode">
+              <option value="ap" $ap$>Access point</option>
+              <option value="sta" $sta$>Station (join network)</option>
+              <option value="apsta" $apsta$>Access point + station</option>
+            </select>
+          </div>
+          <div class="row">
+            <label class="field-label" for="hostname">Hostname</label>
+            <input type="text" class="mono" id="hostname" name="hostname" $hostname$ maxlength="15">
+          </div>
+          <div class="row">
+            <label class="field-label" for="ap-ssid">AP name</label>
+            <input type="text" id="ap-ssid" name="ap_ssid" $ap_ssid$ minlength="1" maxlength="32" required>
+          </div>
+          <div class="row">
+            <label class="field-label" for="ap-pwd">AP password</label>
+            <input type="text" id="ap-pwd" name="ap_password" $ap_password$ minlength="6" maxlength="64" placeholder="Open network if empty">
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="card-f"><button type="button" class="btn-primary" onclick="showPopupKnomi()">Save network</button></div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><span class="idx">06</span><span class="k">System</span></div>
+    <div class="card-f" style="border-top:0">
+      <a class="btn-ghost" href="/gifs">Custom animations</a>
+      <a class="btn-ghost" href="/update">Update firmware</a>
+      <form id="restart-form" name="restart-form" action="/" method="POST" style="margin:0"><input type="hidden" name="restart"></form>
+      <button type="button" class="btn-ghost btn-danger" onclick="showPopupRestart()">Restart</button>
+    </div>
+  </section>
+  <div class="foot">KNOMI firmware $fw$ · OctoPrint edition</div>
+</main>
+
+<div id="modalOne" class="modal">
+  <div class="dialog">
+    <div class="card-h"><span class="k">Join network</span><button type="button" class="x close" aria-label="Close">&times;</button></div>
+    <form action="/" method="POST">
+      <div class="card-b">
+        <div class="row"><label class="field-label" for="ssid">Network</label><input readonly id="ssid" type="text" name="ssid" class="mono"></div>
+        <div class="row" style="margin:0"><label class="field-label" for="wifi-pwd">Password</label><input id="wifi-pwd" type="password" name="password" autocomplete="off"></div>
+      </div>
+      <div class="card-f"><button type="submit" class="btn-primary">Connect</button></div>
+    </form>
+  </div>
+</div>
+
+<div id="popup_id" class="modal">
+  <div class="dialog">
+    <div class="card-h"><span id="popup_title_id" class="k"></span></div>
+    <div id="popup_content_id" class="card-b"></div>
+    <div class="card-f"><button class="btn-primary" onclick="popupConfirm()">Confirm</button><button class="btn-ghost" onclick="popupCancel()">Cancel</button></div>
+  </div>
+</div>
+
+<script>
+syncBackend();
+document.querySelectorAll(".showpop").forEach(function(row){
+  row.onclick = function(){
+    document.getElementById("ssid").value = row.getElementsByClassName("ssid")[0].textContent;
+    document.getElementById(row.getAttribute("data-modal")).style.display = "block";
+    document.getElementById("wifi-pwd").focus();
+  };
+});
+document.querySelectorAll(".close").forEach(function(btn){
+  btn.onclick = function(){ btn.closest(".modal").style.display = "none"; };
+});
+window.onclick = function(e){ if (e.target.id === "modalOne") e.target.style.display = "none"; };
+</script>
 </body>
 </html>)rawliteral";

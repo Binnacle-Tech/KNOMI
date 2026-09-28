@@ -25,7 +25,7 @@ void lv_loop_auto_idle(wifi_status_t status) {
     touch_idle_sec++;
 
     if (touch_idle_sec >= GOT_IDLE_SECS) {
-        lv_gif_set_src(ui_img_main_gif, gif_idle[0]);
+        knomi_gif_show(ui_img_main_gif, GIF_SLOT_IDLE1);
         lv_obj_add_flag(ui_ScreenMainGif, LV_OBJ_FLAG_CLICKABLE);
         _ui_screen_change(&ui_ScreenMainGif, LV_SCR_LOAD_ANIM_NONE, 500, 0, NULL);
         touch_idle_sec = 0;

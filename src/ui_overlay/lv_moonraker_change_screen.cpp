@@ -8,6 +8,11 @@ typedef enum {
     LV_MOONRAKER_STATE_HOMING,
     LV_MOONRAKER_STATE_PROBING,
     LV_MOONRAKER_STATE_QGLING,
+    LV_MOONRAKER_STATE_SHAPING,
+    LV_MOONRAKER_STATE_PID,
+    LV_MOONRAKER_STATE_CLEANING,
+    LV_MOONRAKER_STATE_FILAMENT,
+    LV_MOONRAKER_STATE_PAUSED,
     LV_MOONRAKER_STATE_NOZZLE_HEATING,
     LV_MOONRAKER_STATE_BED_HEATING,
     LV_MOONRAKER_STATE_PRINTING,
@@ -21,19 +26,19 @@ typedef enum {
 } lv_screen_state_t;
 
 lv_obj_t * ui_img_main_gif;
-const lv_img_dsc_t * gif_idle[] = {&gif_voron, &gif_standby};
 
 static char string_buffer[8];
 static lv_screen_state_t lv_screen_state = LV_MOONRAKER_STATE_IDLE;
 static lv_obj_t * ui_ScreenIdle = NULL;
 static lv_obj_t * ui_ScreenNow = NULL;
 
-static void lv_goto_busy_screen(lv_obj_t * screen, lv_screen_state_t state, const lv_img_dsc_t * gif) {
+#define GIF_NONE GIF_SLOT_NUM
+static void lv_goto_busy_screen(lv_obj_t * screen, lv_screen_state_t state, knomi_gif_slot_t gif) {
     if (lv_screen_state == state) return;
     lv_screen_state = state;
 
     //
-    if (gif) lv_gif_set_src(ui_img_main_gif, gif);
+    if (gif != GIF_NONE) knomi_gif_show(ui_img_main_gif, gif);
     lv_obj_clear_flag(ui_ScreenMainGif, LV_OBJ_FLAG_CLICKABLE);
 
     // backup now screen, cause lv_scr_act() is delayed updates
@@ -51,7 +56,7 @@ static void lv_goto_idle_screen(void) {
     lv_screen_state = LV_MOONRAKER_STATE_IDLE;
 
     //
-    lv_gif_set_src(ui_img_main_gif, gif_idle[0]);
+    knomi_gif_show(ui_img_main_gif, GIF_SLOT_IDLE1);
     lv_obj_add_flag(ui_ScreenMainGif, LV_OBJ_FLAG_CLICKABLE);
 
     // goto the screen backed up before
@@ -91,30 +96,52 @@ void lv_loop_moonraker_change_screen(void) {
     static lv_screen_state_t screen_state = LV_SCREEN_STATE_INIT;
     // if (moonraker.data.printing) {
     //     if (lv_screen_state == 0) {
-    //         lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PRINTING, NULL);
+    //         lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PRINTING, GIF_NONE);
     //         return;
     //     }
     // }
     if (moonraker.data.homing) {
-        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_HOMING, &gif_homing);
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_HOMING, GIF_SLOT_HOMING);
         return;
     }
     if (moonraker.data.probing) {
-        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_PROBING, &gif_probing);
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_PROBING, GIF_SLOT_PROBING);
         return;
     }
     if (moonraker.data.qgling) {
-        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_QGLING, &gif_qgling);
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_QGLING, GIF_SLOT_QGLING);
+        return;
+    }
+    if (moonraker.data.shaping) {
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_SHAPING, GIF_SLOT_SHAPING);
+        return;
+    }
+    if (moonraker.data.pid_tuning) {
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_PID, GIF_SLOT_PID);
+        return;
+    }
+    if (moonraker.data.cleaning) {
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_CLEANING, GIF_SLOT_CLEANING);
+        return;
+    }
+    if (moonraker.data.filament) {
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_FILAMENT, GIF_SLOT_FILAMENT);
+        return;
+    }
+    // paused: print screen with the paused animation (swipe down = resume, up = cancel).
+    // Ahead of the heating checks so a cooling nozzle during a pause doesn't take over.
+    if (moonraker.data.printing && (moonraker.data.pause || moonraker.data.paused_ext)) {
+        lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PAUSED, GIF_NONE);
         return;
     }
     if (moonraker_nozzle_is_heating()) {
-        lv_goto_busy_screen(ui_ScreenHeatingNozzle, LV_MOONRAKER_STATE_NOZZLE_HEATING, NULL);
+        lv_goto_busy_screen(ui_ScreenHeatingNozzle, LV_MOONRAKER_STATE_NOZZLE_HEATING, GIF_NONE);
         if (moonraker.data.printing)
             screen_state = LV_SCREEN_HEATED;
         return;
     }
     if (moonraker_bed_is_heating()) {
-        lv_goto_busy_screen(ui_ScreenHeatingBed, LV_MOONRAKER_STATE_BED_HEATING, NULL);
+        lv_goto_busy_screen(ui_ScreenHeatingBed, LV_MOONRAKER_STATE_BED_HEATING, GIF_NONE);
         if (moonraker.data.printing)
             screen_state = LV_SCREEN_HEATED;
         return;
@@ -123,7 +150,7 @@ void lv_loop_moonraker_change_screen(void) {
     static lv_screen_state_t playing_next_state = LV_SCREEN_STATE_INIT;
     static uint32_t playing_ms = 0;
     static lv_screen_state_t playing_state;
-    static const lv_img_dsc_t * playing_img;
+    static knomi_gif_slot_t playing_img;
     switch (screen_state) {
         case LV_SCREEN_STATE_INIT:
             if (moonraker.data.printing) {
@@ -142,13 +169,13 @@ void lv_loop_moonraker_change_screen(void) {
             break;
         case LV_SCREEN_HEATED:
             playing_state = LV_SCREEN_HEATED;
-            playing_img = &gif_heated;
+            playing_img = GIF_SLOT_HEATED;
             screen_state = LV_SCREEN_STATE_PLAYING;
             playing_next_state = LV_SCREEN_PRINT;
             playing_ms = millis() + 7000;
             return;
         case LV_SCREEN_PRINT:
-            lv_goto_busy_screen(ui_ScreenMainGif, LV_SCREEN_PRINT, &gif_print);
+            lv_goto_busy_screen(ui_ScreenMainGif, LV_SCREEN_PRINT, GIF_SLOT_PRINT);
             if (moonraker.data.progress >= 1 || !moonraker.data.printing)
                 screen_state = LV_SCREEN_STATE_IDLE;
             return;
@@ -161,14 +188,14 @@ void lv_loop_moonraker_change_screen(void) {
             return;
         case LV_SCREEN_PRINT_OK:
             playing_state = LV_SCREEN_PRINT_OK;
-            playing_img = &gif_print_ok;
+            playing_img = GIF_SLOT_PRINT_OK;
             screen_state = LV_SCREEN_STATE_PLAYING;
             playing_next_state = LV_SCREEN_PRINTED;
             playing_ms = millis() + 1600;
             return;
         case LV_SCREEN_PRINTED:
             playing_state = LV_SCREEN_PRINTED;
-            playing_img = &gif_printed;
+            playing_img = GIF_SLOT_PRINTED;
             screen_state = LV_SCREEN_STATE_PLAYING;
             playing_next_state = LV_SCREEN_STATE_INIT;
             playing_ms = millis() + 7000;
@@ -178,7 +205,7 @@ void lv_loop_moonraker_change_screen(void) {
     // Printing must be lastest, the lowest priority
     // That The status screen(homing, heating, etc.) can occupy this screen
     if (moonraker.data.printing) {
-        lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PRINTING, NULL);
+        lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PRINTING, GIF_NONE);
         return;
     }
     // back to previous screen
@@ -189,8 +216,11 @@ void lv_loop_moonraker_change_screen(void) {
         static uint32_t gif_idle_ms = 0;
 
         if (gif_idle_ms < millis()) {
-            lv_gif_set_src(ui_img_main_gif, gif_idle[gif_idle_index]);
-            gif_idle_index = (gif_idle_index + 1) % ACOUNT(gif_idle);
+            uint8_t idle_n = knomi_gif_idle_count();
+            if (idle_n == 0) idle_n = 1;
+            gif_idle_index %= idle_n;
+            knomi_gif_show(ui_img_main_gif, knomi_gif_idle_slot(gif_idle_index));
+            gif_idle_index = (gif_idle_index + 1) % idle_n;
             gif_idle_ms = millis() + 7000; // 7s
         }
     }
@@ -246,6 +276,8 @@ void lv_loop_moonraker_change_screen_value(void) {
     lv_slider_set_value(ui_slider_printing_acc_y, abs(lis2dw12_acc[1]) / 10, LV_ANIM_ON);
     lv_slider_set_value(ui_slider_printing_acc_z, abs(lis2dw12_acc[2] + 980) / 10, LV_ANIM_ON); // +980 for counteract the value of gravitational acceleration
 #endif
+
+    lv_print_info_update();
 
     if ((moonraker.data.nozzle_target != 0) && (lv_scr_act() == ui_ScreenHeatingNozzle)) {
         lv_slider_set_value(ui_slider_heating_nozzle, moonraker.data.nozzle_actual * 100 / moonraker.data.nozzle_target, LV_ANIM_ON);

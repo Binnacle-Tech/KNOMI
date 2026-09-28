@@ -7,6 +7,7 @@ typedef enum {
     LV_POPUP_UNCONNECT,
     LV_POPUP_PRINTER_ERR,
     LV_POPUP_ACTION_ERR,
+    LV_POPUP_AUTH_ERR,
 } lv_popup_status_t;
 
 static lv_popup_status_t lv_popup_status = LV_POPUP_NULL;
@@ -58,8 +59,15 @@ static void lv_remove_popup_screen(void) {
 }
 
 void lv_loop_popup_screen(void) {
+    bool octo = knomi_backend_is_octoprint();
     if (moonraker.unconnected) {
-        lv_goto_popup_screen(LV_POPUP_UNCONNECT, "Moonraker Connect failed\nPlease check Your printer or KNOMI IP");
+        lv_goto_popup_screen(LV_POPUP_UNCONNECT, octo ?
+            "OctoPrint Connect failed\nPlease check Your printer or KNOMI IP" :
+            "Moonraker Connect failed\nPlease check Your printer or KNOMI IP");
+        return;
+    }
+    if (octo && moonraker.auth_failed) {
+        lv_goto_popup_screen(LV_POPUP_AUTH_ERR, "OctoPrint API key rejected\nSet it in the KNOMI web page");
         return;
     }
     if (moonraker.unready) {

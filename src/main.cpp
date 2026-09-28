@@ -3,6 +3,8 @@
 #include "pinout.h"
 
 #include "ui/ui.h"
+#include "knomi_gif.h"
+#include "knomi_ble.h"
 
 
 // Hardware init
@@ -15,6 +17,7 @@ void lvgl_ui_task(void * parameter);
 void lis2dw12_task(void * parameter);
 void wifi_task(void * parameter);
 void moonraker_task(void * parameter);
+void eeprom_init(void);
 void setup() {
     Serial.begin(115200);
     while (!Serial)
@@ -38,6 +41,10 @@ void setup() {
     i2c0.begin(I2C0_SDA_PIN, I2C0_SCL_PIN, I2C0_SPEED);
     // i2c1.begin(I2C1_SDA_PIN, I2C1_SCL_PIN, I2C1_SPEED);
 #endif
+
+    eeprom_init();   // settings, before any task reads knomi_config
+    knomi_fs_init(); // custom GIF storage
+    knomi_ble_init(); // Bluetooth link to the OctoPrint plugin, if enabled, before the UI and web server use it
 
     xTaskCreate(lvgl_ui_task, "lvgl ui",
         4096,  // Stack size (bytes)

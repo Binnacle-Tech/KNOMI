@@ -112,17 +112,13 @@ void lv_roller_set_type_settings(lv_event_t * e) {
 
 
 void lv_roller_set_type_print(lv_event_t * e) {
-    String list = moonraker.send_request("GET", "/server/files/list?");
-    if (!list.isEmpty()) {
-        DynamicJsonDocument json_parse(list.length() * 2);
-        deserializeJson(json_parse, list);
-        JsonArray files = json_parse["result"].as<JsonArray>();
-        String gcodes;
-        for (JsonObject file : files) {
-            gcodes += file["path"].as<String>() + "\n";
-        }
+    String gcodes;
+    if (moonraker.get_file_list(gcodes)) {
+        if (gcodes.isEmpty()) gcodes = "\n"; // keep the roller valid with no files
         strlcpy(gcode_options, gcodes.c_str(), sizeof(gcode_options));
-        gcode_options[min(sizeof(gcode_options), gcodes.length()) - 1] = 0;
+        // drop the trailing '\n' (or the last char if truncated)
+        size_t n = min(sizeof(gcode_options), (size_t)gcodes.length());
+        gcode_options[n - 1] = 0;
     }
 
     lv_roller_set_type(UI_ROLLER_PRINT);
@@ -205,6 +201,13 @@ void lv_roller_preheat_clicked(lv_event_t * e, uint16_t opt_id) {
 
 String service_name_id[20];
 void lv_roller_set_service(void) {
+    if (knomi_backend_is_octoprint()) {
+        // OctoPrint only exposes "restart OctoPrint" as a service action
+        service_name_id[0] = "octoprint";
+        strlcpy(service_options, "OctoPrint", sizeof(service_options));
+        lv_roller_set_type(UI_ROLLER_SERVICE);
+        return;
+    }
     String list = moonraker.send_request("GET", "/machine/system_info");
     if (!list.isEmpty()) {
         DynamicJsonDocument json_parse(list.length() * 2);
@@ -220,7 +223,8 @@ void lv_roller_set_service(void) {
             i++;
         }
         strlcpy(service_options, services.c_str(), sizeof(service_options));
-        service_options[min(sizeof(service_options), services.length()) - 1] = 0;
+        if (services.length())
+            service_options[min(sizeof(service_options), (size_t)services.length()) - 1] = 0;
     }
 
     lv_roller_set_type(UI_ROLLER_SERVICE);

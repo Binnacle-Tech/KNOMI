@@ -4,7 +4,7 @@
 #include "lvgl.h"
 
 extern lv_obj_t * ui_img_main_gif;
-extern const lv_img_dsc_t * gif_idle[];
+#include "knomi_gif.h"
 
 LV_IMG_DECLARE(gif_welcome);
 LV_IMG_DECLARE(gif_voron);
@@ -17,6 +17,10 @@ LV_IMG_DECLARE(gif_print);
 LV_IMG_DECLARE(gif_print_ok);
 LV_IMG_DECLARE(gif_printed);
 
+// lv_print_info.cpp
+void lv_print_info_init(void);
+void lv_print_info_apply(void);
+void lv_print_info_update(void);
 // lv_button_style.cpp
 void lv_btn_add_style(void);
 // lv_theme_color.cpp

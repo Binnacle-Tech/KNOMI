@@ -23,10 +23,16 @@ void usr_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *colo
 
 #ifdef CST816S_SUPPORT
 void touch_idle_time_clear(void);
+bool knomi_power_filter_touch(bool pressed);
 void usr_touchpad_read(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
     static touch_event_t event;
     if(ts_cst816s.ready()) {
         ts_cst816s.getTouch(&event);
+    }
+    if (knomi_power_filter_touch(event.finger)) {
+        // first touch on a sleeping screen only turns the backlight on
+        data->state = LV_INDEV_STATE_REL;
+        return;
     }
     if(event.finger) {
         data->state = LV_INDEV_STATE_PR;
