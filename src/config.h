@@ -1,7 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define FW_VERSION "V1.0.2-OP6"
+#define FW_VERSION "V1.0.2-OP7"
 // GitHub repo the settings page checks for newer releases (tags like v1.0.2-op5)
 #define UPDATE_REPO "Binnacle-Tech/KNOMI"
 

@@ -46,12 +46,12 @@ The plugin raises them on these commands:
 - filament: LOAD_FILAMENT, UNLOAD_FILAMENT, M701, M702
 
 If your macros have other names, call `_KNOMI_SET VAR=cleaning VALUE=1` / `VALUE=0` inside them.
-Until you upload your own GIFs, these states reuse stock animations.
+Each state has its own built-in animation, as do pause and printing, and there are four idle faces. You can replace any of them (next section).
 
 ## Custom animations
 Open `http://<knomi-ip>/gifs` (or use the link under the printer settings). Every animation has a slot:
-the idle faces (plus two optional extra idle slots), boot, homing, probing, QGL, the four new states,
-heated, printing, finished. Upload a GIF to any slot and it applies right away. Use Restore to
+the four idle faces, WiFi setup, homing, probing, QGL, the four new states,
+paused, heated, printing, finished. Upload a GIF to any slot and it applies right away. Use Restore to
 go back to the built-in. Files live in the 7MB flash partition, so they survive firmware updates.
 Limits: 1.5MB per GIF and 5MB loaded in total. The screen is 240x240 and round.
 

@@ -49,7 +49,11 @@ static void apply_plugin(JsonVariantConst d) {
     moonraker.data.cleaning = d["cleaning"] | false;
     moonraker.data.filament = d["filament"] | false;
     moonraker.data.paused_ext = d["paused"] | false;
+    JsonVariantConst tp = d["time_progress"];
+    if (!tp.isNull()) moonraker.data.progress_mode = tp.as<bool>() ? 2 : 1;
 }
+
+uint8_t octo_progress(JsonVariantConst p); // moonraker.cpp
 
 static void apply_current(JsonVariantConst c) {
     JsonVariantConst flags = c["state"]["flags"];
@@ -61,10 +65,7 @@ static void apply_current(JsonVariantConst c) {
     moonraker.unconnected = false;
     moonraker.auth_failed = false;
 
-    double completion = c["progress"]["completion"] | 0.0;
-    if (completion < 0) completion = 0;
-    if (completion > 100) completion = 100;
-    data.progress = (uint8_t)(completion + 0.5f);
+    data.progress = octo_progress(c["progress"]);
     const char *name = c["job"]["file"]["name"] | "";
     const char *slash = strrchr(name, '/');
     strlcpy(data.file_path, slash ? slash + 1 : name, sizeof(data.file_path));
@@ -101,6 +102,7 @@ static void on_text(uint8_t *payload, size_t length) {
         cur["progress"]["completion"] = true;
         cur["progress"]["printTime"] = true;
         cur["progress"]["printTimeLeft"] = true;
+        cur["progress"]["printTimeLeftOrigin"] = true;
         cur["currentZ"] = true;
         cur["job"]["file"]["name"] = true;
         cur["temps"] = true;

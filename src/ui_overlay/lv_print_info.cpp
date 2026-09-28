@@ -10,7 +10,7 @@ static lv_obj_t * lbl_file;
 static lv_obj_t * lbl_time;
 static lv_obj_t * lbl_temps;
 static lv_obj_t * lbl_pos;
-static lv_obj_t * gif_paused;
+static lv_obj_t * pause_gif_obj;
 static bool paused_shown = false;
 
 #define COLOR_MUTED 0x93A4B2
@@ -35,10 +35,10 @@ void lv_print_info_init(void) {
     lbl_temps = make_label(&ui_font_InterSemiBold14, COLOR_MUTED, 54);
     lbl_pos = make_label(&ui_font_InterSemiBold14, COLOR_MUTED, 76);
 
-    gif_paused = lv_gif_create(ui_ScreenPrinting);
-    lv_obj_align(gif_paused, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_flag(gif_paused, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(gif_paused, LV_OBJ_FLAG_CLICKABLE); // swipes still reach the screen
+    pause_gif_obj = lv_gif_create(ui_ScreenPrinting);
+    lv_obj_align(pause_gif_obj, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(pause_gif_obj, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(pause_gif_obj, LV_OBJ_FLAG_CLICKABLE); // swipes still reach the screen
 
     lv_print_info_apply();
 }
@@ -97,16 +97,16 @@ void lv_print_info_update(void) {
     if (paused != paused_shown) {
         paused_shown = paused;
         if (paused) {
-            knomi_gif_show(gif_paused, GIF_SLOT_PAUSED);
-            lv_obj_clear_flag(gif_paused, LV_OBJ_FLAG_HIDDEN);
+            knomi_gif_show(pause_gif_obj, GIF_SLOT_PAUSED);
+            lv_obj_clear_flag(pause_gif_obj, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(gif_paused, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(pause_gif_obj, LV_OBJ_FLAG_HIDDEN);
         }
         lv_print_info_apply();
     }
     // a reload/retint restarts the GIF timer; keep it stopped while hidden
     if (!paused_shown) {
-        lv_gif_t * g = (lv_gif_t *)gif_paused;
+        lv_gif_t * g = (lv_gif_t *)pause_gif_obj;
         if (g->timer && !g->timer->paused) lv_timer_pause(g->timer);
     }
 

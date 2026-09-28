@@ -37,6 +37,7 @@ typedef struct {
     // printing screen extras
     uint32_t print_time;   // seconds elapsed
     int32_t time_left;     // seconds, -1 = unknown
+    uint8_t progress_mode; // OctoPrint dashboard progress: 0 unknown (no plugin), 1 file position, 2 time-based (PrintTimeGenius)
     int32_t z_um;          // current Z in micrometers, INT32_MIN = unknown
     uint16_t layer;        // 0 = unknown
     uint16_t layer_total;

@@ -386,12 +386,15 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
             data.cleaning = json_parse["cleaning"].as<bool>();
             data.filament = json_parse["filament"].as<bool>();
             data.paused_ext = json_parse["paused"].as<bool>();
+            JsonVariant tp = json_parse["time_progress"];
+            data.progress_mode = tp.isNull() ? 0 : (tp.as<bool>() ? 2 : 1);
         }
     } else {
         data.homing = data.probing = data.qgling = false;
         data.heating_nozzle = data.heating_bed = false;
         data.shaping = data.pid_tuning = data.cleaning = data.filament = false;
         data.paused_ext = false;
+        if (last_code == 404) data.progress_mode = 0;
         if (last_code == 404) {
             // plugin not installed, don't hammer OctoPrint with 404s
             octo_plugin_retry_ms = millis() + 30000;
@@ -399,16 +402,31 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
     }
 }
 
+// Progress as OctoPrint's dashboard shows it. With PrintTimeGenius the bar is
+// elapsed / (elapsed + remaining) whenever a time-left estimate exists;
+// otherwise it is the file position ("completion"). The plugin reports whether
+// PrintTimeGenius is enabled; without the plugin, guess from the estimate's origin.
+uint8_t octo_progress(JsonVariantConst p) {
+    double pct = p["completion"] | 0.0;
+    double left = p["printTimeLeft"] | 0.0;
+    uint8_t mode = moonraker.data.progress_mode;
+    const char *origin = p["printTimeLeftOrigin"] | "";
+    bool time_based = mode == 2 || (mode == 0 && strcmp(origin, "genius") == 0);
+    if (left > 0 && time_based) {
+        double t = p["printTime"] | 0.0;
+        pct = t / (t + left) * 100.0;
+    }
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+    return (uint8_t)(pct + 0.5);
+}
+
 void MOONRAKER::octoprint_get_progress(void) {
     String job = send_request("GET", "/api/job");
     if (last_code != 200 || job.isEmpty()) return;
     DynamicJsonDocument json_parse(job.length() * 2 + 256);
     if (deserializeJson(json_parse, job) != DeserializationError::Ok) return;
-    // completion is 0..100 (or null before the first line is sent)
-    double completion = json_parse["progress"]["completion"] | 0.0;
-    if (completion < 0) completion = 0;
-    if (completion > 100) completion = 100;
-    data.progress = (uint8_t)(completion + 0.5f);
+    data.progress = octo_progress(json_parse["progress"]);
     String name = json_parse["job"]["file"]["name"] | "";
     strlcpy(data.file_path, path_only_gcode(name.c_str()), sizeof(data.file_path));
     data.print_time = json_parse["progress"]["printTime"] | 0;
