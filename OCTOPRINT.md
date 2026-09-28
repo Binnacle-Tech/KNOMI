@@ -1,4 +1,6 @@
-# KNOMI + OctoPrint
+# KNOMI + OctoPrint setup
+
+> Only tested on a KNOMI 2 with OctoPrint on a Raspberry Pi 5.
 
 This fork adds an OctoPrint backend next to the stock Moonraker one. You pick the backend on the KNOMI web page.
 
