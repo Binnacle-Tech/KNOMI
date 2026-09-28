@@ -28,6 +28,18 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
 .pages{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .pages button{min-width:38px}
 .pages button.on{border-color:var(--amber);color:var(--amber)}
+.pages button.evt{border-style:dashed}
+.pages button small{font-family:var(--font-mono);font-size:10px;color:var(--muted-2);margin-left:5px}
+.trig[hidden]{display:none}
+.trig{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:var(--r-ctrl);padding:10px 12px;background:var(--well)}
+.trig .t{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.trig .t input[type=checkbox]{accent-color:var(--amber);width:16px;height:16px;margin:0}
+.trig .t input[type=number]{width:74px;padding:5px 8px}
+.trig .t input[type=text]{width:130px;padding:5px 8px}
+.trig .grp{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2);margin-top:2px}
+.playcap{font-family:var(--font-mono);font-size:11.5px;color:var(--cyan);text-align:center;min-height:18px}
+.playbar{width:220px;height:5px;background:var(--well);border-radius:3px;overflow:hidden}
+.playbar i{display:block;height:100%;width:0;background:var(--cyan)}
 .adds{display:flex;flex-wrap:wrap;gap:6px}
 .adds button{font-size:12px;padding:6px 10px}
 .layers{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:var(--r-ctrl);max-height:230px;overflow:auto}
@@ -81,7 +93,10 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
     <div class="status" id="status"></div>
     <div class="stage-bar">
       <label class="chk" style="margin:0"><input type="checkbox" id="live"> Live printer data</label>
+      <button type="button" class="btn-ghost" id="play">Play a print</button>
     </div>
+    <div class="playbar" id="playbar" hidden><i id="playfill"></i></div>
+    <div class="playcap" id="playcap"></div>
   </div>
 
   <div>
@@ -90,14 +105,28 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
       <div class="card-b">
         <div class="pages" id="pages"></div>
         <div class="cols" style="margin-top:14px">
-          <div class="row"><label class="field-label" for="pdur">Show this page for (seconds)</label>
+          <div class="row"><label class="field-label" for="pmode">Show this page</label>
+            <select id="pmode"><option value="r">In the rotation</option><option value="e">When something happens</option></select></div>
+          <div class="row"><label class="field-label" for="pdur" id="pdurlbl">For (seconds)</label>
             <input type="number" class="mono" id="pdur" min="1" max="3600"></div>
+        </div>
+        <div class="trig" id="trig" hidden>
+          <span class="grp">Pops up for the time above</span>
+          <label class="t"><input type="checkbox" id="tr_pe"> Every <input type="number" class="mono" id="tr_pe_n" min="1" max="50" value="10"> %</label>
+          <label class="t"><input type="checkbox" id="tr_pa"> At <input type="text" class="mono" id="tr_pa_n" value="25, 50, 75" aria-label="Percentages"> %</label>
+          <label class="t"><input type="checkbox" id="tr_le"> Every <input type="number" class="mono" id="tr_le_n" min="1" max="250" value="1"> layer change(s)</label>
+          <label class="t"><input type="checkbox" id="tr_st"> When the print starts</label>
+          <span class="grp">Stays up while true</span>
+          <label class="t"><input type="checkbox" id="tr_lm"> Less than <input type="number" class="mono" id="tr_lm_n" min="1" max="1440" value="10"> minutes left</label>
+          <label class="t"><input type="checkbox" id="tr_fl"> During the first layer</label>
+        </div>
+        <div class="cols" style="margin-top:14px">
           <div class="row" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
             <button type="button" class="btn-ghost" id="pdup">Duplicate page</button>
             <button type="button" class="btn-ghost" id="pdel">Delete page</button>
           </div>
         </div>
-        <div class="hint">With one page nothing rotates. Up to 4 pages. The paused animation still takes over when the print pauses.</div>
+        <div class="hint">Rotation pages take turns. “When something happens” pages stay out of the rotation and cut in when a trigger fires. Layer changes use the printer's layer number when it reports one, otherwise each new Z height. Up to 4 pages. The paused animation still takes over when the print pauses.</div>
       </div>
     </section>
 
@@ -111,6 +140,7 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
             <option value="">Choose…</option>
             <option value="default">Info (the default)</option>
             <option value="face">Face, stats every 30 s</option>
+            <option value="facepct">Face, stats every 10 % and at the end</option>
             <option value="big">Big percent</option>
             <option value="gauge">Gauge</option>
             <option value="blank">Blank</option>
@@ -163,7 +193,8 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;
 function clone(o){return JSON.parse(JSON.stringify(o))}
 function col(c){if(!c)return "transparent";if(c[0]=="#")return c;if(c=="t")return state.theme;return NAMEDHEX[c]||"#E7EEF4"}
 function fontPx(f){for(var i=FONTS.length-1;i>=0;i--){if(f>=FONTS[i])return FONTS[i]}return 14}
-function expand(t){return String(t||"").replace(/\{([a-z_]{1,10})\}/g,function(m,k){var v=(live?state.tokens:SAMPLE)[k];return v===undefined?m:v})}
+function src(){return sim?sim.tokens:(live?state.tokens:SAMPLE)}
+function expand(t){return String(t||"").replace(/\{([a-z_]{1,10})\}/g,function(m,k){var v=src()[k];return v===undefined?m:v})}
 function status(msg,cls){var s=$("status");s.textContent=msg||"";s.className="status "+(cls||"")}
 function dirty(){var d=JSON.stringify(L)!==saved;$("save").textContent=d?"Save to KNOMI •":"Save to KNOMI";return d}
 
@@ -177,6 +208,7 @@ function starters(k){
   if(k=="face"){info.s=8;return{v:1,pages:[{s:30,el:[{t:"gif",x:120,y:112,g:"print"},
     {t:"arc",x:120,y:120,d:236,w:4,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
     {t:"text",x:120,y:200,f:16,c:"m",w:0,a:"c",txt:"{pct}%  ·  {left}"}]},info]}}
+  if(k=="facepct"){var f=starters("face");f.pages[0].s=60;f.pages[1].m="e";f.pages[1].s=10;f.pages[1].tr={pe:10,lm:10,fl:1};return f}
   if(k=="big")return{v:1,pages:[{s:10,el:[{t:"arc",x:120,y:120,d:232,w:14,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
     {t:"text",x:120,y:76,f:14,c:"m",w:140,a:"c",sc:1,txt:"{file}"},
     {t:"text",x:120,y:118,f:48,c:"x",w:0,a:"c",txt:"{pct}%"},
@@ -212,8 +244,9 @@ function arcPath(cx,cy,r,s,sweep){
   return"M"+a[0].toFixed(2)+" "+a[1].toFixed(2)+" A"+r+" "+r+" 0 "+(sweep>180?1:0)+" 1 "+b[0].toFixed(2)+" "+b[1].toFixed(2);
 }
 function span(e){var sw=(e.e|0)-(e.s|0);if(sw<0)sw+=360;return sw}
-function pct(){var v=parseInt((live?state.tokens:SAMPLE).pct,10);return isNaN(v)?0:Math.max(0,Math.min(100,v))}
+function pct(){var v=parseInt(src().pct,10);return isNaN(v)?0:Math.max(0,Math.min(100,v))}
 function render(){
+  if(sim)return;
   var pg=L.pages[page];
   $("scr").innerHTML=layered(pg);
   renderList();
@@ -261,10 +294,11 @@ function renderList(){
   });
   $("layers").innerHTML=h||'<li style="cursor:default;color:var(--muted-2)">Nothing on this page yet.</li>';
   var ph="";
-  L.pages.forEach(function(p,i){ph+='<button type="button" class="btn-ghost'+(i==page?" on":"")+'" data-p="'+i+'">'+(i+1)+'</button>'});
+  L.pages.forEach(function(p,i){var ev=p.m=="e";ph+='<button type="button" class="btn-ghost'+(i==page?" on":"")+(ev?" evt":"")+'" data-p="'+i+'" title="'+(ev?"Shown when something happens":"In the rotation")+'">'+(i+1)+(ev?'<small>'+esc(trigSummary(p))+'</small>':'')+'</button>'});
   if(L.pages.length<4)ph+='<button type="button" class="btn-ghost" data-p="new" title="Add a page">+ page</button>';
   $("pages").innerHTML=ph;
   $("pdur").value=L.pages[page].s;
+  fillTrig();
   $("pdel").disabled=L.pages.length<2;
   $("pdup").disabled=L.pages.length>=4;
 }
@@ -365,11 +399,75 @@ $("layers").addEventListener("click",function(ev){
   var li=t.closest("li");if(li&&li.dataset.i!==undefined){sel=parseInt(li.dataset.i,10);render();renderProps()}
 });
 $("pages").addEventListener("click",function(ev){
-  var p=ev.target.dataset.p;if(p===undefined)return;
+  var b=ev.target.closest("[data-p]");if(!b)return;var p=b.dataset.p;
   if(p=="new"){L.pages.push({s:10,el:[]});page=L.pages.length-1}else page=parseInt(p,10);
   sel=-1;render();renderProps();
 });
 $("pdur").addEventListener("input",function(){var v=parseInt(this.value,10);if(v>0){L.pages[page].s=Math.min(3600,v);dirty()}});
+/* page triggers */
+var TR=[["pe","tr_pe","tr_pe_n",10],["pa","tr_pa","tr_pa_n",[25,50,75]],["le","tr_le","tr_le_n",1],["st","tr_st",null,1],["lm","tr_lm","tr_lm_n",10],["fl","tr_fl",null,1]];
+function trigSummary(p){var t=p.tr||{},o=[];
+  if(t.pe)o.push(t.pe+"%");if(t.pa&&t.pa.length)o.push("@"+t.pa.join("/")+"%");if(t.le)o.push(t.le>1?t.le+" layers":"layer");
+  if(t.st)o.push("start");if(t.lm)o.push("<"+t.lm+"m");if(t.fl)o.push("1st layer");return o.join(" · ")||"no trigger"}
+function fillTrig(){
+  var p=L.pages[page],ev=p.m=="e",t=p.tr||{};
+  $("pmode").value=ev?"e":"r";$("trig").hidden=!ev;
+  $("pdurlbl").textContent=ev?"Pop up for (seconds)":"For (seconds)";
+  TR.forEach(function(d){var on=!!(d[0]=="pa"?(t.pa&&t.pa.length):t[d[0]]);$(d[1]).checked=on;
+    if(d[2]&&on)$(d[2]).value=d[0]=="pa"?t.pa.join(", "):t[d[0]]});
+}
+function readTrig(){
+  var p=L.pages[page],t={};
+  TR.forEach(function(d){if(!$(d[1]).checked)return;
+    if(!d[2]){t[d[0]]=1;return}
+    if(d[0]=="pa"){var v=$(d[2]).value.split(/[^0-9]+/).map(Number).filter(function(x){return x>=1&&x<=100}).slice(0,8);if(v.length)t.pa=v;return}
+    var n=parseInt($(d[2]).value,10);if(n>0)t[d[0]]=n});
+  p.tr=t;dirty();renderList();
+}
+$("pmode").addEventListener("change",function(){var p=L.pages[page];
+  if(this.value=="e"){p.m="e";if(!p.tr||!Object.keys(p.tr).length)p.tr={pe:10};if(p.s>20)p.s=8}else{delete p.m;delete p.tr}
+  fillTrig();renderList();dirty()});
+$("trig").addEventListener("input",readTrig);$("trig").addEventListener("change",readTrig);
+
+/* play a simulated print: 90 s for the whole thing, pages picked the way the KNOMI picks them */
+var sim=null;
+function simTokens(s){var left=Math.max(0,Math.round(s.leftMin*60));
+  var fmt=function(x){return x<60?"<1m":x<3600?Math.floor(x/60)+"m":Math.floor(x/3600)+"h "+String(Math.floor(x%3600/60)).padStart(2,"0")+"m"};
+  return{pct:String(Math.floor(s.pct)),left:fmt(left),time:fmt(left)+" left",elapsed:fmt(s.el),total:fmt(s.el+left),file:SAMPLE.file,
+    noz:"215",noz_t:"215",bed:"60",bed_t:"60",deg:"℃",z:(s.layer*0.2).toFixed(2),layer:String(s.layer),layers:"200",pos:"Layer "+s.layer+"/200",state:"Printing"}}
+function simCond(p,s){var t=p.tr||{};return(t.lm&&s.leftMin<t.lm)||(t.fl&&s.layer<=1)}
+function simStep(){
+  var s=sim,now=performance.now(),dt=(now-s.last)/1000;s.last=now;
+  var prevPct=s.pct,prevLayer=s.layer;
+  s.pct=Math.min(100,s.pct+dt*100/90);s.layer=Math.max(1,Math.ceil(s.pct*2));s.leftMin=(100-s.pct)*0.9;s.el+=dt*54;s.t+=dt;
+  var P=L.pages;
+  function fire(i,why){s.ev=i;s.evUntil=s.t+P[i].s;s.why=why}
+  if(!s.started){s.started=true;P.forEach(function(p,i){if(p.m=="e"&&(p.tr||{}).st)fire(i,"print started")})}
+  P.forEach(function(p,i){if(p.m!="e")return;var t=p.tr||{};
+    if(t.pe&&Math.floor(s.pct/t.pe)>Math.floor(prevPct/t.pe))fire(i,Math.floor(s.pct/t.pe)*t.pe+"% reached");
+    (t.pa||[]).forEach(function(v){if(prevPct<v&&s.pct>=v)fire(i,v+"% reached")});
+    if(t.le&&s.layer!=prevLayer&&(s.layer-1)%t.le==0)fire(i,"layer "+s.layer)});
+  var show=-1,why="";
+  P.forEach(function(p,i){if(show<0&&p.m=="e"&&simCond(p,s)){show=i;why=(p.tr.lm&&s.leftMin<p.tr.lm)?"under "+p.tr.lm+" min left":"first layer"}});
+  if(show<0&&s.ev>=0&&s.t<s.evUntil){show=s.ev;why=s.why}
+  if(show<0){s.ev=-1;
+    if(s.rot<0||P[s.rot].m=="e"||s.t>=s.rotNext){var n=-1;for(var k=1;k<=P.length;k++){var c=((s.rot<0?P.length-1:s.rot)+k)%P.length;if(P[c].m!="e"){n=c;break}}
+      if(n<0)n=0;s.rot=n;s.rotNext=s.t+P[n].s}
+    show=s.rot;why="rotation"}
+  s.tokens=simTokens(s);
+  $("scr").innerHTML=layered(P[show]);
+  $("playcap").textContent="Page "+(show+1)+" · "+why;
+  $("playfill").style.width=s.pct+"%";
+  if(s.pct>=100){stopSim();$("playcap").textContent="Print finished";return}
+  s.raf=requestAnimationFrame(simStep);
+}
+function stopSim(){if(!sim)return;cancelAnimationFrame(sim.raf);sim=null;$("play").textContent="Play a print";$("playbar").hidden=true;$("scrwrap").style.pointerEvents="";render()}
+$("play").addEventListener("click",function(){
+  if(sim){stopSim();$("playcap").textContent="";return}
+  sel=-1;renderProps();
+  sim={pct:0,layer:1,leftMin:90,el:0,t:0,last:performance.now(),ev:-1,evUntil:0,rot:-1,rotNext:0,started:false,tokens:SAMPLE};
+  $("play").textContent="Stop";$("playbar").hidden=false;$("scrwrap").style.pointerEvents="none";simStep();
+});
 $("pdup").addEventListener("click",function(){if(L.pages.length>=4)return;L.pages.splice(page+1,0,clone(L.pages[page]));page++;sel=-1;render();renderProps()});
 $("pdel").addEventListener("click",function(){if(L.pages.length<2)return;if(!confirm("Delete page "+(page+1)+"?"))return;L.pages.splice(page,1);page=Math.max(0,page-1);sel=-1;render();renderProps()});
 $("starter").addEventListener("change",function(){var k=this.value;this.value="";if(!k)return;

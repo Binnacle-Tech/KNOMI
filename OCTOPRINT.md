@@ -82,7 +82,11 @@ Open `http://<knomi-ip>/layout` (the **Print screen** tab). Drag elements around
 - **Progress bar.**
 - **Animation:** any animation slot, including GIFs you uploaded.
 
-Up to 4 **pages**, each shown for its own number of seconds, for example a face for 30 s and then stats for 8 s. Tapping the KNOMI skips to the next page.
+Up to 4 **pages**. A page either takes turns in the rotation for its number of seconds, or is shown **when something happens**:
+- pops up for its seconds every N %, at chosen percentages (e.g. 25, 50, 75), every N layer changes, or when the print starts
+- stays up while less than N minutes are left, or during the first layer
+
+Layer changes use the printer's layer number when it reports one, otherwise each new Z height that holds for 1.5 s. Tapping the KNOMI skips to the next rotation page. **Play a print** runs a 90-second fake print in the designer so you can see which page shows when.
 
 **Save & preview on KNOMI** shows the layout on the real screen for 20 s, using sample values if nothing is printing. You can also start from a few ready-made layouts, and download or load layout files to share them. The layout is included in backups. Settings › Printing screen switches between your layout and the stock accelerometer bars.
 

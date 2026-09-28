@@ -2,7 +2,12 @@
 //
 // The layout is JSON in LittleFS (/layout.json), or the built-in default:
 //   {"v":1,"pages":[{"s":30,"el":[ ... ]}, ...]}
-// Pages rotate every "s" seconds (a tap skips to the next one). Elements:
+// Pages rotate every "s" seconds (a tap skips to the next one). A page with "m":"e" is left out
+// of the rotation and shown for "s" seconds when one of its triggers fires, or for as long as a
+// condition holds:  "tr":{"pe":10, "pa":[25,50,75], "le":1, "st":1, "lm":10, "fl":1}
+//   pe every N %, pa at these %, le every N layer changes, st print started   (events)
+//   lm while less than N minutes left, fl during the first layer              (conditions)
+// Elements:
 //   text: {"t":"text","x":120,"y":80,"f":18,"c":"x","w":0,"a":"c","sc":0,"txt":"{pct}%"}
 //   arc:  {"t":"arc","x":120,"y":120,"d":212,"w":20,"s":0,"e":360,"c":"t","b":"","p":1,"rd":0}
 //   bar:  {"t":"bar","x":120,"y":200,"w":120,"h":8,"c":"t","b":"#333333","rd":1}
@@ -57,6 +62,14 @@ typedef struct {
 typedef struct {
     lv_obj_t * cont;
     uint16_t secs;
+    bool on_event;          // not in the rotation; shown by triggers
+    uint8_t pct_every;      // 0 = off
+    uint8_t pct_at[8];
+    uint8_t pct_at_n;
+    uint8_t layer_every;    // 0 = off
+    bool on_start;
+    uint16_t left_min;      // condition: time left below N minutes (0 = off)
+    bool first_layer;       // condition: still on the first layer
     uint8_t n;
     layout_el_t el[LAYOUT_MAX_EL];
 } layout_page_t;
@@ -64,11 +77,24 @@ typedef struct {
 static layout_page_t pages[LAYOUT_MAX_PAGES];
 static uint8_t page_n = 0;
 static uint8_t page_cur = 0;
-static uint32_t page_next_ms = 0;
 static bool layout_visible = false;
 static volatile bool reload_pending = false;
 static uint32_t preview_until = 0;
+static uint32_t preview_start = 0;
 static uint32_t update_tick = 0;
+
+// page scheduling
+static int8_t rot_cur = -1;          // current rotation page
+static uint32_t rot_next_ms = 0;
+static int8_t event_page = -1;       // page shown because a trigger fired
+static uint32_t event_until = 0;
+// print tracking for triggers
+static bool was_printing = false;
+static int16_t last_pct = -1;
+static uint16_t last_layer = 0;
+static uint32_t layer_changes = 0;   // since the print started
+static int32_t stable_z = INT32_MIN, cand_z = INT32_MIN;
+static uint32_t cand_since = 0;
 
 /* ---------------- tokens ---------------- */
 
@@ -78,17 +104,19 @@ static void fmt_duration(char * out, size_t n, uint32_t s) {
     else snprintf(out, n, "%uh %02um", (unsigned)(s / 3600), (unsigned)((s % 3600) / 60));
 }
 
+// sample print for "preview on KNOMI": it moves (2 %/s, a layer every 1.5 s) so triggers can be seen
 static moonraker_data_t demo_data(void) {
     moonraker_data_t d = {};
+    uint32_t t = (millis() - preview_start) / 1000;
     d.printing = true;
-    d.progress = 42;
+    d.progress = (uint8_t)(40 + t * 2 > 100 ? 100 : 40 + t * 2);
     strlcpy(d.file_path, "benchy_0.2mm_PLA.gcode", sizeof(d.file_path));
-    d.print_time = 2520;
-    d.time_left = 3480;
+    d.print_time = 2520 + t;
+    d.time_left = 3480 - (int32_t)t * 90 > 0 ? 3480 - (int32_t)t * 90 : 0;
     d.nozzle_actual = 215; d.nozzle_target = 215;
     d.bed_actual = 60; d.bed_target = 60;
-    d.z_um = 8400;
-    d.layer = 42; d.layer_total = 240;
+    d.layer = 42 + (millis() - preview_start) / 1500; d.layer_total = 240;
+    d.z_um = d.layer * 200;
     return d;
 }
 
@@ -343,6 +371,17 @@ static bool build_from(const char * json, size_t len) {
         layout_page_t & pg = pages[page_n];
         pg.n = 0;
         pg.secs = constrain((int)(p["s"] | 10), 1, 3600);
+        pg.on_event = strcmp(p["m"] | "r", "e") == 0;
+        JsonObjectConst tr = p["tr"];
+        pg.pct_every = constrain((int)(tr["pe"] | 0), 0, 50);
+        pg.pct_at_n = 0;
+        for (JsonVariantConst v : tr["pa"].as<JsonArrayConst>()) {
+            if (pg.pct_at_n < sizeof(pg.pct_at)) pg.pct_at[pg.pct_at_n++] = constrain(v.as<int>(), 1, 100);
+        }
+        pg.layer_every = constrain((int)(tr["le"] | 0), 0, 250);
+        pg.on_start = tr["st"] | 0;
+        pg.left_min = constrain((int)(tr["lm"] | 0), 0, 1440);
+        pg.first_layer = tr["fl"] | 0;
         pg.cont = lv_obj_create(ui_ScreenPrinting);
         lv_obj_remove_style_all(pg.cont);
         lv_obj_set_size(pg.cont, 240, 240);
@@ -353,7 +392,9 @@ static bool build_from(const char * json, size_t len) {
         page_n++;
     }
     page_cur = 0;
-    page_next_ms = millis() + pages[0].secs * 1000UL;
+    rot_cur = -1;
+    rot_next_ms = 0;
+    event_page = -1;
     return true;
 }
 
@@ -413,7 +454,6 @@ static void sync_gif_timers(void) {
 static void show_page(uint8_t p) {
     page_cur = p < page_n ? p : 0;
     for (int i = 0; i < page_n; i++) set_hidden(pages[i].cont, !layout_visible || i != page_cur);
-    if (page_n) page_next_ms = millis() + pages[page_cur].secs * 1000UL;
     update_tick = millis();  // fill in the new page's values on the next update
     sync_gif_timers();
 }
@@ -423,8 +463,95 @@ void print_layout_set_visible(bool visible) {
     show_page(page_cur);
 }
 
+static int next_rotation_page(int from) {
+    for (int i = 1; i <= page_n; i++) {
+        int p = (from + i + page_n) % page_n;
+        if (!pages[p].on_event) return p;
+    }
+    return -1;
+}
+
+// tap: drop any event page and go to the next page in the rotation
 void print_layout_next_page(void) {
-    if (page_n > 1) show_page((page_cur + 1) % page_n);
+    event_page = -1;
+    int n = next_rotation_page(rot_cur < 0 ? page_n - 1 : rot_cur);
+    if (n >= 0) {
+        rot_cur = n;
+        rot_next_ms = millis() + pages[n].secs * 1000UL;
+        show_page(n);
+    }
+}
+
+static void fire(int p) {
+    event_page = p;
+    event_until = millis() + pages[p].secs * 1000UL;
+}
+
+// Layer changes: the printer's layer number when it has one (Moonraker, some OctoPrint
+// setups), otherwise a new higher Z that holds for 1.5 s (ignores z-hops).
+static bool layer_changed(const moonraker_data_t & d) {
+    if (d.layer_total > 0 && d.layer > 0) {
+        bool ch = last_layer && d.layer != last_layer;
+        last_layer = d.layer;
+        return ch;
+    }
+    if (d.z_um == INT32_MIN) return false;
+    if (d.z_um != cand_z) { cand_z = d.z_um; cand_since = millis(); return false; }
+    if (millis() - cand_since < 1500 || cand_z == stable_z) return false;
+    bool ch = stable_z != INT32_MIN && cand_z > stable_z;
+    stable_z = cand_z;
+    return ch;
+}
+
+static void track_print(const moonraker_data_t & d) {
+    if (!d.printing) { was_printing = false; return; }
+    if (!was_printing) {
+        was_printing = true;
+        last_pct = -1; last_layer = 0; layer_changes = 0;
+        stable_z = cand_z = INT32_MIN;
+        for (int p = 0; p < page_n; p++) if (pages[p].on_event && pages[p].on_start) fire(p);
+    }
+    int pct = d.progress;
+    if (last_pct >= 0 && pct > last_pct) {
+        for (int p = 0; p < page_n; p++) {
+            const layout_page_t & pg = pages[p];
+            if (!pg.on_event) continue;
+            if (pg.pct_every && pct / pg.pct_every > last_pct / pg.pct_every) fire(p);
+            for (int i = 0; i < pg.pct_at_n; i++)
+                if (last_pct < pg.pct_at[i] && pct >= pg.pct_at[i]) fire(p);
+        }
+    }
+    last_pct = pct;   // also resets if the percentage went down (new job)
+    if (layer_changed(d)) {
+        layer_changes++;
+        for (int p = 0; p < page_n; p++)
+            if (pages[p].on_event && pages[p].layer_every && layer_changes % pages[p].layer_every == 0) fire(p);
+    }
+}
+
+static bool condition_holds(const layout_page_t & pg, const moonraker_data_t & d) {
+    if (!d.printing) return false;
+    if (pg.left_min && d.time_left >= 0 && d.time_left < (int32_t)pg.left_min * 60) return true;
+    if (pg.first_layer) {
+        if (d.layer_total > 0 && d.layer > 0) return d.layer <= 1;
+        return layer_changes == 0 && d.print_time > 0;
+    }
+    return false;
+}
+
+// which page should be on screen now
+static int pick_page(const moonraker_data_t & d) {
+    for (int p = 0; p < page_n; p++)
+        if (pages[p].on_event && condition_holds(pages[p], d)) return p;
+    if (event_page >= 0 && (int32_t)(millis() - event_until) < 0) return event_page;
+    event_page = -1;
+    if (rot_cur < 0 || pages[rot_cur].on_event || (int32_t)(millis() - rot_next_ms) >= 0) {
+        int n = next_rotation_page(rot_cur < 0 ? page_n - 1 : rot_cur);
+        if (n < 0) return 0;   // only event pages: fall back to the first one
+        rot_next_ms = millis() + pages[n].secs * 1000UL;
+        rot_cur = n;
+    }
+    return rot_cur;
 }
 
 static void screen_tap_cb(lv_event_t * e) {
@@ -439,6 +566,7 @@ void print_layout_init(void) {
 void print_layout_request_reload(void) { reload_pending = true; }
 
 void print_layout_preview(uint16_t secs) {
+    preview_start = millis();
     preview_until = millis() + secs * 1000UL;
     if (!preview_until) preview_until = 1;
 }
@@ -455,11 +583,12 @@ void print_layout_update(void) {
     update_tick = millis() + 250;
 
     sync_gif_timers();  // a GIF reload/retint restarts timers
+    moonraker_data_t d = shown_data();
+    track_print(d);     // triggers count even while another screen is showing
     if (!layout_visible || lv_scr_act() != ui_ScreenPrinting || !page_n) return;
 
-    if (page_n > 1 && (int32_t)(millis() - page_next_ms) >= 0) print_layout_next_page();
-
-    moonraker_data_t d = shown_data();
+    int want = pick_page(d);
+    if (want != page_cur) show_page(want);
     layout_page_t & pg = pages[page_cur];
     char buf[160];
     for (int i = 0; i < pg.n; i++) {
