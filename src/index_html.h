@@ -131,7 +131,7 @@ async function discoverOcto(){
   <section class="mast">
     <span class="label">Settings</span>
     <h1>KNOMI<span class="dot">.</span></h1>
-    <p class="lede">Where the display gets its printer status, how the screen behaves, how it joins your network, and system controls.</p>
+    <p class="lede">Where the display gets its printer status, how the screen behaves, presets, how it joins your network, and system controls. Display, screen and preset changes apply right away, even mid-print.</p>
     <div class="strip">$backend_pill$ <span class="pill">$fw$</span> <span class="pill">$sta_ip$</span></div>
     <div id="update-note" class="card" style="display:none;margin:14px 0 0">
       <div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
@@ -230,7 +230,7 @@ async function discoverOcto(){
             <option value="1" $tint_1$>Idle faces only</option>
             <option value="2" $tint_2$>All built-in animations</option>
           </select>
-          <div class="hint">Uses the UI color picked on the KNOMI (Settings &rsaquo; UI color). Has no effect on the default red or on your uploaded GIFs.</div>
+          <div class="hint">Uses the UI color (next card). Has no effect on the default red or on your uploaded GIFs.</div>
         </div>
       </div>
     </div>
@@ -238,8 +238,89 @@ async function discoverOcto(){
     </form>
   </section>
 
+  <section class="card" id="screen">
+    <div class="card-h"><span class="idx">03</span><span class="k">Screen &amp; animations</span></div>
+    <form id="screen-form" action="/screen" method="POST">
+    <div class="card-b">
+      <div class="cols">
+        <div class="row">
+          <label class="field-label" for="theme">UI color</label>
+          <div class="color-row">
+            <input type="color" id="theme" name="theme" value="$theme$">
+            <button type="submit" class="btn-ghost" name="theme_default" value="1">Default red</button>
+          </div>
+          <div class="hint">Buttons, rings and (if turned on above) the animations.</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="touch_idle">Back to the idle face after (seconds)</label>
+          <input type="number" class="mono" id="touch_idle" name="touch_idle" min="0" max="3600" value="$touch_idle$">
+          <div class="hint">When you leave a menu open. 0 = stay on the menu.</div>
+        </div>
+        <div class="row">
+          <span class="field-label">Idle faces</span>
+          <div class="checks">
+            <label><input type="checkbox" name="idle_m1" value="1" $idle_c1$>Idle 1</label>
+            <label><input type="checkbox" name="idle_m2" value="1" $idle_c2$>Idle 2</label>
+            <label><input type="checkbox" name="idle_m3" value="1" $idle_c3$>Idle 3</label>
+            <label><input type="checkbox" name="idle_m4" value="1" $idle_c4$>Idle 4</label>
+          </div>
+          <div class="hint">Which faces play while the printer is idle. <a href="/gifs">Preview or replace them</a>.</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="idle_rot">Switch idle face every (seconds)</label>
+          <input type="number" class="mono" id="idle_rot" name="idle_rot" min="0" max="3600" value="$idle_rot$">
+          <div class="hint">0 = keep showing the first ticked face.</div>
+        </div>
+        <div class="row" style="grid-column:1/-1">
+          <span class="field-label">Heating screens</span>
+          <div class="checks">
+            <label><input type="checkbox" name="hs_n" value="1" $hs_n$>Nozzle heating</label>
+            <label><input type="checkbox" name="hs_b" value="1" $hs_b$>Bed heating</label>
+          </div>
+          <div class="hint">Unticked: while a print heats up, the KNOMI goes straight to the printing screen.</div>
+        </div>
+      </div>
+      <div class="sub">How long each animation plays (seconds, 0 = skip)</div>
+      <div class="cols">
+        <div class="row">
+          <label class="field-label" for="heated_s">Heated, print starting</label>
+          <input type="number" class="mono" id="heated_s" name="heated_s" min="0" max="600" value="$heated_s$">
+        </div>
+        <div class="row">
+          <label class="field-label" for="print_ok_s">Print finished</label>
+          <input type="number" class="mono" id="print_ok_s" name="print_ok_s" min="0" max="600" value="$print_ok_s$">
+        </div>
+        <div class="row">
+          <label class="field-label" for="printed_s">After print finished</label>
+          <input type="number" class="mono" id="printed_s" name="printed_s" min="0" max="3600" value="$printed_s$">
+        </div>
+      </div>
+    </div>
+    <div class="card-f"><button type="submit" class="btn-primary">Save screen</button></div>
+    </form>
+  </section>
+
+  <section class="card" id="presets">
+    <div class="card-h"><span class="idx">04</span><span class="k">Presets</span></div>
+    <form id="presets-form" action="/presets" method="POST">
+    <div class="card-b">
+      <div class="sub">Preheat (Temperature &rsaquo; Preheat on the KNOMI, after Cool down)</div>
+      <div class="preset-h"><span>Name</span><span>Nozzle &deg;C</span><span>Bed &deg;C</span></div>
+      $preset_rows$
+      <div class="sub" style="margin-top:18px">Extrude choices (Extruder screen)</div>
+      <div class="preset-h ex"><span>Length mm</span><span>Speed mm/s</span><span>Default</span><span></span></div>
+      $extrude_rows$
+      <div class="hint">The default length and speed are selected when the KNOMI starts.</div>
+    </div>
+    <div class="card-f" style="display:flex;gap:10px;flex-wrap:wrap">
+      <button type="submit" class="btn-primary">Save presets</button>
+      <button type="submit" class="btn-ghost" name="reset" value="1" formnovalidate onclick="return confirm('Put the stock presets back?')">Stock presets</button>
+    </div>
+    </form>
+  </section>
+
   <section class="card" id="bluetooth">
-    <div class="card-h"><span class="idx">03</span><span class="k">Bluetooth</span><span class="sp"></span>$bt_state$</div>
+    <div class="card-h"><span class="idx">05</span><span class="k">Bluetooth</span><span class="sp"></span>$bt_state$</div>
     <form action="/bluetooth" method="POST">
     <div class="card-b">
       <div class="cols">
@@ -279,7 +360,7 @@ async function discoverOcto(){
   </section>
 
   <section class="card">
-    <div class="card-h"><span class="idx">04</span><span class="k">WiFi networks</span><span class="sp"></span>
+    <div class="card-h"><span class="idx">06</span><span class="k">WiFi networks</span><span class="sp"></span>
       <form name="refresh" action="/" method="POST" style="margin:0"><button type="submit" class="btn-ghost" name="refresh" value="1">Rescan</button></form>
     </div>
     <div class="card-b">
@@ -293,7 +374,7 @@ async function discoverOcto(){
   </section>
 
   <section class="card">
-    <div class="card-h"><span class="idx">05</span><span class="k">KNOMI network</span></div>
+    <div class="card-h"><span class="idx">07</span><span class="k">KNOMI network</span></div>
     <div class="card-b">
       <form id="knomi-form" name="knomi-form" action="/" method="POST">
         <div class="cols">
@@ -324,7 +405,7 @@ async function discoverOcto(){
   </section>
 
   <section class="card">
-    <div class="card-h"><span class="idx">06</span><span class="k">System</span></div>
+    <div class="card-h"><span class="idx">08</span><span class="k">System</span></div>
     <div class="card-f" style="border-top:0">
       <a class="btn-ghost" href="/gifs">Custom animations</a>
       <a class="btn-ghost" href="/update">Update firmware</a>

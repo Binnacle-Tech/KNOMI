@@ -8,8 +8,8 @@
 typedef enum {
     GIF_SLOT_IDLE1 = 0,
     GIF_SLOT_IDLE2,
-    GIF_SLOT_IDLE3,      // optional extra idle, no built-in
-    GIF_SLOT_IDLE4,      // optional extra idle, no built-in
+    GIF_SLOT_IDLE3,
+    GIF_SLOT_IDLE4,
     GIF_SLOT_WELCOME,
     GIF_SLOT_HOMING,
     GIF_SLOT_PROBING,
@@ -48,9 +48,11 @@ const lv_img_dsc_t * knomi_gif(knomi_gif_slot_t slot);
 // lv_gif_set_src() wrapper that remembers which slot each object shows (for live reload)
 void knomi_gif_show(lv_obj_t * obj, knomi_gif_slot_t slot);
 
-// Idle rotation: the n-th non-empty idle slot, and how many there are
+// Idle rotation: the n-th enabled idle slot (has a GIF, ticked on the web page), and how many there are
 uint8_t knomi_gif_idle_count(void);
 knomi_gif_slot_t knomi_gif_idle_slot(uint8_t n);
+bool knomi_gif_idle_enabled(int slot);
+int knomi_gif_shown_slot(lv_obj_t * obj); // slot last shown on obj, -1 if none
 
 // Recolor built-in GIFs to the UI color (GIF_TINT_* from knomi.h). LVGL task only.
 // Call after the theme color or the tint setting changes.

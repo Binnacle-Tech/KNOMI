@@ -35,6 +35,8 @@ void lv_print_info_apply(void);
 void lv_print_info_update(void);
 // lv_button_style.cpp
 void lv_btn_add_style(void);
+void lv_roller_preheat_rebuild(void);
+void lv_extrude_rollers_rebuild(bool use_defaults);
 // lv_theme_color.cpp
 lv_color_t lv_theme_color(void);
 void lv_theme_update_color(lv_color_t c);

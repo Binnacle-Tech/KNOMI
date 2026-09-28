@@ -25,11 +25,36 @@ static void backlight_released_cb(lv_event_t * e) {
 
 // Web page changed display settings (set from the web server task)
 volatile bool knomi_display_settings_dirty = false;
+static void extrude_roller_fill(lv_obj_t *roller, const uint16_t *v, const char *unit, uint16_t sel) {
+    String opts;
+    for (int i = 0; i < EXTRUDE_NUM; i++) {
+        if (i) opts += "\n";
+        opts += String(v[i]) + unit;
+    }
+    lv_roller_set_options(roller, opts.c_str(), LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_selected(roller, sel, LV_ANIM_OFF);
+}
+
+// boot: select the saved defaults; later rebuilds keep what's selected on the KNOMI
+void lv_extrude_rollers_rebuild(bool use_defaults) {
+    uint16_t len_sel = use_defaults ? knomi_config.extrude_mm_def : lv_roller_get_selected(ui_roller_set_extrude_length);
+    uint16_t spd_sel = use_defaults ? knomi_config.extrude_mms_def : lv_roller_get_selected(ui_roller_set_extrude_speed);
+    extrude_roller_fill(ui_roller_set_extrude_length, knomi_config.extrude_mm, "mm", len_sel);
+    extrude_roller_fill(ui_roller_set_extrude_speed, knomi_config.extrude_mms, "mm/s", spd_sel);
+    lv_btn_set_extrude(NULL);  // labels on the extruder screen
+}
+
 static void apply_display_settings(void) {
     lv_slider_set_value(ui_slider_backlight, knomi_config.backlight, LV_ANIM_OFF);
     knomi_power_wake();
     lv_print_info_apply();
+    // UI color (may have been changed on the web page)
+    lv_btn_add_style();
+    lv_theme_color_style();
+    lv_setup_screens_theme();
     knomi_gif_apply_tint();
+    lv_extrude_rollers_rebuild(false);
+    lv_roller_preheat_rebuild();
 }
 
 // extruder speed
@@ -115,25 +140,9 @@ void lvgl_ui_task(void * parameter) {
     lv_qrcode_update(qr, data, strlen(data));
     lv_obj_center(qr);
 
-    // Initialize extruder speed/length roller options
-    const char *extrude_len = {
-        EXTRUDE_MM_0_LABEL "\n"\
-        EXTRUDE_MM_1_LABEL "\n"\
-        EXTRUDE_MM_2_LABEL "\n"\
-        EXTRUDE_MM_3_LABEL "\n"\
-        EXTRUDE_MM_4_LABEL
-    };
-    lv_roller_set_options(ui_roller_set_extrude_length, extrude_len, LV_ROLLER_MODE_NORMAL);
-    lv_roller_set_selected(ui_roller_set_extrude_length, 1, LV_ANIM_ON); // 5mm
-    const char *EXTRUDE_MM_S = {
-        EXTRUDE_MM_S_0_LABEL "\n"\
-        EXTRUDE_MM_S_1_LABEL "\n"\
-        EXTRUDE_MM_S_2_LABEL "\n"\
-        EXTRUDE_MM_S_3_LABEL "\n"\
-        EXTRUDE_MM_S_4_LABEL
-    };
-    lv_roller_set_options(ui_roller_set_extrude_speed, EXTRUDE_MM_S, LV_ROLLER_MODE_NORMAL);
-    lv_roller_set_selected(ui_roller_set_extrude_speed, 2, LV_ANIM_ON); // 10mm/s
+    // Extruder length/speed rollers and preheat presets (editable on the web page)
+    lv_extrude_rollers_rebuild(true);
+    lv_roller_preheat_rebuild();
     // Initialize extruder speed/length values from roller settings
     lv_btn_set_extrude(NULL);
 

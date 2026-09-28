@@ -18,7 +18,7 @@
 /* ---------------- settings <-> JSON ---------------- */
 
 String backup_config_json(void) {
-    StaticJsonDocument<1536> d;
+    DynamicJsonDocument d(4096);
     const knomi_config_t &c = knomi_config;
     d["v"] = 1;
     d["fw"] = FW_VERSION;
@@ -44,6 +44,28 @@ String backup_config_json(void) {
     d["bt_enabled"] = c.bt_enabled;
     d["bt_wifi_off"] = c.bt_wifi_off;
     d["bt_fallback_s"] = c.bt_fallback_s;
+    d["idle_rotate_s"] = c.idle_rotate_s;
+    d["idle_mask"] = c.idle_mask;
+    d["heat_screens"] = c.heat_screens;
+    d["touch_idle_s"] = c.touch_idle_s;
+    d["heated_s"] = c.heated_s;
+    d["print_ok_s"] = c.print_ok_s;
+    d["printed_s"] = c.printed_s;
+    JsonArray pre = d.createNestedArray("preheat");
+    for (int i = 0; i < PREHEAT_NUM; i++) {
+        JsonArray e = pre.createNestedArray();
+        e.add(c.preheat[i].label);
+        e.add(c.preheat[i].nozzle);
+        e.add(c.preheat[i].bed);
+    }
+    JsonArray em = d.createNestedArray("extrude_mm");
+    JsonArray es = d.createNestedArray("extrude_mms");
+    for (int i = 0; i < EXTRUDE_NUM; i++) {
+        em.add(c.extrude_mm[i]);
+        es.add(c.extrude_mms[i]);
+    }
+    d["extrude_mm_def"] = c.extrude_mm_def;
+    d["extrude_mms_def"] = c.extrude_mms_def;
     String out;
     serializeJson(d, out);
     return out;
@@ -56,7 +78,7 @@ static void copy_str(JsonVariantConst v, char *dst, size_t n) {
 // Missing keys keep their current value. Ranges are re-checked on the next boot
 // (knomi_config_sanitize_*), and a restore always restarts the KNOMI.
 bool backup_apply_config_json(const char *json, size_t len) {
-    StaticJsonDocument<1536> d;
+    DynamicJsonDocument d(6144);
     if (deserializeJson(d, json, len) != DeserializationError::Ok) return false;
     if ((d["v"] | 0) != 1) return false;
     knomi_config_t &c = knomi_config;
@@ -82,6 +104,27 @@ bool backup_apply_config_json(const char *json, size_t len) {
     c.bt_enabled = d["bt_enabled"] | c.bt_enabled;
     c.bt_wifi_off = d["bt_wifi_off"] | c.bt_wifi_off;
     c.bt_fallback_s = d["bt_fallback_s"] | c.bt_fallback_s;
+    c.idle_rotate_s = d["idle_rotate_s"] | c.idle_rotate_s;
+    c.idle_mask = d["idle_mask"] | c.idle_mask;
+    c.heat_screens = d["heat_screens"] | c.heat_screens;
+    c.touch_idle_s = d["touch_idle_s"] | c.touch_idle_s;
+    c.heated_s = d["heated_s"] | c.heated_s;
+    c.print_ok_s = d["print_ok_s"] | c.print_ok_s;
+    c.printed_s = d["printed_s"] | c.printed_s;
+    JsonArrayConst pre = d["preheat"];
+    for (int i = 0; i < PREHEAT_NUM && i < (int)pre.size(); i++) {
+        copy_str(pre[i][0], c.preheat[i].label, sizeof(c.preheat[i].label));
+        c.preheat[i].nozzle = pre[i][1] | c.preheat[i].nozzle;
+        c.preheat[i].bed = pre[i][2] | c.preheat[i].bed;
+    }
+    JsonArrayConst em = d["extrude_mm"], es = d["extrude_mms"];
+    for (int i = 0; i < EXTRUDE_NUM; i++) {
+        c.extrude_mm[i] = em[i] | c.extrude_mm[i];
+        c.extrude_mms[i] = es[i] | c.extrude_mms[i];
+    }
+    c.extrude_mm_def = d["extrude_mm_def"] | c.extrude_mm_def;
+    c.extrude_mms_def = d["extrude_mms_def"] | c.extrude_mms_def;
+    knomi_config_sanitize_screen();
     if (strcmp(c.mode, "ap") && strcmp(c.mode, "sta") && strcmp(c.mode, "apsta")) strlcpy(c.mode, "ap", sizeof(c.mode));
     return true;
 }

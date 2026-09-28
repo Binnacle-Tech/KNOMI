@@ -130,6 +130,49 @@ String knomi_html_processor(const String& var){
         else if (knomi_ble_link_active()) value = "<span class=\"pill ok\">connected</span>";
         else if (knomi_ble_connected()) value = "<span class=\"pill now\">paired, waiting for data</span>";
         else value = "<span class=\"pill held\">advertising</span>";
+    } else if (var == "theme") {
+        lv_color32_t c;
+        c.full = lv_color_to32(knomi_config.theme_color);
+        char hex[8];
+        snprintf(hex, sizeof(hex), "#%02x%02x%02x", c.ch.red, c.ch.green, c.ch.blue);
+        value = hex;
+    } else if (var == "idle_rot") {
+        value = String(knomi_config.idle_rotate_s);
+    } else if (var.startsWith("idle_c")) {
+        value = (knomi_config.idle_mask & (1 << (var[6] - '1'))) ? "checked" : "";
+    } else if (var == "hs_n" || var == "hs_b") {
+        value = (knomi_config.heat_screens & (var == "hs_n" ? 1 : 2)) ? "checked" : "";
+    } else if (var == "touch_idle") {
+        value = String(knomi_config.touch_idle_s);
+    } else if (var == "heated_s") {
+        value = String(knomi_config.heated_s);
+    } else if (var == "print_ok_s") {
+        value = String(knomi_config.print_ok_s);
+    } else if (var == "printed_s") {
+        value = String(knomi_config.printed_s);
+    } else if (var == "preset_rows") {
+        for (int i = 0; i < PREHEAT_NUM; i++) {
+            const knomi_preheat_t &pr = knomi_config.preheat[i];
+            String n(i);
+            value += "<div class=\"preset\"><input type=\"text\" name=\"pl" + n + "\" maxlength=\"9\" " +
+                     value_attr(pr.label) + " aria-label=\"Preset " + String(i + 1) + " name\">"
+                     "<input type=\"number\" class=\"mono\" name=\"pn" + n + "\" min=\"0\" max=\"500\" value=\"" +
+                     String(pr.nozzle) + "\" aria-label=\"Nozzle\">"
+                     "<input type=\"number\" class=\"mono\" name=\"pb" + n + "\" min=\"0\" max=\"200\" value=\"" +
+                     String(pr.bed) + "\" aria-label=\"Bed\"></div>";
+        }
+    } else if (var == "extrude_rows") {
+        for (int i = 0; i < EXTRUDE_NUM; i++) {
+            String n(i);
+            value += "<div class=\"preset ex\"><input type=\"number\" class=\"mono\" name=\"em" + n +
+                     "\" min=\"1\" max=\"1000\" value=\"" + String(knomi_config.extrude_mm[i]) +
+                     "\" aria-label=\"Length\"><input type=\"number\" class=\"mono\" name=\"es" + n +
+                     "\" min=\"1\" max=\"300\" value=\"" + String(knomi_config.extrude_mms[i]) +
+                     "\" aria-label=\"Speed\"><label class=\"def\"><input type=\"radio\" name=\"em_def\" value=\"" + n + "\"" +
+                     (knomi_config.extrude_mm_def == i ? " checked" : "") + ">len</label>"
+                     "<label class=\"def\"><input type=\"radio\" name=\"es_def\" value=\"" + n + "\"" +
+                     (knomi_config.extrude_mms_def == i ? " checked" : "") + ">speed</label></div>";
+        }
     } else if (var == "repo") {
         value = UPDATE_REPO;
     } else if (var == "board") {
@@ -442,6 +485,71 @@ static void display_routes(void) {
     });
 }
 
+static uint8_t hex_nibble(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    c |= 0x20;
+    return (c >= 'a' && c <= 'f') ? c - 'a' + 10 : 0;
+}
+
+static void screen_routes(void) {
+    server.on("/screen", HTTP_POST, [](AsyncWebServerRequest *request){
+        knomi_config_t &c = knomi_config;
+        if (request->hasParam("theme_default", true)) {
+            c.theme_color = lv_color_hex(LV_DEFAULT_COLOR);
+        } else if (request->hasParam("theme", true)) {
+            String h = request->getParam("theme", true)->value();
+            if (h.length() == 7 && h[0] == '#') {
+                uint32_t rgb = 0;
+                for (int i = 1; i < 7; i++) rgb = (rgb << 4) | hex_nibble(h[i]);
+                c.theme_color = lv_color_hex(rgb);
+            }
+        }
+        c.idle_rotate_s = int_param(request, "idle_rot", 0, 3600, c.idle_rotate_s);
+        uint8_t mask = 0;
+        for (int i = 0; i < 4; i++) {
+            if (request->hasParam(String("idle_m") + (i + 1), true)) mask |= 1 << i;
+        }
+        c.idle_mask = mask ? mask : 0x01;
+        c.heat_screens = (request->hasParam("hs_n", true) ? 1 : 0) | (request->hasParam("hs_b", true) ? 2 : 0);
+        c.touch_idle_s = int_param(request, "touch_idle", 0, 3600, c.touch_idle_s);
+        c.heated_s = int_param(request, "heated_s", 0, 600, c.heated_s);
+        c.print_ok_s = int_param(request, "print_ok_s", 0, 600, c.print_ok_s);
+        c.printed_s = int_param(request, "printed_s", 0, 3600, c.printed_s);
+        knomi_config_sanitize_screen();
+        knomi_config_require_change(LOCAL_POST_SETTINGS);
+        knomi_display_settings_dirty = true;
+        request->redirect("/#screen");
+    });
+    server.on("/presets", HTTP_POST, [](AsyncWebServerRequest *request){
+        knomi_config_t &c = knomi_config;
+        if (request->hasParam("reset", true)) {
+            knomi_config_default_presets();
+        } else {
+            for (int i = 0; i < PREHEAT_NUM; i++) {
+                String n(i);
+                if (request->hasParam("pl" + n, true)) {
+                    String l = request->getParam("pl" + n, true)->value();
+                    l.trim();
+                    strlcpy(c.preheat[i].label, l.c_str(), sizeof(c.preheat[i].label));
+                }
+                c.preheat[i].nozzle = int_param(request, ("pn" + n).c_str(), 0, 500, c.preheat[i].nozzle);
+                c.preheat[i].bed = int_param(request, ("pb" + n).c_str(), 0, 200, c.preheat[i].bed);
+            }
+            for (int i = 0; i < EXTRUDE_NUM; i++) {
+                String n(i);
+                c.extrude_mm[i] = int_param(request, ("em" + n).c_str(), 1, 1000, c.extrude_mm[i]);
+                c.extrude_mms[i] = int_param(request, ("es" + n).c_str(), 1, 300, c.extrude_mms[i]);
+            }
+            c.extrude_mm_def = int_param(request, "em_def", 0, EXTRUDE_NUM - 1, c.extrude_mm_def);
+            c.extrude_mms_def = int_param(request, "es_def", 0, EXTRUDE_NUM - 1, c.extrude_mms_def);
+        }
+        knomi_config_sanitize_screen();
+        knomi_config_require_change(LOCAL_POST_SETTINGS);
+        knomi_display_settings_dirty = true;
+        request->redirect("/#presets");
+    });
+}
+
 static void gif_routes(void) {
     server.on("/binnacle.css", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", binnacle_css);
@@ -499,6 +607,7 @@ void webserver_setup(void) {
 
     gif_routes();
     display_routes();
+    screen_routes();
     bluetooth_routes();
     backup_routes(server);
 

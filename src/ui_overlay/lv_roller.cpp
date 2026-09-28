@@ -28,6 +28,7 @@ typedef struct {
 
 char gcode_options[1024];
 char service_options[1024];
+static char preheat_options[(PREHEAT_NUM + 1) * 32];
 static lv_roller_menu_t roller_menu[UI_ROLLER_MENU_NUM] = {
     {
         .options = "UI color\nBacklight\nKlipper Control\nService Control\nHost Control\nKnomi Info\nFactory Reset",
@@ -72,13 +73,7 @@ static lv_roller_menu_t roller_menu[UI_ROLLER_MENU_NUM] = {
         .previous_type = UI_ROLLER_SETTING,
     },
     {
-        .options = PREHEAT_0_LABEL "\n"\
-                   PREHEAT_1_LABEL "\n"\
-                   PREHEAT_2_LABEL "\n"\
-                   PREHEAT_3_LABEL "\n"\
-                   PREHEAT_4_LABEL "\n"\
-                   PREHEAT_5_LABEL "\n"\
-                   PREHEAT_6_LABEL,
+        .options = preheat_options, // built from knomi_config.preheat
         .sel_opt = 0,
         .this_type = UI_ROLLER_PREHEAT,
         .previous_menu = &ui_ScreenTemp,
@@ -180,21 +175,29 @@ void lv_colorwheel_btn_ok(lv_event_t * e) {
     _ui_screen_change(&ui_ScreenRoller, LV_SCR_LOAD_ANIM_FADE_ON, 500, 0, NULL);
 }
 
+// Roller text: "Cool down" then "PLA: 200/60℃" per preset
+void lv_roller_preheat_rebuild(void) {
+    String opts = "Cool down";
+    for (int i = 0; i < PREHEAT_NUM; i++) {
+        const knomi_preheat_t &p = knomi_config.preheat[i];
+        opts += "\n";
+        opts += p.label[0] ? p.label : "Preset";
+        opts += ": " + String(p.nozzle) + "/" + String(p.bed) + "℃";
+    }
+    strlcpy(preheat_options, opts.c_str(), sizeof(preheat_options));
+    if (cur_menu == &roller_menu[UI_ROLLER_PREHEAT]) {
+        lv_roller_set_options(ui_roller, preheat_options, LV_ROLLER_MODE_NORMAL);
+    }
+}
+
 void lv_roller_preheat_clicked(lv_event_t * e, uint16_t opt_id) {
-    const String nozzle[] = {
-        STRINGIFY(PREHEAT_0_NOZZLE), STRINGIFY(PREHEAT_1_NOZZLE),
-        STRINGIFY(PREHEAT_2_NOZZLE), STRINGIFY(PREHEAT_3_NOZZLE),
-        STRINGIFY(PREHEAT_4_NOZZLE), STRINGIFY(PREHEAT_5_NOZZLE),
-        STRINGIFY(PREHEAT_6_NOZZLE),
-    };
-    const String bed[] = {
-        STRINGIFY(PREHEAT_0_BED), STRINGIFY(PREHEAT_1_BED),
-        STRINGIFY(PREHEAT_2_BED), STRINGIFY(PREHEAT_3_BED),
-        STRINGIFY(PREHEAT_4_BED), STRINGIFY(PREHEAT_5_BED),
-        STRINGIFY(PREHEAT_6_BED),
-    };
-    moonraker.post_gcode_to_queue("M104 S" + nozzle[opt_id]);
-    moonraker.post_gcode_to_queue("M140 S" + bed[opt_id]);
+    uint16_t nozzle = 0, bed = 0;
+    if (opt_id >= 1 && opt_id <= PREHEAT_NUM) {
+        nozzle = knomi_config.preheat[opt_id - 1].nozzle;
+        bed = knomi_config.preheat[opt_id - 1].bed;
+    }
+    moonraker.post_gcode_to_queue("M104 S" + String(nozzle));
+    moonraker.post_gcode_to_queue("M140 S" + String(bed));
 
     lv_roller_back_to_previous_menu(e);
 }

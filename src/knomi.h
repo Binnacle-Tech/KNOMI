@@ -8,6 +8,14 @@
 
 typedef void (*p_function_t)(void);
 
+#define PREHEAT_NUM 6   // user presets; "Cool down" is always first on the KNOMI
+#define EXTRUDE_NUM 5
+typedef struct {
+    char label[10];
+    uint16_t nozzle;
+    uint16_t bed;
+} knomi_preheat_t;
+
 typedef struct {
     char sta_ssid[33];
     char sta_pwd[65];
@@ -35,6 +43,19 @@ typedef struct {
     uint8_t bt_enabled;       // 1 = advertise + talk to the OctoPrint plugin over BLE
     uint8_t bt_wifi_off;      // 1 = WiFi off while the BLE link is up
     uint16_t bt_fallback_s;   // WiFi comes back if BLE isn't connected within this long
+    // --- appended for screen behaviour and presets (layout V5) ---
+    uint16_t idle_rotate_s;   // switch idle face every N s, 0 = keep the first one
+    uint8_t idle_mask;        // bit per idle slot (idle1 = bit0) that takes part
+    uint8_t heat_screens;     // bit0 nozzle heating screen, bit1 bed heating screen
+    uint16_t touch_idle_s;    // back to the idle face after N s without touch, 0 = never
+    uint16_t heated_s;        // "heated, print starting" animation, 0 = skip
+    uint16_t print_ok_s;      // "print finished" animation, 0 = skip
+    uint16_t printed_s;       // "after print finished" animation, 0 = skip
+    knomi_preheat_t preheat[PREHEAT_NUM];
+    uint16_t extrude_mm[EXTRUDE_NUM];   // extrude length choices, mm
+    uint16_t extrude_mms[EXTRUDE_NUM];  // extrude speed choices, mm/s
+    uint8_t extrude_mm_def;   // index selected at boot
+    uint8_t extrude_mms_def;
 } knomi_config_t;
 
 #define PRINT_VIEW_INFO  0   // time left, temps, file, Z/layer
@@ -94,6 +115,9 @@ typedef enum {
 
 wifi_status_t wifi_get_connect_status(void);
 bool knomi_wifi_suspended(void); // WiFi turned off because Bluetooth is carrying the link
+void knomi_config_default_screen(void);
+void knomi_config_default_presets(void);
+void knomi_config_sanitize_screen(void);
 
 extern int32_t lis2dw12_acc[3];
 

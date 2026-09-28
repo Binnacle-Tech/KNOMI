@@ -65,6 +65,16 @@ Limits: 1.5MB per GIF and 5MB loaded in total. The screen is 240x240 and round.
 - **Animations follow the UI color:** recolors the built-in animations to the UI color picked on the KNOMI.
   *Idle faces only* or *All built-in*. The green "print finished" check stays green. Uploaded GIFs are never recolored.
 
+
+## Screen, animations and presets (settings page, sections 03 and 04)
+Everything the touchscreen menus set, plus a few things they can't. Changes apply right away, even mid-print.
+- **UI color** (same as Settings › UI color on the KNOMI).
+- **Idle faces:** which of the four play, and how often they switch (0 = keep one).
+- **Back to the idle face after:** seconds of no touch before a menu closes (0 = never).
+- **Heating screens:** turn the nozzle/bed heating screens off to go straight to the printing screen.
+- **Animation lengths:** heated, print finished, after print finished (0 = skip).
+- **Preheat presets:** names and nozzle/bed temperatures for Temperature › Preheat.
+- **Extrude choices:** the five lengths and speeds on the extruder screen, and which are selected at boot.
 ## Paused animation
 While a print is paused, the printing screen plays the **Paused** animation (its own slot on /gifs).
 Swipe down to resume, swipe up to cancel, same as before. The plugin treats these as paused:

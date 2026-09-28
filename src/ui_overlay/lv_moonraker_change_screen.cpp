@@ -56,7 +56,7 @@ static void lv_goto_idle_screen(void) {
     lv_screen_state = LV_MOONRAKER_STATE_IDLE;
 
     //
-    knomi_gif_show(ui_img_main_gif, GIF_SLOT_IDLE1);
+    knomi_gif_show(ui_img_main_gif, knomi_gif_idle_slot(0));
     lv_obj_add_flag(ui_ScreenMainGif, LV_OBJ_FLAG_CLICKABLE);
 
     // goto the screen backed up before
@@ -134,16 +134,24 @@ void lv_loop_moonraker_change_screen(void) {
         lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PAUSED, GIF_NONE);
         return;
     }
-    if (moonraker_nozzle_is_heating()) {
+    bool nozzle_heating = moonraker_nozzle_is_heating();
+    bool bed_heating = moonraker_bed_is_heating();
+    if (nozzle_heating && (knomi_config.heat_screens & 0x01)) {
         lv_goto_busy_screen(ui_ScreenHeatingNozzle, LV_MOONRAKER_STATE_NOZZLE_HEATING, GIF_NONE);
         if (moonraker.data.printing)
             screen_state = LV_SCREEN_HEATED;
         return;
     }
-    if (moonraker_bed_is_heating()) {
+    if (bed_heating && (knomi_config.heat_screens & 0x02)) {
         lv_goto_busy_screen(ui_ScreenHeatingBed, LV_MOONRAKER_STATE_BED_HEATING, GIF_NONE);
         if (moonraker.data.printing)
             screen_state = LV_SCREEN_HEATED;
+        return;
+    }
+    if ((nozzle_heating || bed_heating) && moonraker.data.printing) {
+        // heating screens turned off on the web page: show the print screen while it heats
+        screen_state = LV_SCREEN_HEATED;
+        lv_goto_busy_screen(ui_ScreenPrinting, LV_MOONRAKER_STATE_PRINTING, GIF_NONE);
         return;
     }
 
@@ -172,7 +180,7 @@ void lv_loop_moonraker_change_screen(void) {
             playing_img = GIF_SLOT_HEATED;
             screen_state = LV_SCREEN_STATE_PLAYING;
             playing_next_state = LV_SCREEN_PRINT;
-            playing_ms = millis() + 7000;
+            playing_ms = millis() + knomi_config.heated_s * 1000UL;
             return;
         case LV_SCREEN_PRINT:
             lv_goto_busy_screen(ui_ScreenMainGif, LV_SCREEN_PRINT, GIF_SLOT_PRINT);
@@ -191,14 +199,14 @@ void lv_loop_moonraker_change_screen(void) {
             playing_img = GIF_SLOT_PRINT_OK;
             screen_state = LV_SCREEN_STATE_PLAYING;
             playing_next_state = LV_SCREEN_PRINTED;
-            playing_ms = millis() + 1600;
+            playing_ms = millis() + knomi_config.print_ok_s * 1000UL;
             return;
         case LV_SCREEN_PRINTED:
             playing_state = LV_SCREEN_PRINTED;
             playing_img = GIF_SLOT_PRINTED;
             screen_state = LV_SCREEN_STATE_PLAYING;
             playing_next_state = LV_SCREEN_STATE_INIT;
-            playing_ms = millis() + 7000;
+            playing_ms = millis() + knomi_config.printed_s * 1000UL;
             return;
     }
 
@@ -214,14 +222,18 @@ void lv_loop_moonraker_change_screen(void) {
     if (lv_scr_act() == ui_ScreenMainGif) {
         static uint8_t gif_idle_index = 0;
         static uint32_t gif_idle_ms = 0;
-
-        if (gif_idle_ms < millis()) {
+        // switch now if the face on screen isn't an enabled idle one (after a
+        // busy animation, or it was unticked on the web page), else every idle_rotate_s
+        bool showing_idle = knomi_gif_idle_enabled(knomi_gif_shown_slot(ui_img_main_gif));
+        bool rotate_due = knomi_config.idle_rotate_s && (int32_t)(millis() - gif_idle_ms) >= 0;
+        if (!showing_idle || rotate_due) {
             uint8_t idle_n = knomi_gif_idle_count();
             if (idle_n == 0) idle_n = 1;
+            if (!knomi_config.idle_rotate_s) gif_idle_index = 0;
             gif_idle_index %= idle_n;
             knomi_gif_show(ui_img_main_gif, knomi_gif_idle_slot(gif_idle_index));
             gif_idle_index = (gif_idle_index + 1) % idle_n;
-            gif_idle_ms = millis() + 7000; // 7s
+            gif_idle_ms = millis() + knomi_config.idle_rotate_s * 1000UL;
         }
     }
 }

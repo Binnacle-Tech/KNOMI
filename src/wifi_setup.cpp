@@ -71,7 +71,8 @@ wifi_auth_mode_t wifi_get_ahth_mode_from_scanned_list(void) {
 #define EEPROM_SIGN_V1 0x20231212 // original BTT layout (no backend/api_key)
 #define EEPROM_SIGN_V2 0x20260927 // + backend, api_key
 #define EEPROM_SIGN_V3 0x20260928 // + display settings
-#define EEPROM_SIGN    0x20260929 // + bluetooth
+#define EEPROM_SIGN_V4 0x20260929 // + bluetooth
+#define EEPROM_SIGN    0x20260930 // + screen behaviour, presets
 #define EEPROM_SIGN_SIZE 4
 static_assert(sizeof(knomi_config_t) + EEPROM_SIGN_SIZE <= 1024, "knomi_config_t no longer fits the 1KB EEPROM area");
 
@@ -93,6 +94,61 @@ static void knomi_config_default_bt(void) {
     knomi_config.bt_enabled = 0;
     knomi_config.bt_wifi_off = 0;
     knomi_config.bt_fallback_s = 60;
+}
+
+void knomi_config_default_screen(void) {
+    knomi_config.idle_rotate_s = 7;
+    knomi_config.idle_mask = 0x0F;
+    knomi_config.heat_screens = 0x03;
+    knomi_config.touch_idle_s = 60;
+    knomi_config.heated_s = 7;
+    knomi_config.print_ok_s = 2;
+    knomi_config.printed_s = 7;
+}
+
+void knomi_config_default_presets(void) {
+    static const knomi_preheat_t def[PREHEAT_NUM] = {
+        {"PLA", 200, 60}, {"PETG", 240, 70}, {"ABS", 230, 90},
+        {"WOOD", 170, 50}, {"TPU", 220, 50}, {"NYLON", 250, 90},
+    };
+    memcpy(knomi_config.preheat, def, sizeof(def));
+    static const uint16_t mm[EXTRUDE_NUM] = {1, 5, 10, 50, 100};
+    static const uint16_t mms[EXTRUDE_NUM] = {1, 5, 10, 50, 100};
+    memcpy(knomi_config.extrude_mm, mm, sizeof(mm));
+    memcpy(knomi_config.extrude_mms, mms, sizeof(mms));
+    knomi_config.extrude_mm_def = 1;   // 5mm
+    knomi_config.extrude_mms_def = 2;  // 10mm/s
+}
+
+static uint16_t clamp_u16(uint16_t v, uint16_t lo, uint16_t hi, uint16_t def) {
+    return (v < lo || v > hi) ? def : v;
+}
+
+void knomi_config_sanitize_screen(void) {
+    knomi_config_t &c = knomi_config;
+    c.idle_rotate_s = clamp_u16(c.idle_rotate_s, 0, 3600, 7);
+    c.idle_mask &= 0x0F;
+    if (!c.idle_mask) c.idle_mask = 0x01;
+    c.heat_screens &= 0x03;
+    c.touch_idle_s = clamp_u16(c.touch_idle_s, 0, 3600, 60);
+    if (c.touch_idle_s && c.touch_idle_s < 5) c.touch_idle_s = 5;
+    c.heated_s = clamp_u16(c.heated_s, 0, 600, 7);
+    c.print_ok_s = clamp_u16(c.print_ok_s, 0, 600, 2);
+    c.printed_s = clamp_u16(c.printed_s, 0, 3600, 7);
+    for (int i = 0; i < PREHEAT_NUM; i++) {
+        knomi_preheat_t &p = c.preheat[i];
+        p.label[sizeof(p.label) - 1] = 0;
+        // the label goes into a roller (one line per option) and the web page
+        for (char *q = p.label; *q; q++) if (*q == '\n' || *q == '\r') *q = ' ';
+        p.nozzle = clamp_u16(p.nozzle, 0, 500, 0);
+        p.bed = clamp_u16(p.bed, 0, 200, 0);
+    }
+    for (int i = 0; i < EXTRUDE_NUM; i++) {
+        c.extrude_mm[i] = clamp_u16(c.extrude_mm[i], 1, 1000, 5);
+        c.extrude_mms[i] = clamp_u16(c.extrude_mms[i], 1, 300, 5);
+    }
+    if (c.extrude_mm_def >= EXTRUDE_NUM) c.extrude_mm_def = 1;
+    if (c.extrude_mms_def >= EXTRUDE_NUM) c.extrude_mms_def = 2;
 }
 
 static void knomi_config_sanitize_bt(void) {
@@ -128,7 +184,8 @@ void eeprom_init(void) {
     // Get sign flag
     uint32_t eeprom_sign;
     EEPROM.get<uint32_t>(0x00, eeprom_sign);
-    if (eeprom_sign == EEPROM_SIGN_V1 || eeprom_sign == EEPROM_SIGN_V2 || eeprom_sign == EEPROM_SIGN_V3) {
+    if (eeprom_sign == EEPROM_SIGN_V1 || eeprom_sign == EEPROM_SIGN_V2 || eeprom_sign == EEPROM_SIGN_V3 ||
+        eeprom_sign == EEPROM_SIGN_V4) {
         // Older layouts: every field keeps its offset (new ones are appended),
         // so read the whole struct and default whatever didn't exist yet.
         EEPROM.get<knomi_config_t>(0x00 + EEPROM_SIGN_SIZE, knomi_config);
@@ -136,8 +193,10 @@ void eeprom_init(void) {
             strlcpy(knomi_config.backend, BACKEND_MOONRAKER, sizeof(knomi_config.backend));
             knomi_config.api_key[0] = 0;
         }
-        if (eeprom_sign != EEPROM_SIGN_V3) knomi_config_default_display();
-        knomi_config_default_bt();
+        if (eeprom_sign == EEPROM_SIGN_V1 || eeprom_sign == EEPROM_SIGN_V2) knomi_config_default_display();
+        if (eeprom_sign != EEPROM_SIGN_V4) knomi_config_default_bt();
+        knomi_config_default_screen();
+        knomi_config_default_presets();
         EEPROM.put<uint32_t>(0x00, EEPROM_SIGN);
         EEPROM.put<knomi_config_t>(0x00 + EEPROM_SIGN_SIZE, knomi_config);
         EEPROM.commit();
@@ -149,6 +208,7 @@ void eeprom_init(void) {
         knomi_config_sanitize_backend();
         knomi_config_sanitize_display();
         knomi_config_sanitize_bt();
+        knomi_config_sanitize_screen();
         Serial.println("knomi_config from EEPROM");
         Serial.print("sta_ssid: ");
         Serial.println(knomi_config.sta_ssid);
@@ -189,6 +249,8 @@ void eeprom_init(void) {
         knomi_config.api_key[0] = 0;
         knomi_config_default_display();
         knomi_config_default_bt();
+        knomi_config_default_screen();
+        knomi_config_default_presets();
 
         EEPROM.put<uint32_t>(0x00, EEPROM_SIGN);
         EEPROM.put<knomi_config_t>(0x00 + EEPROM_SIGN_SIZE, knomi_config);

@@ -234,21 +234,36 @@ void knomi_gif_show(lv_obj_t * obj, knomi_gif_slot_t slot) {
     if (free_i >= 0) { shown[free_i].obj = obj; shown[free_i].slot = slot; }
 }
 
+// idle slots that have an animation and are ticked on the web page
+bool knomi_gif_idle_enabled(int s) {
+    if (s < GIF_SLOT_IDLE1 || s > GIF_SLOT_IDLE4) return false;
+    if (!knomi_gif((knomi_gif_slot_t)s)) return false;
+    uint8_t mask = knomi_config.idle_mask & 0x0F;
+    if (!mask) mask = 0x01;
+    return mask & (1 << (s - GIF_SLOT_IDLE1));
+}
+
 uint8_t knomi_gif_idle_count(void) {
     uint8_t n = 0;
     for (int s = GIF_SLOT_IDLE1; s <= GIF_SLOT_IDLE4; s++)
-        if (knomi_gif((knomi_gif_slot_t)s)) n++;
+        if (knomi_gif_idle_enabled(s)) n++;
     return n;
 }
 
 knomi_gif_slot_t knomi_gif_idle_slot(uint8_t n) {
     for (int s = GIF_SLOT_IDLE1; s <= GIF_SLOT_IDLE4; s++) {
-        if (knomi_gif((knomi_gif_slot_t)s)) {
+        if (knomi_gif_idle_enabled(s)) {
             if (n == 0) return (knomi_gif_slot_t)s;
             n--;
         }
     }
     return GIF_SLOT_IDLE1;
+}
+
+int knomi_gif_shown_slot(lv_obj_t * obj) {
+    for (int i = 0; i < GIF_OBJ_MAX; i++)
+        if (shown[i].obj == obj) return shown[i].slot;
+    return -1;
 }
 
 void knomi_gif_request_reload(knomi_gif_slot_t slot) {
