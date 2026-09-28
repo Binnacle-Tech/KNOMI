@@ -1,7 +1,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define FW_VERSION "V1.0.2-OP4"
+#define FW_VERSION "V1.0.2-OP5"
+// GitHub repo the settings page checks for newer releases (tags like v1.0.2-op5)
+#define UPDATE_REPO "Binnacle-Tech/KNOMI"
 
  // default 80 for http
 #define SERVER_PORT 80

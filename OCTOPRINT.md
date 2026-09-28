@@ -99,6 +99,28 @@ sends the file list, and runs the KNOMI's buttons inside OctoPrint.
 
 "Forget paired devices" on the KNOMI clears its bonds. Also run `remove <address>` in bluetoothctl before pairing again.
 
+## Backup and restore
+Settings page → System → **Download backup** saves one `.knomi` file with every setting and custom animation.
+**Restore** loads it back and restarts the KNOMI. A restore replaces all custom animations, and only after the whole
+file has arrived; an incomplete or wrong file changes nothing. The file contains your WiFi password and OctoPrint
+API key, so keep it private.
+
+## Updates
+When the settings page is opened from a network with internet access, it checks GitHub for a newer release and shows
+a banner with a download link for your board. Install it from `/update` as usual. The check runs in your browser;
+the KNOMI itself never contacts GitHub.
+
+## WiFi behaviour
+- If the saved network can't be reached (router rebooting, out of range), the KNOMI keeps its settings, opens its
+  setup access point alongside, and retries every 30 s. Retries pause while someone is connected to the setup AP.
+  When the network comes back, the setup AP closes again.
+- Hidden networks: on the settings page, click **join a hidden network** under the network list.
+
+## Accelerometer bars
+The printing screen's accelerometer view subtracts gravity and detects the mounting, so the bars show real
+toolhead movement: X side-to-side, Y front-to-back, Z up-down. That works upright on a Stealthburner,
+upside-down, rotated, or lying flat.
+
 ## What maps to what
 Over WiFi:
 

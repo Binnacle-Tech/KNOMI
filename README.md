@@ -21,6 +21,12 @@ Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint
 - **Auto-dim and screen-off**, saved brightness, and wake on touch or printer activity.
 - **Animations can follow the UI color** instead of always being red.
 - **Redesigned web settings page** with dark, medium, light and high-contrast modes.
+- **Update check.** The settings page tells you when a newer release is out and links the right `.bin`.
+- **Backup and restore** of all settings and custom animations as one file.
+- **WiFi fixes:**
+  - joins WPA2-only, WPA3-mixed, WEP and hidden networks
+  - no longer forgets your WiFi when the router is slow to come back after a power cut (it opens its setup access point alongside and keeps retrying)
+- **Accelerometer bars that work** on any mounting: gravity is removed and the axes are detected automatically.
 - Moonraker/Klipper still works. Switch backends on the settings page.
 
 ## Compatibility
@@ -36,7 +42,7 @@ Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint
 
 ## Install
 
-1. Download `knomiv2-octoprint-firmware.bin` from the **[latest release](https://github.com/Binnacle-Tech/KNOMI/releases/latest)**.
+1. Download `knomiv2-octoprint-firmware.bin` from the **[latest release](https://github.com/Binnacle-Tech/KNOMI/releases/latest)**. Every release is built automatically by GitHub Actions.
 2. Open `http://<knomi-ip>/update` and upload it (OTA). Your WiFi and printer settings carry over from stock firmware.
 3. On the KNOMI settings page, set **Backend → OctoPrint**, press **Find OctoPrint on network**, and paste an OctoPrint application key.
 4. Install the **[OctoPrint-KNOMI plugin](https://github.com/Binnacle-Tech/OctoPrint-KNOMI)** for the animations.

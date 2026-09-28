@@ -7,6 +7,7 @@
 #include "discover.h"
 #include "binnacle_css.h"
 #include "knomi_ble.h"
+#include "backup.h"
 #include <LittleFS.h>
 
 static AsyncWebServer server(SERVER_PORT);
@@ -129,6 +130,14 @@ String knomi_html_processor(const String& var){
         else if (knomi_ble_link_active()) value = "<span class=\"pill ok\">connected</span>";
         else if (knomi_ble_connected()) value = "<span class=\"pill now\">paired, waiting for data</span>";
         else value = "<span class=\"pill held\">advertising</span>";
+    } else if (var == "repo") {
+        value = UPDATE_REPO;
+    } else if (var == "board") {
+#ifdef KNOMIV1
+        value = "knomiv1";
+#else
+        value = "knomiv2";
+#endif
     } else if (var == "fw") {
         value = FW_VERSION;
     } else if (var == "sta_ip") {
@@ -146,7 +155,7 @@ String knomi_html_processor(const String& var){
 }
 
 // Small Binnacle-styled page for POST results
-static String message_page(const String &title, const String &body_html) {
+String message_page(const String &title, const String &body_html) {
     return String("<!DOCTYPE html><html lang='en'><head><title>KNOMI</title>") + BINNACLE_HEAD +
         "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
         "<a class='n' href='/'>KNOMI<span class='dot'>.</span></a><span class='f'>Printer display</span></div></div></header>"
@@ -491,6 +500,7 @@ void webserver_setup(void) {
     gif_routes();
     display_routes();
     bluetooth_routes();
+    backup_routes(server);
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send_P(200, "text/html", index_html, knomi_html_processor);

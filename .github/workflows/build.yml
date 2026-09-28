@@ -1,0 +1,69 @@
+name: Build firmware
+
+on:
+  push:
+    branches: [octoprint]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # attach binaries to releases
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Check FW_VERSION matches the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          fw=$(sed -n 's/^#define FW_VERSION "\(.*\)"/\1/p' src/config.h)
+          tag="${GITHUB_REF_NAME}"
+          echo "FW_VERSION=$fw tag=$tag"
+          if [ "${fw,,}" != "${tag,,}" ]; then
+            echo "::error file=src/config.h::FW_VERSION ($fw) doesn't match the tag ($tag). Bump FW_VERSION before tagging."
+            exit 1
+          fi
+
+      - name: Install libraries and apply the LVGL display fix
+        run: |
+          for env in knomiv2 knomiv1; do
+            pio pkg install -e "$env"
+            cp "lv_disp_(bugfix_backup).c" ".pio/libdeps/$env/lvgl/src/core/lv_disp.c"
+          done
+
+      - name: Build
+        run: pio run -e knomiv2 -e knomiv1
+
+      - name: Collect binaries
+        run: |
+          mkdir dist
+          cp .pio/build/knomiv2/firmware.bin dist/knomiv2-octoprint-firmware.bin
+          cp .pio/build/knomiv1/firmware.bin dist/knomiv1-octoprint-firmware.bin
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: dist/*.bin
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.bin
+          generate_release_notes: true

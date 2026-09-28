@@ -45,6 +45,16 @@ void wifi_refresh_connected(void) {
     }
 }
 
+// Lowest security we'll accept for the configured network. The old code used the
+// scanned auth mode itself as the threshold, which fails on WPA2/WPA3 mixed or
+// misreported networks (#81), WEP (#82), and hidden networks that never show up
+// in a scan (#79).
+static wifi_auth_mode_t wifi_auth_threshold(void) {
+    if (knomi_config.sta_pwd[0] == 0) return WIFI_AUTH_OPEN;
+    if (knomi_config.sta_auth == WIFI_AUTH_WEP) return WIFI_AUTH_WEP;
+    return WIFI_AUTH_WPA_PSK;   // WPA, WPA2, WPA3 and mixed modes
+}
+
 wifi_auth_mode_t wifi_get_ahth_mode_from_scanned_list(void) {
     wifi_auth_mode_t mode = WIFI_AUTH_WPA2_PSK; // default valuel;
     for (uint8_t i = 0; i < wifi_scan.count; i++) {
@@ -197,6 +207,47 @@ void knomi_factory_reset(void) {
 
 static wifi_status_t wifi_status = WIFI_STATUS_INIT;
 
+/* ---- STA fallback: setup AP + background retries, nothing saved ---- */
+#define STA_RETRY_MS 30000
+static bool sta_fallback = false;
+static uint32_t sta_retry_at = 0;
+static void wifi_start_ap(void);
+
+static void sta_fallback_start(void) {
+    sta_fallback = true;
+    wifi_status = WIFI_STATUS_ERROR;
+    WiFi.mode(WIFI_AP_STA);
+    wifi_start_ap();
+    sta_retry_at = millis() + STA_RETRY_MS;
+}
+
+static void sta_fallback_loop(void) {
+    if (!sta_fallback) return;
+    if (WiFi.status() == WL_CONNECTED) {
+        sta_fallback = false;
+        wifi_status = WIFI_STATUS_CONNECTED;
+        Serial.print("sta reconnected: ");
+        Serial.println(WiFi.localIP());
+        if (strcmp(knomi_config.mode, "sta") == 0) {   // AP was only for the fallback
+            dnsServer.stop();
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_STA);
+        }
+        wifi_refresh_connected();
+        MDNS.end();
+        MDNS.begin(knomi_config.hostname);
+        return;
+    }
+    // retry periodically, but not while someone is on the setup AP (a retry hops channels)
+    if ((int32_t)(millis() - sta_retry_at) >= 0) {
+        sta_retry_at = millis() + STA_RETRY_MS;
+        if (WiFi.softAPgetStationNum() == 0) {
+            Serial.println("sta retry");
+            WiFi.begin(knomi_config.sta_ssid, knomi_config.sta_pwd);
+        }
+    }
+}
+
 wifi_status_t wifi_get_connect_status(void) {
     return wifi_status;
 }
@@ -211,11 +262,18 @@ void wifi_scan_refresh(void) {
     int16_t n = WiFi.scanComplete();
     if (n >= 0) {
         Serial.println("Scan ok!");
-        wifi_scan.count = min(n, (int16_t)SCAN_SSIDS_NUM);
-        for (int i = 0; i < wifi_scan.count; i++) {
-            strlcpy(wifi_scan.ssid[i], WiFi.SSID(i).c_str(), sizeof(wifi_scan.ssid[i]));
-            wifi_scan.rssi[i] = WiFi.RSSI(i);
-            wifi_scan.authmode[i] = WiFi.encryptionType(i);
+        wifi_scan.count = 0;
+        for (int j = 0; j < n && wifi_scan.count < SCAN_SSIDS_NUM; j++) {
+            String name = WiFi.SSID(j);
+            if (name.isEmpty()) continue;
+            bool dup = false;   // mesh networks show the same SSID several times
+            for (int k = 0; k < wifi_scan.count; k++)
+                if (name == wifi_scan.ssid[k]) { dup = true; break; }
+            if (dup) continue;
+            int i = wifi_scan.count++;
+            strlcpy(wifi_scan.ssid[i], name.c_str(), sizeof(wifi_scan.ssid[i]));
+            wifi_scan.rssi[i] = WiFi.RSSI(j);
+            wifi_scan.authmode[i] = WiFi.encryptionType(j);
             if (WiFi.status() == WL_CONNECTED && (strcmp(wifi_scan.ssid[i], WiFi.SSID().c_str()) == 0)) {
                 wifi_scan.connected[i] = 1;
             } else {
@@ -262,6 +320,20 @@ void eeprom_write_knomi_config(void) {
     EEPROM.commit();
 }
 
+static void wifi_start_ap(void) {
+    WiFi.softAPConfig(ap_local_ip, ap_gateway, ap_subnet);
+    if (WiFi.softAP(knomi_config.ap_ssid, knomi_config.ap_pwd)) {
+        Serial.print("ap ip: ");
+        Serial.println(WiFi.softAPIP());
+    } else {
+        Serial.println("access point create failed!!!\r\n");
+    }
+    // dns for captive portal
+    bool ret = dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+    Serial.print("dnsServer: ");
+    Serial.println(ret);
+}
+
 void wifi_config_loop(bool first_setup) {
     if (knomi_config_require & EEPROM_PARA_CHANGED) {
         eeprom_write_knomi_config();
@@ -295,7 +367,6 @@ void wifi_config_loop(bool first_setup) {
         Serial.println(knomi_config.hostname);
     }
 
-restart:
     // WIFI mode
     wifi_mode_t wifi_mode = wifi_get_mode_from_string(knomi_config.mode);
     if (knomi_config_require & WEB_POST_WIFI_CONFIG_MODE) {
@@ -327,20 +398,7 @@ restart:
             Serial.println(knomi_config.ap_ssid);
             Serial.print("ap pwd: ");
             Serial.println(knomi_config.ap_pwd);
-            WiFi.softAPConfig(ap_local_ip, ap_gateway, ap_subnet);
-            if (WiFi.softAP(knomi_config.ap_ssid, knomi_config.ap_pwd)) {
-                Serial.print("ap ip: ");
-                Serial.println(WiFi.softAPIP());
-                Serial.print("ap mac: ");
-                Serial.println(WiFi.softAPmacAddress().c_str());
-                Serial.println();
-            } else {
-                Serial.println("access point create failed!!!\r\n");
-            }
-            // dns for captive portal
-            bool ret = dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
-            Serial.print("dnsServer: ");
-            Serial.println(ret);
+            wifi_start_ap();
         }
     }
 
@@ -355,7 +413,10 @@ restart:
             Serial.println(knomi_config.sta_ssid);
             Serial.print("sta pwd: ");
             Serial.println(knomi_config.sta_pwd);
-            WiFi.setMinSecurity(knomi_config.sta_auth);
+            WiFi.setMinSecurity(wifi_auth_threshold());
+            WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);   // find hidden SSIDs, pick the strongest AP
+            WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+            WiFi.setAutoReconnect(true);
             wl_status_t n = WiFi.begin(knomi_config.sta_ssid, knomi_config.sta_pwd);  /*Connecting to Defined Access point*/
             wifi_status = WIFI_STATUS_CONNECTING;
             uint32_t timeout = millis() + WIFI_STA_TIMEOUT;
@@ -368,12 +429,11 @@ restart:
                 delay(100);
             }
             if (wifi_status != WIFI_STATUS_CONNECTED) {
-                Serial.println("sta connect failed!!!");
-                wifi_status = WIFI_STATUS_ERROR;
-                // reset wifi mode to "ap"
-                strlcpy(knomi_config.mode, "ap", sizeof(knomi_config.mode));
-                knomi_config_require |= WEB_POST_WIFI_CONFIG_MODE;
-                goto restart;
+                // Don't overwrite the saved mode (the stock firmware saved "ap" here, so a
+                // router that was slow to boot made the KNOMI forget its WiFi: #37, #46).
+                // Open the setup AP alongside and keep retrying in the background.
+                Serial.println("sta connect failed, setup AP on, retrying");
+                sta_fallback_start();
             }
             wifi_refresh_connected();
             Serial.print("sta ip: ");
@@ -397,7 +457,7 @@ restart:
     // refresh wifi scan
     if (knomi_config_require & WEB_POST_WIFI_REFRESH) {
         knomi_config_require &= ~WEB_POST_WIFI_REFRESH;
-        WiFi.scanNetworks(true, false, true, 75U);
+        WiFi.scanNetworks(true, false, false, 300U);
     }
 
     // restart
@@ -473,7 +533,7 @@ void wifi_task(void * parameter) {
         bt_down_since = millis();
     } else {
         wifi_config_loop(true); // eeprom_init() already ran in setup()
-        WiFi.scanNetworks(true, false, true, 75U);
+        WiFi.scanNetworks(true, false, false, 300U);
         webserver_setup();
     }
 
@@ -483,6 +543,7 @@ void wifi_task(void * parameter) {
             delay(100);
             continue;
         }
+        sta_fallback_loop();
         wifi_scan_refresh();
         wifi_config_loop(false);
         octoprint_discover_loop();

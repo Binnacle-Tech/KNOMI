@@ -56,6 +56,26 @@ function showPopupRestart(){
   return confirmSubmit("Restart KNOMI", [], "restart-form",
     "KNOMI will drop its network connection and restart. Reconnect once it's back.");
 }
+// Update check: runs in the browser, so the KNOMI itself needs no internet or TLS.
+// Silent when offline (e.g. setting up over the KNOMI's own access point).
+function fwParse(v){
+  var m = /v?(\d+)\.(\d+)\.(\d+)(?:-op(\d+))?/i.exec(v || "");
+  return m ? [+m[1], +m[2], +m[3], +(m[4] || 0)] : null;
+}
+function fwNewer(a, b){ for (var i = 0; i < 4; i++){ if (a[i] !== b[i]) return a[i] > b[i]; } return false; }
+function checkUpdate(){
+  var cur = fwParse("$fw$");
+  if (!cur || !window.fetch) return;
+  fetch("https://api.github.com/repos/$repo$/releases/latest").then(function(r){ return r.ok ? r.json() : null; }).then(function(rel){
+    if (!rel) return;
+    var latest = fwParse(rel.tag_name);
+    if (!latest || !fwNewer(latest, cur)) return;
+    var asset = (rel.assets || []).filter(function(a){ return a.name.indexOf("$board$") >= 0 && a.name.slice(-4) === ".bin"; })[0];
+    document.getElementById("update-ver").textContent = rel.tag_name + " available";
+    document.getElementById("update-dl").href = asset ? asset.browser_download_url : rel.html_url;
+    document.getElementById("update-note").style.display = "";
+  }).catch(function(){});
+}
 function popupConfirm(){ popup_clicked = true; popup_btn = true; }
 function popupCancel(){ popup_clicked = true; popup_btn = false; }
 function syncBackend(){
@@ -113,6 +133,14 @@ async function discoverOcto(){
     <h1>KNOMI<span class="dot">.</span></h1>
     <p class="lede">Where the display gets its printer status, how the screen behaves, how it joins your network, and system controls.</p>
     <div class="strip">$backend_pill$ <span class="pill">$fw$</span> <span class="pill">$sta_ip$</span></div>
+    <div id="update-note" class="card" style="display:none;margin:14px 0 0">
+      <div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <span class="pill now" id="update-ver"></span>
+        <span style="flex:1;min-width:200px">A newer firmware is available.</span>
+        <a class="btn-ghost" id="update-dl" href="#">Download .bin</a>
+        <a class="btn-primary" href="/update">Install</a>
+      </div>
+    </div>
     <div class="rule"></div>
   </section>
 
@@ -259,7 +287,8 @@ async function discoverOcto(){
         <thead><tr><th>Network</th><th>Signal</th><th>Status</th></tr></thead>
         <tbody>$wifi_list$</tbody>
       </table></div>
-      <div class="hint">Pick a network to connect the KNOMI to it.</div>
+      <div class="hint">Pick a network to connect the KNOMI to it, or
+        <a href="#" id="hidden-net">join a hidden network</a>.</div>
     </div>
   </section>
 
@@ -302,6 +331,15 @@ async function discoverOcto(){
       <form id="restart-form" name="restart-form" action="/" method="POST" style="margin:0"><input type="hidden" name="restart"></form>
       <button type="button" class="btn-ghost btn-danger" onclick="showPopupRestart()">Restart</button>
     </div>
+    <div class="card-f">
+      <a class="btn-ghost" href="/backup">Download backup</a>
+      <form action="/restore" method="POST" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0"
+            onsubmit="return confirm('Restore this backup? It replaces all settings and custom animations, then restarts the KNOMI.')">
+        <input type="file" name="backup" accept=".knomi" required>
+        <button type="submit" class="btn-ghost">Restore</button>
+      </form>
+      <div class="hint" style="width:100%">The backup holds all settings and custom animations, including your WiFi password and OctoPrint API key. Keep it private.</div>
+    </div>
   </section>
   <div class="foot">KNOMI firmware $fw$ · OctoPrint edition</div>
 </main>
@@ -311,7 +349,7 @@ async function discoverOcto(){
     <div class="card-h"><span class="k">Join network</span><button type="button" class="x close" aria-label="Close">&times;</button></div>
     <form action="/" method="POST">
       <div class="card-b">
-        <div class="row"><label class="field-label" for="ssid">Network</label><input readonly id="ssid" type="text" name="ssid" class="mono"></div>
+        <div class="row"><label class="field-label" for="ssid">Network</label><input readonly id="ssid" type="text" name="ssid" class="mono" maxlength="32"></div>
         <div class="row" style="margin:0"><label class="field-label" for="wifi-pwd">Password</label><input id="wifi-pwd" type="password" name="password" autocomplete="off"></div>
       </div>
       <div class="card-f"><button type="submit" class="btn-primary">Connect</button></div>
@@ -329,8 +367,17 @@ async function discoverOcto(){
 
 <script>
 syncBackend();
+checkUpdate();
+document.getElementById("hidden-net").onclick = function(e){
+  e.preventDefault();
+  var s = document.getElementById("ssid");
+  s.readOnly = false; s.value = ""; s.placeholder = "Network name (exact, case-sensitive)";
+  document.getElementById("modalOne").style.display = "block";
+  s.focus();
+};
 document.querySelectorAll(".showpop").forEach(function(row){
   row.onclick = function(){
+    document.getElementById("ssid").readOnly = true;
     document.getElementById("ssid").value = row.getElementsByClassName("ssid")[0].textContent;
     document.getElementById(row.getAttribute("data-modal")).style.display = "block";
     document.getElementById("wifi-pwd").focus();
