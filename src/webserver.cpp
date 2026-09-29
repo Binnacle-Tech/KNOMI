@@ -749,6 +749,11 @@ static void coaster_routes(void) {
         r->addHeader("Cache-Control", "no-store");
         request->send(r);
     });
+    server.on("/coaster/album", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", coaster_album_json());
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
     server.on("/coaster/state", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *r = request->beginResponse(200, "application/json", coaster_state_json());
         r->addHeader("Cache-Control", "no-store");

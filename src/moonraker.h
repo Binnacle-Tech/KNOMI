@@ -38,6 +38,7 @@ typedef struct {
     uint16_t speed;   // speed factor % (M220), from the plugin; 0 = unknown
     char msg[65];     // last display message (M117 / SET_DISPLAY_TEXT / action:notification)
     uint16_t msg_id;  // bumps on every new message (Coaster says it)
+    char material[8]; // filament of the current print ("PETG"), from the plugin (0.9+); "" if unknown
 
     // printing screen extras
     uint32_t print_time;   // seconds elapsed

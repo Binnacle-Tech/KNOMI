@@ -29,6 +29,8 @@ typedef struct {
     bool south;         // southern hemisphere: weather seasons flip
     uint8_t bday_m, bday_d;
     int16_t tz_min;     // offset from UTC, from the browser that saved the settings
+    uint8_t talk;       // speech bubbles of its own: 0 never, 1 sometimes, 2 often
+    uint8_t clock;      // idle clock: 0 off, 1 12 h, 2 24 h
 } coaster_tune_t;
 // decorations: "auto" follows the date, "off", or one picked by hand
 enum { DECO_AUTO, DECO_OFF, D_HOLIDAYS, D_NEWYEAR, D_WINTER, D_VALENTINE, D_SPRING, D_SUMMER, D_JULY4,
@@ -41,7 +43,7 @@ static int key_index(const char * v, const char * const * keys, int n, int fallb
     if (v) for (int i = 0; i < n; i++) if (strcmp(v, keys[i]) == 0) return i;
     return fallback;
 }
-static const coaster_tune_t TUNE_DEF = {2.0f, 0.2f, 1.0f, 20.0f, 0.6f, 5.0f, 20.0f, true, DECO_AUTO, 0, 0, false, 9, 28, 0}; // Coaster is the mascot: on by default
+static const coaster_tune_t TUNE_DEF = {2.0f, 0.2f, 1.0f, 20.0f, 0.6f, 5.0f, 20.0f, true, DECO_AUTO, 0, 0, false, 9, 28, 0, 1, 1}; // Coaster is the mascot: on by default
 // OP18: sensitivity 1.0 now moves the head as much as 3.0 did before (tuned on recorded prints)
 #define SENSE_K  3.0f
 #define BOUNCE   6.0f    // px per compressed g: the head jiggles along with the toolhead
@@ -75,6 +77,8 @@ static void load_tuning(void) {
         int bm = 0, bd = 0;
         if (sscanf(d["bday"] | "", "%d-%d", &bm, &bd) == 2 && bm >= 1 && bm <= 12 && bd >= 1 && bd <= 31) { T.bday_m = bm; T.bday_d = bd; }
         T.tz_min = constrain((int)(d["tz"] | 0), -840, 840);
+        T.talk   = constrain((int)(d["talk"] | 1), 0, 2);
+        T.clock  = constrain((int)(d["clock"] | 1), 0, 2);
     }
     f.close();
 }
@@ -93,6 +97,8 @@ const char * coaster_save_json(const char * json, size_t len) {
     for (const char * k : {"deco", "lights", "anim", "hemi", "bday"})
         if (in[k].is<const char *>()) out[k] = String(in[k].as<const char *>()).substring(0, 12);
     if (in["tz"].is<int>()) out["tz"] = constrain(in["tz"].as<int>(), -840, 840);
+    if (in["talk"].is<int>()) out["talk"] = constrain(in["talk"].as<int>(), 0, 2);
+    if (in["clock"].is<int>()) out["clock"] = constrain(in["clock"].as<int>(), 0, 2);
     out["v"] = 2;
     out["idle"] = in.containsKey("idle") ? (bool)(in["idle"] | false) : T.idle;
     File f = LittleFS.open(COASTER_PATH, "w");
@@ -121,9 +127,9 @@ String coaster_tuning_json(void) {
     char buf[320];
     snprintf(buf, sizeof(buf),
              "{\"wobble\":%.2f,\"settle\":%.2f,\"sense\":%.2f,\"habit\":%.0f,\"scare\":%.2f,\"dizzy\":%.1f,\"sleep\":%.0f,\"idle\":%s,"
-             "\"deco\":\"%s\",\"lights\":\"%s\",\"anim\":\"%s\",\"hemi\":\"%s\",\"bday\":\"%02u-%02u\",\"tz\":%d}",
+             "\"deco\":\"%s\",\"lights\":\"%s\",\"anim\":\"%s\",\"hemi\":\"%s\",\"bday\":\"%02u-%02u\",\"tz\":%d,\"talk\":%u,\"clock\":%u}",
              T.wobble, T.settle, T.sense, T.habit, T.scare, T.dizzy, T.sleep, T.idle ? "true" : "false",
-             DECO_KEYS[T.deco], LIGHT_KEYS[T.lights], ANIM_KEYS[T.anim], T.south ? "s" : "n", T.bday_m, T.bday_d, T.tz_min);
+             DECO_KEYS[T.deco], LIGHT_KEYS[T.lights], ANIM_KEYS[T.anim], T.south ? "s" : "n", T.bday_m, T.bday_d, T.tz_min, T.talk, T.clock);
     return String(buf);
 }
 void coaster_request_reload(void) { reload_pending = true; }
@@ -240,6 +246,22 @@ static const char * ACT_LABEL[] = {"", "Homing", "Probing", "Leveling gantry", "
 static uint16_t bubble_msg_id = 0;
 static uint32_t bubble_since = 0, bubble_until = 0;
 static float bubble_k = 0;        // 0 hidden .. 1 shown (eased)
+// Coaster's own speech bubbles (printer messages always win)
+static char say_buf[64];
+static uint32_t say_since = 0, say_until = 0, say_last = 0;
+// prio 0 idle chatter, 1 something happened, 2 important. "Sometimes" talks less and skips most chatter.
+static void say(const char * text, int prio) {
+    if (T.talk == 0 || !text || !text[0]) return;
+    if ((int32_t)(bubble_until - millis()) > 0) return;
+    uint32_t gap = (T.talk == 2 ? 15000UL : 45000UL) * (prio == 0 ? 4 : 1);
+    if (prio < 2 && say_last && millis() - say_last < gap) return;
+    if (prio == 0 && T.talk == 1 && esp_random() % 3) return;
+    strlcpy(say_buf, text, sizeof(say_buf));
+    say_since = millis();
+    say_until = millis() + 3500 + strlen(say_buf) * 70;
+    say_last = millis();
+    Serial.printf("coaster says: %s\r\n", say_buf);
+}
 
 /* ---------------- simulation ---------------- */
 
@@ -282,6 +304,12 @@ static void head_kick(float vx, float vy) { hvx += vx; hvy += vy; }
 #define FEEL_PATH "/coaster_feel.json"
 static float H = 0.3f;
 static int16_t streak = 0;          // prints finished in a row
+// the album: Coaster's life so far
+static uint32_t born = 0;           // first time it saw the clock
+static uint32_t total_s = 0, longest_s = 0, prints_failed = 0, screams_total = 0, dizzies_total = 0;
+static uint16_t wildest_cg = 0, best_streak = 0;   // hardest move ever, 1/100 g
+typedef struct { uint32_t h; uint16_t n; } file_seen_t;   // files it has printed, by name hash
+static file_seen_t files_seen[12];
 static uint32_t prints_done = 0;
 static time_t last_seen = 0;        // saved every 10 minutes: how long it was off
 static bool feel_dirty = false, boot_judged = false, night = false;
@@ -307,6 +335,22 @@ static const char * LIKE_NAMES[LK_COUNT] = {"the holidays", "New Year", "winter"
     "late nights", "fans", "heat", "quiet time"};
 static int8_t like[LK_COUNT];      // -100 hates .. 100 loves
 static bool likes_rolled = false;
+// filaments: born with a favorite and one it doesn't like, and it gets used to what you print
+enum { MAT_PLA, MAT_PETG, MAT_ABS, MAT_ASA, MAT_TPU, MAT_NYLON, MAT_PC, MAT_COUNT };
+static const char * MAT_NAMES[MAT_COUNT] = {"PLA", "PETG", "ABS", "ASA", "TPU", "NYLON", "PC"};
+static int8_t mat_like[MAT_COUNT], mat_learn[MAT_COUNT];
+static uint16_t mat_prints[MAT_COUNT];
+static bool mats_rolled = false;
+static int cur_mat = -1;            // this print's filament, -1 unknown
+static int mat_of(const char * s) { for (int i = 0; i < MAT_COUNT; i++) if (s && strcmp(s, MAT_NAMES[i]) == 0) return i; return -1; }
+static int mat_eff(int k) { return constrain((int)mat_like[k] + mat_learn[k], -100, 100); }
+static void roll_mats(void) {
+    for (int i = 0; i < MAT_COUNT; i++) mat_like[i] = (int8_t)(esp_random() % 41) - 20;
+    int fav = esp_random() % MAT_COUNT, bad = (fav + 1 + esp_random() % (MAT_COUNT - 1)) % MAT_COUNT;
+    mat_like[fav] = 70 + esp_random() % 31; mat_like[bad] = -(60 + (int)(esp_random() % 31));
+    mats_rolled = true;
+    Serial.printf("coaster: favorite filament %s, doesn't like %s\r\n", MAT_NAMES[fav], MAT_NAMES[bad]);
+}
 static int8_t season_seen = -1;     // last season it noticed, so a new one is an event once
 static int16_t bday_year = 0;       // last birthday it celebrated
 // ---- what it learns: habits from the prints you do, and tastes that grow from them ----
@@ -348,7 +392,7 @@ static const char * feel_name(void) {
     return H > 0.6f ? "happy" : H > 0.25f ? "content" : H > -0.15f ? "okay" : H > -0.45f ? "down" : H > -0.75f ? "unhappy" : "miserable";
 }
 
-static void feel(float delta, const char * why) {
+static void feel(float delta, const char * why, bool speak = false) {
     float before = H;
     H = clampf(H + delta, -1, 1);
     feel_dirty = true;
@@ -358,6 +402,10 @@ static void feel(float delta, const char * why) {
     fnotes[0].d = (int8_t)lroundf(clampf(delta * 100, -99, 99));
     if (fnotes_n < 5) fnotes_n++;
     Serial.printf("coaster: %s (%+.2f), feels %s (%.2f -> %.2f)\r\n", why, delta, feel_name(), before, H);
+    if (speak) {   // said out loud, first letter up
+        char t[40]; strlcpy(t, why, sizeof(t)); t[0] = toupper(t[0]);
+        say(t, 1);
+    }
 }
 
 static void feel_save(void) {
@@ -370,8 +418,18 @@ static void feel_save(void) {
     for (int i = 0; i < LK_COUNT; i++) f.printf("%s%d", i ? "," : "", like[i]);
     f.printf("],\"learned\":[");
     for (int i = 0; i < LK_COUNT; i++) f.printf("%s%d", i ? "," : "", learned[i]);
-    f.printf("],\"open\":%.2f,\"hn\":%u,\"hlen\":%.3f,\"hx\":%.3f,\"hy\":%.3f,\"hpeak\":%.3f}",
+    f.printf("],\"open\":%.2f,\"hn\":%u,\"hlen\":%.3f,\"hx\":%.3f,\"hy\":%.3f,\"hpeak\":%.3f",
              openness, habit_n, habit_len, habit_hx, habit_hy, habit_peak);
+    f.printf(",\"mlike\":[");
+    for (int i = 0; i < MAT_COUNT; i++) f.printf("%s%d", i ? "," : "", mat_like[i]);
+    f.printf("],\"mlearn\":[");
+    for (int i = 0; i < MAT_COUNT; i++) f.printf("%s%d", i ? "," : "", mat_learn[i]);
+    f.printf("],\"mprints\":[");
+    for (int i = 0; i < MAT_COUNT; i++) f.printf("%s%u", i ? "," : "", mat_prints[i]);
+    f.printf("],\"files\":[");
+    for (int i = 0; i < 12; i++) f.printf("%s[%u,%u]", i ? "," : "", files_seen[i].h, files_seen[i].n);
+    f.printf("],\"born\":%u,\"total\":%u,\"longest\":%u,\"failed\":%u,\"screams\":%u,\"dizzies\":%u,\"wildest\":%u,\"best\":%u}",
+             born, total_s, longest_s, prints_failed, screams_total, dizzies_total, wildest_cg, best_streak);
     f.close();
     feel_dirty = false;
     feel_save_ms = millis();
@@ -380,7 +438,7 @@ static void feel_save(void) {
 static void feel_load(void) {
     File f = LittleFS.open(FEEL_PATH, "r");
     if (f) {
-        DynamicJsonDocument d(2048);   // on the heap: the LVGL task's stack is small
+        DynamicJsonDocument d(4096);   // on the heap: the LVGL task's stack is small
         if (deserializeJson(d, f) == DeserializationError::Ok) {
             JsonArrayConst lk = d["like"];
             if (lk.size() == LK_COUNT) { for (int i = 0; i < LK_COUNT; i++) like[i] = constrain((int)(lk[i] | 0), -100, 100); likes_rolled = true; }
@@ -395,12 +453,20 @@ static void feel_load(void) {
             streak = d["streak"] | 0;
             prints_done = d["prints"] | 0;
             last_seen = (time_t)(d["seen"] | 0L);
+            JsonArrayConst ml = d["mlike"], mn = d["mlearn"], mp = d["mprints"], fs = d["files"];
+            if (ml.size() == MAT_COUNT) { for (int i = 0; i < MAT_COUNT; i++) mat_like[i] = constrain((int)(ml[i] | 0), -100, 100); mats_rolled = true; }
+            if (mn.size() == MAT_COUNT) for (int i = 0; i < MAT_COUNT; i++) mat_learn[i] = constrain((int)(mn[i] | 0), -50, 50);
+            if (mp.size() == MAT_COUNT) for (int i = 0; i < MAT_COUNT; i++) mat_prints[i] = mp[i] | 0;
+            for (int i = 0; i < 12 && i < (int)fs.size(); i++) files_seen[i] = {fs[i][0] | 0u, (uint16_t)(fs[i][1] | 0)};
+            born = d["born"] | 0u; total_s = d["total"] | 0u; longest_s = d["longest"] | 0u; prints_failed = d["failed"] | 0u;
+            screams_total = d["screams"] | 0u; dizzies_total = d["dizzies"] | 0u; wildest_cg = d["wildest"] | 0; best_streak = d["best"] | 0;
         }
         f.close();
     }
     esp_reset_reason_t r = esp_reset_reason();
     reset_kind = (r == ESP_RST_SW || r == ESP_RST_DEEPSLEEP) ? 1
                : (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT) ? 2 : 0;
+    if (!mats_rolled) { roll_mats(); feel_dirty = true; }
     if (!likes_rolled) {
         roll_likes();
         openness = (esp_random() % 201) / 100.0f - 1;
@@ -410,6 +476,7 @@ static void feel_load(void) {
 }
 
 
+static int local_hour(void);
 // how it woke up: judged once the clock is set (or after 90 s without one)
 static void feel_judge_boot(void) {
     time_t now = time(NULL);
@@ -417,16 +484,22 @@ static void feel_judge_boot(void) {
     if (!clock && millis() < 90000) return;
     boot_judged = true;
     long off = (clock && last_seen > 1700000000) ? (long)(now - last_seen) : -1;
-    if (reset_kind == 2) { t_confused = 15; feel(-0.05f, "woke up suddenly"); }
-    else if (reset_kind == 0 && off >= 0 && off < 120) { t_confused = 12; feel(-0.02f, "power blinked"); }
+    if (clock && !born) born = (uint32_t)now;
+    int hr = local_hour();
+    if (reset_kind == 2) { t_confused = 15; feel(-0.05f, "woke up suddenly"); say("Whoa... what happened?", 2); }
+    else if (reset_kind == 0 && off >= 0 && off < 120) { t_confused = 12; feel(-0.02f, "power blinked"); say("Huh? Did the power blink?", 2); }
     else if (off > 3 * 86400L) {
         char w[30]; snprintf(w, sizeof(w), "alone for %ld days", off / 86400);
         feel(-min(0.6f, 0.08f * off / 86400.0f), w);
         t_sad = 20;
+        char t[48]; snprintf(t, sizeof(t), "Where have you been? It's been %ld days.", off / 86400);
+        say(t, 2);
     } else if (off > 12 * 3600L) {
         feel_boot_quirk(false);   // oh, you're back: a yawn
+        say("Oh hey, you're back.", 2);
     } else if (reset_kind == 0) {
         feel_boot_quirk(H > 0);   // good morning
+        say(hr >= 5 && hr < 12 ? "Good morning!" : hr >= 18 || hr < 5 ? "Evening!" : "Hi!", 2);
     }
     feel_save();
 }
@@ -450,16 +523,47 @@ static float habit_hour(void) {   // the usual start hour, or -1 if it has no ha
 static void change_of_pace(float how_new, const char * novel, const char * uneasy) {
     // loves surprises: excited. Creature of habit: uneasy for a bit
     if (openness > 0.15f) {
-        feel(0.12f * openness * how_new, novel);
+        feel(0.12f * openness * how_new, novel, true);
         t_ready = 3; feel_boot_quirk(true);   // a happy bounce
     } else if (openness < -0.15f) {
-        feel(0.1f * openness * how_new, uneasy);
+        feel(0.1f * openness * how_new, uneasy, true);
         t_uneasy = 6;
     }
 }
 // a couple of minutes into a print, when the time estimate has settled
+static uint32_t name_hash(const char * s) { uint32_t h = 2166136261u; while (*s) { h ^= (uint8_t)*s++; h *= 16777619u; } return h ? h : 1; }
+
+// what it thinks of this print's filament and file
+static void judge_material_and_file(const moonraker_data_t & d) {
+    cur_mat = mat_of(d.material);
+    if (cur_mat >= 0) {
+        int e = mat_eff(cur_mat);
+        char t[48];
+        if (e >= 50) { snprintf(t, sizeof(t), "%s! My favorite.", MAT_NAMES[cur_mat]); feel(0.08f, "my favorite filament"); say(t, 1); }
+        else if (e <= -50) { snprintf(t, sizeof(t), "Ugh, %s.", MAT_NAMES[cur_mat]); feel(-0.06f, "a filament it doesn't like"); say(t, 1); }
+        else {
+            static const char * lines[MAT_COUNT] = {"Good old PLA.", "PETG... watch the strings.", "Smells like ABS in here.",
+                                                    "ASA! Sunscreen for plastic.", "TPU! Wobbly!", "Nylon? Fancy.", "Polycarbonate. Serious stuff."};
+            say(lines[cur_mat], 1);
+        }
+    }
+    if (d.file_path[0]) {
+        uint32_t h = name_hash(d.file_path);
+        int slot = -1, oldest = 0;
+        for (int i = 0; i < 12; i++) { if (files_seen[i].h == h) slot = i; if (files_seen[i].n < files_seen[oldest].n) oldest = i; }
+        if (slot >= 0 && files_seen[slot].n >= 2) {
+            char t[48]; snprintf(t, sizeof(t), "This one again? That's %u times.", files_seen[slot].n + 1);
+            say(t, 0);
+        } else if (slot < 0) say("Something new!", 0);
+        if (slot < 0) { slot = oldest; files_seen[slot] = {h, 0}; }
+        if (files_seen[slot].n < 60000) files_seen[slot].n++;
+        feel_dirty = true;
+    }
+}
+
 static void judge_new_print(const moonraker_data_t & d) {
     novelty_pending = false;
+    judge_material_and_file(d);
     if (habit_n < 5) return;   // still learning what "usual" is
     float est_min = (d.print_time + d.time_left) / 60.0f;
     if (d.time_left > 0 && est_min > 1) {
@@ -487,7 +591,11 @@ static void learn_from_print(const moonraker_data_t & d, float peak) {
         if (hr >= 23 || hr < 6) learn(LK_NIGHT, 2);        // late prints: a night owl in the making
     }
     if (habit_n >= 5 && peak > habit_peak * 1.8f && peak > 0.6f)
-        feel(0.1f * L(LK_FAST), eff(LK_FAST) >= 0 ? "that was a wild ride!" : "too wild for me");
+        feel(0.1f * L(LK_FAST), eff(LK_FAST) >= 0 ? "that was a wild ride!" : "too wild for me", true);
+    if (cur_mat >= 0) {   // gets fond of what you print
+        mat_learn[cur_mat] = (int8_t)constrain((int)mat_learn[cur_mat] + 3, -50, 50);
+        if (mat_prints[cur_mat] < 60000) mat_prints[cur_mat]++;
+    }
     habit_peak += (peak - habit_peak) * k;
     if (habit_n < 60000) habit_n++;
     // what you print a lot, it gets used to, and a little fond of
@@ -514,7 +622,7 @@ static void feel_tick(const moonraker_data_t & d) {
         int k = deco_for(m, dd);
         if (k == D_BIRTHDAY) {
             base_h = 0.6f;
-            if (bday_year != t.tm_year + 1900) { bday_year = t.tm_year + 1900; feel(0.3f, "it's my birthday!"); }
+            if (bday_year != t.tm_year + 1900) { bday_year = t.tm_year + 1900; feel(0.3f, "it's my birthday!", true); }
             T.bday_m = 0;  // look past the birthday for the season underneath
             k = deco_for(m, dd);
             T.bday_m = m;
@@ -525,8 +633,8 @@ static void feel_tick(const moonraker_data_t & d) {
             if (season_seen != k) {
                 if (season_seen >= 0) {   // not the very first boot
                     char w[30];
-                    if (eff(lk) >= 50) { snprintf(w, sizeof(w), "yay, %s!", LIKE_NAMES[lk]); feel(0.15f, w); }
-                    else if (eff(lk) <= -50) { snprintf(w, sizeof(w), "ugh, %s", LIKE_NAMES[lk]); feel(-0.1f, w); }
+                    if (eff(lk) >= 50) { snprintf(w, sizeof(w), "yay, %s!", LIKE_NAMES[lk]); feel(0.15f, w, true); }
+                    else if (eff(lk) <= -50) { snprintf(w, sizeof(w), "ugh, %s", LIKE_NAMES[lk]); feel(-0.1f, w, true); }
                 }
                 season_seen = k;
                 feel_dirty = true;
@@ -550,15 +658,33 @@ static void feel_tick(const moonraker_data_t & d) {
     if (at_temp && !d.printing && act == ACT_NONE && !d.homing && !d.probing && !d.qgling && still_t > 20) heat_idle_s++;
     else if (!at_temp || d.printing || env > 0.1f) heat_idle_s = 0;
     bool mad_now = heat_idle_s > (uint32_t)(180 + 120 * L(LK_HEAT));   // heat lovers put up with it longer
-    if (mad_now && !mad_heat) feel(-0.06f, "heated up for nothing");
+    if (mad_now && !mad_heat) { feel(-0.06f, "heated up for nothing"); say("Hot and nothing to print?!", 1); }
     if (mad_now) H = max(-1.0f, H - 0.03f / 60);
     mad_heat = mad_now;
     // lost OctoPrint for a while
     if (moonraker.unconnected || wifi_get_connect_status() != WIFI_STATUS_CONNECTED) {
-        if (++unlinked_s == 60 && !knomi_ble_link_active()) feel(-0.03f, "lost OctoPrint");
+        if (++unlinked_s == 60 && !knomi_ble_link_active()) { feel(-0.03f, "lost OctoPrint"); say("Where did OctoPrint go?", 1); }
     } else unlinked_s = 0;
     if (d.runout && d.printing && !was_runout) feel(-0.05f, "ran out of filament");
     was_runout = d.runout && d.printing;
+    // now and then, when nothing's going on, it says something
+    static uint32_t chat_s = 900;
+    if (!d.printing && (mood == M_CALM || mood == M_BORED || mood == M_COOLING) && T.talk && --chat_s == 0) {
+        chat_s = T.talk == 2 ? 480 + esp_random() % 420 : 1200 + esp_random() % 1200;
+        char t[56] = "";
+        int pick = esp_random() % 6;
+        int likes_n = 0, lk_pick = -1;
+        for (int i = 0; i < LK_COUNT; i++) if (eff(i) >= 50 && esp_random() % ++likes_n == 0) lk_pick = i;
+        int fav_mat = 0;
+        for (int i = 1; i < MAT_COUNT; i++) if (mat_eff(i) > mat_eff(fav_mat)) fav_mat = i;
+        if (pick == 0 && idle_s > 3600) strlcpy(t, "Nothing to print?", sizeof(t));
+        else if (pick == 1 && lk_pick >= 0) snprintf(t, sizeof(t), "I like %s.", LIKE_NAMES[lk_pick]);
+        else if (pick == 2 && prints_done) snprintf(t, sizeof(t), "%u prints together so far!", prints_done);
+        else if (pick == 3) strlcpy(t, H < -0.3f ? "Kind of a slow day..." : H > 0.5f ? "Good day today." : "Hmm.", sizeof(t));
+        else if (pick == 4) snprintf(t, sizeof(t), "Some %s would be nice.", MAT_NAMES[fav_mat]);
+        else if (pick == 5 && night) strlcpy(t, "It's late...", sizeof(t));
+        if (t[0] && strcmp(t, "Hmm.") != 0) say(t, 0);
+    }
     if ((feel_dirty && millis() - feel_save_ms > 20000) || millis() - feel_save_ms > 600000UL) feel_save();
 }
 
@@ -574,7 +700,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     }
     if (thrill > 1) { scream_t += dt; dizzy_meter += dt * min(2.0f, thrill); }
     else { scream_t = max(0.0f, scream_t - dt * 2); dizzy_meter = max(0.0f, dizzy_meter - dt * 0.6f); }
-    if (dizzy_meter > T.dizzy && t_dizzy <= 0) { t_dizzy = 3.5f; dizzy_meter = 0; feel(-0.08f, "got dizzy"); }
+    if (dizzy_meter > T.dizzy && t_dizzy <= 0) { t_dizzy = 3.5f; dizzy_meter = 0; feel(-0.08f, "got dizzy"); say("Whoa... everything's spinning.", 0); }
     bool paused = d.printing && (d.pause || d.paused_ext);
     // the screen woke up in the middle of the night: huh? what?
     static bool was_dozing = false;
@@ -685,10 +811,10 @@ static void step_body(float dt) {
 // (from its chip ID), so one is curious, another sleepy, another hums a lot.
 
 enum { Q_NONE, Q_GLANCE, Q_DBLINK, Q_SLOWBLINK, Q_WINK, Q_YAWN, Q_HUM, Q_SNEEZE, Q_LOOKUP,
-       Q_STRETCH, Q_ROLL, Q_NOD, Q_CHEER, Q_SIGH, Q_HUFF, Q_COUNT };
+       Q_STRETCH, Q_ROLL, Q_NOD, Q_CHEER, Q_SIGH, Q_HUFF, Q_COUGH, Q_COUNT };
 static const char * QUIRK_NAMES[Q_COUNT] = {"", "glance", "double blink", "slow blink", "wink", "yawn", "hum",
-                                            "sneeze", "look up", "stretch", "eye roll", "nod", "cheer", "sigh", "huff"};
-static const float QUIRK_DUR[Q_COUNT] = {0, 1.6f, 0.5f, 1.3f, 0.8f, 2.4f, 3.6f, 1.7f, 1.9f, 1.8f, 1.3f, 0.7f, 1.3f, 1.9f, 0.9f};
+                                            "sneeze", "look up", "stretch", "eye roll", "nod", "cheer", "sigh", "huff", "cough"};
+static const float QUIRK_DUR[Q_COUNT] = {0, 1.6f, 0.5f, 1.3f, 0.8f, 2.4f, 3.6f, 1.7f, 1.9f, 1.8f, 1.3f, 0.7f, 1.3f, 1.9f, 0.9f, 1.1f};
 static int quirk = Q_NONE, quirk_side = 1;
 static float quirk_t = 0, quirk_next = 6;
 static uint8_t quirk_fired = 0;                 // one-shot steps inside a quirk (bit per step)
@@ -779,6 +905,9 @@ static int quirk_pick(void) {
     // how it feels changes what it does: sighs when down, more humming and winking when happy
     if (H < -0.2f) { w[Q_SIGH] += 3 * -H; w[Q_HUM] *= 1 + H; w[Q_WINK] *= 1 + H; w[Q_CHEER] = 0; }
     if (H > 0.4f) { w[Q_HUM] *= 1.6f; w[Q_WINK] *= 1.4f; }
+    // the filament: ABS and ASA fumes make it cough, PETG makes it keep an eye on the nozzle
+    if (moonraker.data.printing && (cur_mat == MAT_ABS || cur_mat == MAT_ASA)) w[Q_COUGH] += 2;
+    if (moonraker.data.printing && cur_mat == MAT_PETG) w[Q_GLANCE] += 1;
     if (mood == M_MAD) { for (int i = 0; i < Q_COUNT; i++) w[i] = 0; w[Q_HUFF] = 3; w[Q_ROLL] = 1; w[Q_GLANCE] = 1; }
     float sum = 0;
     for (int i = 0; i < Q_COUNT; i++) sum += w[i];
@@ -891,6 +1020,12 @@ static void step_quirks(float dt) {
             QF.dy = 4 * e; QF.gape = 0.4f * e; QF.w = -7 * e; QF.dx = sinf(t * 40) * 1.5f * e;
             if (quirk_step(0)) head_kick(0, 60);
             break;
+        case Q_COUGH:       // ABS fumes: two little coughs
+            e = bump(t, D, 0.15f);
+            QF.open_l = QF.open_r = 1 - 0.6f * e; QF.gape = 0.5f * e * fabsf(sinf(t * 9)); QF.w = -6 * e;
+            if (t > 0.1f && quirk_step(0)) head_kick(0, 70);
+            if (t > 0.5f && quirk_step(1)) head_kick(0, 55);
+            break;
         case Q_CHEER:       // a milestone: happy bounce
             e = bump(t, D, 0.2f);
             QF.cheek = e; QF.curve = 0.8f * e; QF.gape = 0.6f * e; QF.dy = -fabsf(sinf(t * 10)) * 6 * e;
@@ -921,6 +1056,7 @@ static void step_expr(float dt) {
         t.curve = clampf(t.curve + 0.55f * hv, -0.9f, 1);
         t.open = clampf(t.open + 0.08f * hv, 0.2f, 1);
         if (hv < 0) { t.tilt += 0.7f * hv; t.omega *= 1 + hv; }
+        if (moonraker.data.printing && cur_mat == MAT_TPU) t.wave += 0.35f;   // TPU: wobbly
     }
     float kk = 1 - expf(-dt * 9);
     float * e = (float *)&E; const float * tt = (const float *)&t;
@@ -970,7 +1106,11 @@ static void watch_printer(const moonraker_data_t & d) {
     if (d.printing && d.layer > 1 && seen_layer && d.layer != seen_layer) coaster_quirk_nod();
     seen_layer = d.printing ? d.layer : 0;
     if (d.printing && was_printing && d.progress != last_progress &&
-        (d.progress / 25) > (last_progress / 25) && d.progress < 100) quirk_cheer();
+        (d.progress / 25) > (last_progress / 25) && d.progress < 100) {
+        quirk_cheer();
+        if (d.progress / 25 == 2) say("Halfway there!", 1);
+    }
+    if (d.printing && was_printing && last_progress < 90 && d.progress >= 90 && d.progress < 100) say("Almost done!", 1);
     if (d.printing) last_progress = d.progress;
     if (!was_printing && d.printing) { stats = {}; novelty_pending = true; }
     if (was_printing && !d.printing) {
@@ -988,12 +1128,29 @@ static void watch_printer(const moonraker_data_t & d) {
             float extra = d.print_time > 4 * 3600 ? 0.1f * L(LK_LONG) : d.print_time < 1800 ? 0.1f * L(LK_SHORT) : 0;
             feel(0.2f + 0.04f * min((int)streak, 5) + extra,
                  streak >= 3 ? "print streak!" : d.print_time > 4 * 3600 ? "finished a long print" : "finished a print");
+            char t[48];
+            if (streak >= 3) snprintf(t, sizeof(t), "Done! That's %d in a row!", streak);
+            else strlcpy(t, d.print_time > 4 * 3600 ? "Done! Phew, that was a long one." : "Done! That was fun.", sizeof(t));
+            say(t, 2);
+            if (streak > best_streak) best_streak = streak;
         } else {
             t_sad = 8;                                    // cancelled or failed
             streak = 0;
-            if (last_progress < 5) feel(-0.05f, "print stopped early");
-            else feel(-0.15f, "print failed");
+            prints_failed++;
+            if (last_progress < 5) { feel(-0.05f, "print stopped early"); say("Never mind, then.", 1); }
+            else {
+                feel(-0.15f, "print failed"); say("Oh no...", 2);
+                if (cur_mat >= 0) mat_learn[cur_mat] = (int8_t)constrain((int)mat_learn[cur_mat] - 6, -50, 50);
+            }
         }
+        // the album
+        total_s += d.print_time;
+        if (report.done && d.print_time > longest_s) longest_s = d.print_time;
+        uint16_t cg = (uint16_t)min(65000.0f, stats.peak * 100);
+        if (cg > wildest_cg) wildest_cg = cg;
+        screams_total += stats.screams; dizzies_total += stats.dizzies;
+        cur_mat = -1;
+        feel_dirty = true;
         cool_until = millis() + 10 * 60000UL;
     }
     was_printing = d.printing;
@@ -1439,7 +1596,12 @@ static void draw_face(lv_event_t * e) {
     p.fc = lv_theme_color();
 
     // speech bubble: the face drops a little to make room, and talks for the first two seconds
-    bool bubble = p.s > 0.8f && (int32_t)(bubble_until - millis()) > 0 && moonraker.data.msg[0];
+    // speech bubble: a printer message (M117...) wins over Coaster's own words
+    bool msg_on = (int32_t)(bubble_until - millis()) > 0 && moonraker.data.msg[0];
+    bool say_on = !msg_on && (int32_t)(say_until - millis()) > 0 && say_buf[0];
+    bool bubble = p.s > 0.8f && (msg_on || say_on);
+    const char * btext = msg_on ? moonraker.data.msg : say_buf;
+    uint32_t bsince = msg_on ? bubble_since : say_since;
     bubble_k += ((bubble ? 1.0f : 0.0f) - bubble_k) * 0.25f;
     bool big = p.s > 0.8f;                 // decorations only on the full-size face
     if (big) draw_deco_back(p);
@@ -1480,7 +1642,7 @@ static void draw_face(lv_event_t * e) {
     draw_eye(p, cx - 54 * sx, cy - 14 * sy + tiltL, -1, sx, clampf(open * QF.open_l, 0, 1.1f), QF.look_y);
     draw_eye(p, cx + 54 * sx, cy - 14 * sy + tiltR, 1, sx, clampf(open * QF.open_r, 0, 1.1f), QF.look_y);
     float talk = 0;
-    if (bubble && millis() - bubble_since < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
+    if (bubble && millis() - bsince < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
     E.gape = max(E.gape, talk);
     draw_mouth(p, cx, cy + 22 * sy);
     E = keep;
@@ -1510,7 +1672,7 @@ static void draw_face(lv_event_t * e) {
         ld.color = lv_color_hex(0xE7EEF4); ld.opa = op; ld.font = &ui_font_InterSemiBold14; ld.align = LV_TEXT_ALIGN_CENTER;
         ld.line_space = -1;
         lv_area_t ta = {X(p, 52), Y(p, top + 6), X(p, 188), Y(p, top + 43)};
-        lv_draw_label(p.ctx, &ld, &ta, moonraker.data.msg, NULL);
+        lv_draw_label(p.ctx, &ld, &ta, btext, NULL);
     }
 
     // sweat drop while the nozzle is hot
@@ -1584,6 +1746,21 @@ static void draw_face(lv_event_t * e) {
             ld.opa = (lv_opa_t)(255 * sinf(z * PI) * clampf(mood_t / 1.5f, 0, 1));
             lv_area_t a = {X(p, 160 + z * 26), Y(p, 80 - z * 36), X(p, 180 + z * 26), Y(p, 104 - z * 36)};
             lv_draw_label(p.ctx, &ld, &a, "z", NULL);
+        }
+    }
+    // idle clock under the face
+    if (big && T.clock && !d.printing && act == ACT_NONE && mood != M_HEATING && bubble_k < 0.3f) {
+        time_t now = time(NULL);
+        if (now > 1700000000) {
+            now += T.tz_min * 60;
+            struct tm tm_; gmtime_r(&now, &tm_);
+            char t[12];
+            if (T.clock == 2) snprintf(t, sizeof(t), "%02d:%02d", tm_.tm_hour, tm_.tm_min);
+            else snprintf(t, sizeof(t), "%d:%02d %s", (tm_.tm_hour + 11) % 12 + 1, tm_.tm_min, tm_.tm_hour < 12 ? "am" : "pm");
+            lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);
+            ld.color = p.fc; ld.opa = mood == M_SLEEPY ? 150 : 220; ld.font = &ui_font_InterSemiBold24; ld.align = LV_TEXT_ALIGN_CENTER;
+            lv_area_t a = {X(p, 40), Y(p, 180), X(p, 200), Y(p, 210)};
+            lv_draw_label(p.ctx, &ld, &a, t, NULL);
         }
     }
     for (int i = 0; i < confetti_n; i++) {
@@ -1712,7 +1889,7 @@ void coaster_poke(void) {
     uint32_t now = millis(), oldest = pokes[pi];
     pokes[pi] = now; pi = (pi + 1) % 8;
     int limit_ms = eff(LK_POKES) <= -50 ? 40000 : eff(LK_POKES) >= 50 ? 6000 : 15000;
-    if (oldest && now - oldest < (uint32_t)limit_ms && t_mad <= 0) { t_mad = 4; t_giggle = 0; feel(-0.03f, "poked too much"); head_kick(0, 50); return; }
+    if (oldest && now - oldest < (uint32_t)limit_ms && t_mad <= 0) { t_mad = 4; t_giggle = 0; feel(-0.03f, "poked too much"); say("Hey! Quit it!", 2); head_kick(0, 50); return; }
     if (t_mad > 0) return;
     feel(0.005f + 0.01f * L(LK_POKES), NULL);
     static uint32_t poke_day_ms = 0;   // poked on many days: gets used to it
@@ -1741,11 +1918,33 @@ void coaster_set_act(int slot) {
 }
 
 // compact state for the OctoPrint plugin's sidebar Coaster
+// The album on the Coaster page: its life so far
+String coaster_album_json(void) {
+    DynamicJsonDocument d(3072);
+    d["born"] = born; d["bday"] = String(T.bday_m) + "-" + T.bday_d;
+    d["prints"] = prints_done; d["failed"] = prints_failed; d["streak"] = streak; d["best"] = best_streak;
+    d["hours"] = total_s / 3600.0f; d["longest"] = longest_s; d["wildest"] = wildest_cg / 100.0f;
+    d["screams"] = screams_total; d["dizzies"] = dizzies_total;
+    d["feeling"] = feel_name(); d["open"] = openness;
+    JsonObject tr = d.createNestedObject("traits");
+    tr["curious"] = tr_curious; tr["sleepy"] = tr_sleepy; tr["musical"] = tr_musical; tr["silly"] = tr_silly;
+    int fav_season = -1;
+    for (int i = LK_HOLIDAYS; i <= LK_HALLOWEEN; i++) if (fav_season < 0 || like[i] > like[fav_season]) fav_season = i;
+    d["season"] = LIKE_NAMES[fav_season];
+    JsonArray mats = d.createNestedArray("filaments");
+    for (int i = 0; i < MAT_COUNT; i++) {
+        JsonObject m = mats.createNestedObject();
+        m["name"] = MAT_NAMES[i]; m["like"] = mat_eff(i); m["born"] = mat_like[i]; m["prints"] = mat_prints[i];
+    }
+    String out; serializeJson(d, out);
+    return out;
+}
+
 // For the OctoPrint sidebar. The first part changes rarely (mood, quirk, feeling, decorations);
 // with motion it also carries where the head and pupils are, so the sidebar can follow along.
 bool coaster_plugin_watched = false;   // someone has the sidebar open (the plugin says so)
 String coaster_plugin_json(bool motion) {
-    char buf[520];
+    char buf[640];
     lv_color32_t c32; c32.full = lv_color_to32(lv_theme_color());
     int n = snprintf(buf, sizeof(buf),
                      "{\"mood\":\"%s\",\"feel\":\"%s\",\"h\":%.2f,\"hat\":%d,\"q\":\"%s\",\"qs\":%d,\"deco\":\"%s\",\"lights\":\"%s\",\"anim\":\"%s\","
@@ -1754,6 +1953,10 @@ String coaster_plugin_json(bool motion) {
                      DECO_KEYS[deco_kind > 0 ? deco_kind : 0], LIGHT_KEYS[T.lights], ANIM_KEYS[T.anim],
                      shades_on ? 1 : 0, act, c32.ch.red, c32.ch.green, c32.ch.blue, T.south ? 1 : 0,
                      moonraker.data.printing ? 1 : 0, heat_effort);
+    if (cur_mat >= 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"mat\":\"%s\"", MAT_NAMES[cur_mat]);
+    if ((int32_t)(say_until - millis()) > 0 && say_buf[0]) {   // what it's saying (no quotes or backslashes in its lines)
+        n += snprintf(buf + n, sizeof(buf) - n, ",\"say\":\"%s\"", say_buf);
+    }
     if (motion) {
         float bs = BOUNCE * T.sense * SENSE_K;
         n += snprintf(buf + n, sizeof(buf) - n, ",\"hx\":%.1f,\"hy\":%.1f,\"hs\":%.3f,\"px\":%.1f,\"py\":%.1f,\"look\":%.1f",

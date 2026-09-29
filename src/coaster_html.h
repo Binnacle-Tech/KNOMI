@@ -115,6 +115,7 @@ body{padding-top:0}
 .saved{font-family:var(--font-mono);font-size:11.5px;color:var(--cyan)}
 .saved.bad{color:#E06C5A}
 @media (max-width:640px){.rail nav a{padding:6px 7px;font-size:12px}}
+.album .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}.album dt{color:var(--muted-2)}.album dd{margin:0;color:var(--text);font-variant-numeric:tabular-nums}
 </style></head><body>
 <header class="rail"><div class="rail-in">
   <div class="brand"><a href="/" style="display:inline-flex;align-items:center;gap:8px"><svg class="mark" style="width:24px;height:24px" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="126" fill="#000" stroke="#334353" stroke-width="6"/><g stroke="#C02F30" stroke-width="16" stroke-linecap="round" fill="none"><path d="M32 112h80M144 112h80"/><path stroke-width="14" d="M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0"/></g><g fill="#C02F30"><path d="M42 112a30 30 0 0 0 60 0z"/><path d="M154 112a30 30 0 0 0 60 0z"/></g></svg><span>KNOMI<span class="dot">.</span></span></a></div><span class="rail-sp"></span>
@@ -194,6 +195,21 @@ body{padding-top:0}
             <input id="dDate" type="date" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px"><small>Only for this page: see what Coaster wears on that day.</small></div>
           <div class="row"><button type="button" id="dShades">Sunglasses on/off</button></div>
         </div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h2>Talking and clock</h2></div>
+        <div class="card-b deco">
+          <div class="sl"><div class="sl-top"><label for="dTalk">Coaster talks</label></div>
+            <select id="dTalk" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px"><option value="2">Often</option><option value="1" selected>Sometimes</option><option value="0">Never</option></select>
+            <small>Speech bubbles of its own: print milestones, the filament, what it thinks. Printer messages (M117) always show.</small></div>
+          <div class="sl"><div class="sl-top"><label for="dClock">Clock when idle</label></div>
+            <select id="dClock" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px"><option value="1">12 hour</option><option value="2">24 hour</option><option value="0">Off</option></select>
+            <small>Under Coaster when nothing is printing.</small></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h2>Coaster's album</h2></div>
+        <div class="card-b"><div id="album" class="album note">Loading…</div></div>
       </section>
       <section class="card">
         <div class="card-h"><h2>Motion</h2><span class="sp"></span><span class="note" id="scenTime"></span></div>
@@ -300,7 +316,23 @@ function knomiSave(msg){
   fetch("/coaster.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
     .then(function(r){if(!r.ok)throw 0;say(msg)}).catch(function(){say("Not saved, try again",true)});
 }
-["dMode","dLights","dAnim","dHemi","dBday"].forEach(function(id){$(id).addEventListener("change",function(){knomiSave("Decorations saved")})});
+["dMode","dLights","dAnim","dHemi","dBday","dTalk","dClock"].forEach(function(id){$(id).addEventListener("change",function(){knomiSave("Saved")})});
+function album(){fetch("/coaster/album").then(function(r){return r.json()}).then(function(a){
+  function esc(x){return String(x).replace(/[&<>]/g,"")}
+  var born=a.born?new Date(a.born*1000).toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"}):"not yet (no clock)";
+  var bd=(a.bday||"9-28").split("-"),bdt=new Date(2000,+bd[0]-1,+bd[1]).toLocaleDateString(undefined,{month:"long",day:"numeric"});
+  function hm(s){var h=Math.floor(s/3600),m=Math.round(s%3600/60);return(h?h+" h ":"")+m+" min"}
+  var tr=a.traits||{},top=Object.keys(tr).sort(function(x,y){return tr[y]-tr[x]});
+  var fil=(a.filaments||[]).slice().sort(function(x,y){return y.like-x.like});
+  var rows=[["First switched on",born],["Birthday",bdt],["Prints together",a.prints+(a.failed?" ("+a.failed+" didn't make it)":"")],
+    ["Best streak",a.best+" in a row"],["Time printing",a.hours.toFixed(1)+" h"],["Longest print",a.longest?hm(a.longest):"none yet"],
+    ["Wildest ride",a.wildest?a.wildest.toFixed(2)+" g":"none yet"],["Screams, dizzy spells",a.screams+", "+a.dizzies],
+    ["Favorite time of year",a.season],["Personality","most "+top[0]+", least "+top[top.length-1]+(a.open>0.15?", loves a change of pace":a.open<-0.15?", a creature of habit":"")],
+    ["Favorite filament",fil.length?fil[0].name+(fil[0].prints?" ("+fil[0].prints+" prints)":""):"?"],["Least favorite",fil.length?fil[fil.length-1].name:"?"],
+    ["Feeling",a.feeling]];
+  $("album").innerHTML="<dl class='kv'>"+rows.map(function(r){return"<dt>"+esc(r[0])+"</dt><dd>"+esc(r[1])+"</dd>"}).join("")+"</dl>";
+}).catch(function(){$("album").textContent="The album is on the KNOMI (firmware OP28 or newer)."})}
+album();setInterval(album,60000);
 function knomiCard(){fetch("/coaster/card").then(function(r){return r.json()}).then(function(j){var r=j.report;if(!r){$("kReport").textContent="";return}
   var h=Math.floor(r.secs/3600),m=Math.floor(r.secs%3600/60);
   $("kReport").textContent="Last print: "+(r.done?"done":"stopped at "+r.progress+"%")+" after "+(h?h+"h ":"")+m+"m · "+r.screams+" screams · peak "+r.peak.toFixed(1)+" g · dizzy "+r.dizzies+"x · "+r.jolts+" jolts"}).catch(function(){})}
@@ -579,7 +611,7 @@ function stepExpr(dt){
 }
 
 /* ---------------- quirks (same as the firmware) ---------------- */
-var QUIRKS={glance:1.6,"double blink":0.5,"slow blink":1.3,wink:0.8,yawn:2.4,hum:3.6,sneeze:1.7,"look up":1.9,stretch:1.8,"eye roll":1.3,nod:0.7,cheer:1.3};
+var QUIRKS={glance:1.6,"double blink":0.5,"slow blink":1.3,wink:0.8,yawn:2.4,hum:3.6,sneeze:1.7,"look up":1.9,stretch:1.8,"eye roll":1.3,nod:0.7,cheer:1.3,sigh:1.9,huff:0.9,cough:1.1};
 var Q={name:"",t:0,side:1,fired:{},next:5}, QF={}, notes=[], sacc={x:0,y:0,tx:0,ty:0,t:1};
 function qReset(){QF={look:0,lookY:0,openL:1,openR:1,gape:0,curve:0,w:0,cheek:0,dx:0,dy:0,sq:0}}qReset();
 function bump(t,d,e){return clamp(Math.min(t/e,(d-t)/e),0,1)}
@@ -627,6 +659,9 @@ function stepQuirks(dt){
     case "stretch":e=bump(t,D,0.6);QF.sq=0.16*e;QF.cheek=0.9*e;QF.curve=0.5*e;QF.dy=-4*e;QF.openL=QF.openR=1+e;break;
     case "eye roll":var a=clamp(t/D,0,1)*2*Math.PI;e=bump(t,D,0.15);QF.look+=Math.sin(a)*16*e;QF.lookY-=(1-Math.cos(a))*4*e;QF.openL=QF.openR=1-0.25*e;break;
     case "nod":QF.dy=Math.sin(Math.PI*clamp(t/D,0,1))*6;break;
+    case "sigh":e=bump(t,D,0.5);QF.openL=QF.openR=1-0.6*e;QF.dy=5*e;QF.curve=-0.3*e;QF.gape=0.25*e;QF.w=-6*e;break;
+    case "huff":e=bump(t,D,0.12);QF.dy=4*e;QF.gape=0.4*e;QF.w=-7*e;QF.dx=Math.sin(t*40)*1.5*e;if(qOnce(0))headKick(0,60);break;
+    case "cough":e=bump(t,D,0.15);QF.openL=QF.openR=1-0.6*e;QF.gape=0.5*e*Math.abs(Math.sin(t*9));QF.w=-6*e;if(t>0.1&&qOnce(0))headKick(0,70);if(t>0.5&&qOnce(1))headKick(0,55);break;
     case "cheer":e=bump(t,D,0.2);QF.cheek=e;QF.curve=0.8*e;QF.gape=0.6*e;QF.dy=-Math.abs(Math.sin(t*10))*6*e;QF.openL=QF.openR=1+e;break;
   }
 }
@@ -719,10 +754,11 @@ function draw(){
 // ones (snow, petals, sunglasses, leaves) flip with the hemisphere.
 var DECO={mode:"auto",lights:"classic",anim:"twinkle",hemi:"n",bday:"09-28"}, decoTry=null;
 function decoLoad(j){
+  if(typeof j.talk=="number")$("dTalk").value=j.talk;if(typeof j.clock=="number")$("dClock").value=j.clock;
   if(j.deco)DECO.mode=j.deco;if(j.lights)DECO.lights=j.lights;if(j.anim)DECO.anim=j.anim;if(j.hemi)DECO.hemi=j.hemi;if(j.bday)DECO.bday=j.bday;
   decoUi();
 }
-function decoSettings(){return{deco:$("dMode").value,lights:$("dLights").value,anim:$("dAnim").value,hemi:$("dHemi").value,bday:($("dBday").value||"2026-09-28").slice(5),tz:-new Date().getTimezoneOffset()}}
+function decoSettings(){return{deco:$("dMode").value,lights:$("dLights").value,anim:$("dAnim").value,hemi:$("dHemi").value,bday:($("dBday").value||"2026-09-28").slice(5),tz:-new Date().getTimezoneOffset(),talk:+$("dTalk").value,clock:+$("dClock").value}}
 function decoUi(){$("dMode").value=DECO.mode;$("dLights").value=DECO.lights;$("dAnim").value=DECO.anim;$("dHemi").value=DECO.hemi;$("dBday").value="2026-"+DECO.bday}
 function inWin(m,d,m0,d0,m1,d1){var v=m*100+d,a=m0*100+d0,b=m1*100+d1;return a<=b?(v>=a&&v<=b):(v>=a||v<=b)}
 function weather(m,south){var s=["winter","winter","spring","spring","spring","summer","summer","summer","autumn","autumn","autumn","winter"][m-1];

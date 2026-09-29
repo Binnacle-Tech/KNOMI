@@ -51,6 +51,7 @@ bool knomi_ble_apply_status(const char *json, size_t len) {
     d.z_um = doc.containsKey("z") ? (int32_t)(doc["z"] | 0) : INT32_MIN;
     d.layer = doc["ly"][0] | 0;
     d.layer_total = doc["ly"][1] | 0;
+    strlcpy(d.material, doc["mt"] | "", sizeof(d.material));
     strlcpy(d.file_path, doc["n"] | "", sizeof(d.file_path));
     d.nozzle_actual = doc["nt"][0] | 0;
     d.nozzle_target = doc["nt"][1] | 0;

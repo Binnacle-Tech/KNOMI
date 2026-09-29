@@ -380,6 +380,7 @@ void octo_plugin_layers(JsonVariantConst d) {
     octo_layers = d["layers"] | 0;
     JsonVariantConst z = d["z"];
     octo_z = (octo_layer > 0 && !z.isNull()) ? z.as<int32_t>() : INT32_MIN;
+    strlcpy(moonraker.data.material, d["mat"] | "", sizeof(moonraker.data.material));
     static int16_t said = -1;
     if (octo_layer && said <= 0) Serial.printf("octoprint: layer %d of %d from the plugin\r\n", octo_layer, octo_layers);
     said = octo_layer;

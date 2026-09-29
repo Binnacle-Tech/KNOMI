@@ -118,6 +118,14 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 
 **Feelings:** under the quick moods, Coaster has a slower feeling that lasts hours and survives restarts. Printing makes it happier, finishing prints (especially a streak) more so. Getting dizzy, failed prints, being left off for days, losing OctoPrint and heating up with nothing to print make it unhappier; heating for nothing gets it mad. Crashes, power blips and waking up at night leave it confused for a moment. Happy, it smiles more and hums; down, it droops, sighs and sulks. Each Coaster is also born with its own likes and dislikes (a favorite season, one it could do without, long or quick prints, fast moves, being poked, late nights, fans, heat, quiet time). They're rolled once, kept on the KNOMI, and can't be changed. It also learns from you: after five prints it knows your usual print length and time of day, and a print that breaks the habit (much longer, much shorter, an odd hour, a much wilder ride) gets a reaction. Some Coasters love a change of pace, others are creatures of habit and get uneasy. What you print a lot it slowly warms up to (lots of quick prints and it grows fond of them, late nights make a night owl), on top of what it was born with. The /coaster page shows how it feels, why, and what it likes.
 
+**Filaments (plugin 0.9+):** the plugin reads the filament type from the slicer's settings in the file (or its name), and Coaster reacts: coughs through ABS and ASA, keeps an eye on the nozzle with PETG, goes wobbly on TPU. Every Coaster is born with a favorite filament and one it doesn't like, grows fond of what you print a lot, and goes off a filament that fails.
+
+**Talking:** Coaster says things of its own in speech bubbles: good morning, the filament, a new file or one it has printed a lot, halfway, almost done, done, a streak, a season it likes or hates, and the odd thought when it's idle. Set it to often, sometimes or never on the /coaster page. Printer messages (M117) always win.
+
+**Idle clock:** when nothing is printing, the time shows under Coaster (12 or 24 hour, or off, on the /coaster page).
+
+**Album:** the /coaster page keeps Coaster's life so far: when it was first switched on, its birthday, prints together, best streak, time printing, longest print, wildest ride, screams, favorite season and filament, and its personality.
+
 **Quirks:** every few seconds Coaster does something small on its own, printing or not: glances around, blinks, winks, yawns, hums, sneezes, stretches, rolls its eyes, sighs when it's down, huffs when it's mad. It nods at each layer change and cheers at 25, 50 and 75 %. Each KNOMI gets its own personality from its chip ID.
 
 **OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood, how it's feeling (plugin 0.7.1+) and the last report card. The KNOMI sends its mood to the plugin (over WiFi or Bluetooth).

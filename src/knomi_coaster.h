@@ -25,7 +25,8 @@ void coaster_set_act(int slot);                           // LVGL task: busy sta
 String coaster_state_json(void);   // live mood + meters for the web page
 String coaster_tuning_json(void);  // current tuning (defaults if never saved)
 String coaster_plugin_json(bool motion = false);
-extern bool coaster_plugin_watched;  // mood, hat, last report for the OctoPrint sidebar
+extern bool coaster_plugin_watched;
+String coaster_album_json(void);   // the Coaster page's album  // mood, hat, last report for the OctoPrint sidebar
 const char * coaster_save_json(const char * json, size_t len);  // web task; NULL or an error
 void coaster_set_idle(bool on);    // web task
 #endif
