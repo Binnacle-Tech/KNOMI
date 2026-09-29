@@ -9,6 +9,8 @@
 #include "knomi_ble.h"
 #include "backup.h"
 #include "layout_html.h"
+#include "coaster_html.h"
+#include "knomi_coaster.h"
 #include "ui_overlay/lv_overlay.h"
 #include <LittleFS.h>
 
@@ -138,6 +140,8 @@ String knomi_html_processor(const String& var){
         char hex[8];
         snprintf(hex, sizeof(hex), "#%02x%02x%02x", c.ch.red, c.ch.green, c.ch.blue);
         value = hex;
+    } else if (var == "if_0" || var == "if_1") {
+        value = (coaster_idle_enabled() == (var == "if_1")) ? "selected" : "";
     } else if (var == "idle_rot") {
         value = String(knomi_config.idle_rotate_s);
     } else if (var.startsWith("idle_c")) {
@@ -317,7 +321,7 @@ static String gifs_page(void) {
     String page = String("<!DOCTYPE html><html lang='en'><head><title>KNOMI · Animations</title>") + BINNACLE_HEAD +
         "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
         "<a class='n' href='/'>KNOMI<span class='dot'>.</span></a><span class='f'>Printer display</span></div>"
-        "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a><a href='/layout'>Print screen</a>"
+        "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a><a href='/layout'>Print screen</a><a href='/coaster'>Coaster face</a>"
         "<a href='/update'>Firmware</a></nav>" BINNACLE_MODES "</div></header><main class='wrap'>"
         "<section class='mast'><span class='label'>Animations</span><h1>Animations<span class='dot'>.</span></h1>"
         "<p class='lede'>Upload a GIF to any slot to replace it. It shows on the display right away. "
@@ -517,6 +521,8 @@ static void screen_routes(void) {
         c.heated_s = int_param(request, "heated_s", 0, 600, c.heated_s);
         c.print_ok_s = int_param(request, "print_ok_s", 0, 600, c.print_ok_s);
         c.printed_s = int_param(request, "printed_s", 0, 3600, c.printed_s);
+        if (request->hasParam("idle_face", true))
+            coaster_set_idle(request->getParam("idle_face", true)->value() == "1");
         knomi_config_sanitize_screen();
         knomi_config_require_change(LOCAL_POST_SETTINGS);
         knomi_display_settings_dirty = true;
@@ -627,6 +633,33 @@ static void layout_routes(void) {
     });
 }
 
+static void coaster_routes(void) {
+    server.on("/coaster", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send_P(200, "text/html", coaster_html);
+    });
+    server.on("/coaster.json", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(200, "application/json", coaster_tuning_json());
+    });
+    server.on("/coaster.json", HTTP_POST, [](AsyncWebServerRequest *request){
+        char *body = (char *)request->_tempObject;
+        const char *err = body ? coaster_save_json(body, strlen(body)) : "Empty";
+        if (err) request->send(400, "text/plain", err);
+        else request->send(200, "text/plain", "ok");
+    }, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+        if (total == 0 || total > 1024) return;
+        if (index == 0) { char *b = (char *)malloc(total + 1); if (b) b[0] = 0; request->_tempObject = b; }
+        char *b = (char *)request->_tempObject;
+        if (!b || index + len > total) return;
+        memcpy(b + index, data, len);
+        b[index + len] = 0;
+    });
+    server.on("/coaster/state", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", coaster_state_json());
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
+}
+
 static void gif_routes(void) {
     server.on("/binnacle.css", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", binnacle_css);
@@ -693,6 +726,7 @@ void webserver_setup(void) {
     display_routes();
     screen_routes();
     layout_routes();
+    coaster_routes();
     bluetooth_routes();
     backup_routes(server);
 

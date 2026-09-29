@@ -123,7 +123,7 @@ async function discoverOcto(){
 <header class="rail"><div class="wrap rail-in">
   <div class="brand"><a class="n" href="/">KNOMI<span class="dot">.</span></a><span class="f">Printer display</span></div>
   <span class="rail-sp"></span>
-  <nav><a class="on" href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a href="/update">Firmware</a></nav>
+  <nav><a class="on" href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a></nav>
   )rawliteral" BINNACLE_MODES R"rawliteral(
 </div></header>
 
@@ -251,6 +251,14 @@ async function discoverOcto(){
             <button type="submit" class="btn-ghost" name="theme_default" value="1">Default red</button>
           </div>
           <div class="hint">Buttons, rings and (if turned on above) the animations.</div>
+        </div>
+        <div class="row">
+          <label class="field-label" for="idle_face">Idle screen</label>
+          <select id="idle_face" name="idle_face">
+            <option value="0" $if_0$>Idle animations</option>
+            <option value="1" $if_1$>Coaster face (reacts to motion)</option>
+          </select>
+          <div class="hint"><a href="/coaster">Tune how the coaster face reacts</a>.</div>
         </div>
         <div class="row">
           <label class="field-label" for="touch_idle">Back to the idle face after (seconds)</label>

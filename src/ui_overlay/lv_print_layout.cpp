@@ -12,6 +12,7 @@
 //   arc:  {"t":"arc","x":120,"y":120,"d":212,"w":20,"s":0,"e":360,"c":"t","b":"","p":1,"rd":0}
 //   bar:  {"t":"bar","x":120,"y":200,"w":120,"h":8,"c":"t","b":"#333333","rd":1}
 //   gif:  {"t":"gif","x":120,"y":120,"g":"print"}
+//   face: {"t":"face","x":120,"y":120,"d":240}   (the coaster face, d px square)
 // x/y are the element's center on the 240x240 screen. Angles: 0 = top, clockwise.
 // Colors: "t" UI color, "x" text, "m" muted, "a" amber, or "#rrggbb".
 #include <Arduino.h>
@@ -23,6 +24,7 @@
 #include "moonraker.h"
 #include "knomi_gif.h"
 #include "lv_overlay.h"
+#include "../knomi_coaster.h"
 
 #define LAYOUT_PATH      "/layout.json"
 #define LAYOUT_MAX_PAGES 4
@@ -42,7 +44,7 @@ const char layout_default_json[] = R"json({"v":1,"pages":[{"s":10,"el":[
 {"t":"text","x":120,"y":174,"f":14,"c":"m","w":0,"a":"c","txt":"{noz}/{noz_t}{deg}   {bed}/{bed_t}{deg}"},
 {"t":"text","x":120,"y":196,"f":14,"c":"m","w":0,"a":"c","txt":"{pos}"}]}]})json";
 
-enum { EL_TEXT, EL_ARC, EL_BAR, EL_GIF };
+enum { EL_TEXT, EL_ARC, EL_BAR, EL_GIF, EL_FACE };
 
 // parse in PSRAM, internal RAM is tight
 struct SpiRamAllocator {
@@ -339,6 +341,11 @@ static void build_el(layout_page_t & pg, JsonObjectConst e) {
         place(g, e);
         el.type = EL_GIF;
         el.obj = g;
+    } else if (strcmp(t, "face") == 0) {
+        lv_obj_t * f = coaster_create(pg.cont, constrain((int)(e["d"] | 240), 60, 240));
+        place(f, e);
+        el.type = EL_FACE;
+        el.obj = f;
     } else {
         return;
     }

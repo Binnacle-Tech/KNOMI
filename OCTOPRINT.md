@@ -90,6 +90,16 @@ Layer changes use the printer's layer number when it reports one, otherwise each
 
 **Save & preview on KNOMI** shows the layout on the real screen for 20 s, using sample values if nothing is printing. You can also start from a few ready-made layouts, and download or load layout files to share them. The layout is included in backups. Settings › Printing screen switches between your layout and the stock accelerometer bars.
 
+## Coaster face
+A face drawn live instead of a GIF, in the same flat style as the stock faces. Its head and pupils hang on springs driven by the KNOMI's accelerometer (now read at 200 Hz), so toolhead moves slosh them around. It picks a mood from how hard and how long it's being thrown, and gets used to steady shaking:
+calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (input shaper test), elevator (Z moves, from OctoPrint's Z), sleepy, bored (paused), plus a sweat drop when the nozzle is hot and confetti when a print finishes.
+
+- **Idle screen:** Settings › Screen & animations › Idle screen › Coaster face. Homing, QGL and the other busy animations still play as GIFs.
+- **Print screen:** add "Coaster face" in the designer, or start from "Coaster face, stats every 10 %".
+- **Tuning:** the **Coaster face** page (`/coaster`) has a simulated KNOMI to try settings on (play print moves, fling it, or play a Klipper accelerometer CSV), the KNOMI's live mood, and **Save to KNOMI**. Saved in `/coaster.json` and included in backups.
+
+The KNOMI 1 has no accelerometer, so there the face only reacts to printer data.
+
 ## Paused animation
 While a print is paused, the printing screen plays the **Paused** animation (its own slot on /gifs).
 Swipe down to resume, swipe up to cancel, same as before. The plugin treats these as paused:

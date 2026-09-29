@@ -5,6 +5,7 @@
 //   C <len>\n<settings JSON>
 //   G <slot> <len>\n<gif bytes>        (one per custom GIF)
 //   G layout <len>\n<layout JSON>      (print screen designer, if saved)
+//   G coaster <len>\n<tuning JSON>     (coaster face, if saved)
 //   E\n
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
@@ -16,6 +17,7 @@
 
 #define BACKUP_MAGIC "KNOMI-BACKUP 1\n"
 #define LAYOUT_FILE "/layout.json"
+#define COASTER_FILE "/coaster.json"
 
 /* ---------------- settings <-> JSON ---------------- */
 
@@ -188,6 +190,13 @@ static size_t backup_fill(backup_gen_t *g, uint8_t *buf, size_t max_len) {
                     if (g->file) g->pending = String("G layout ") + String((unsigned)g->file.size()) + "\n";
                 }
             }
+            if (g->pending.isEmpty() && !g->file && g->slot == GIF_SLOT_NUM + 1) {
+                g->slot++;
+                if (LittleFS.exists(COASTER_FILE)) {
+                    g->file = LittleFS.open(COASTER_FILE, "r");
+                    if (g->file) g->pending = String("G coaster ") + String((unsigned)g->file.size()) + "\n";
+                }
+            }
             if (g->pending.isEmpty() && !g->file) g->phase = 3;
         } else if (g->phase == 3) {
             g->pending = "E\n";
@@ -217,6 +226,7 @@ struct restore_t {
 static void restore_clear_staged(void) {
     for (int s = 0; s < GIF_SLOT_NUM; s++) LittleFS.remove(knomi_gif_path((knomi_gif_slot_t)s) + ".rst");
     LittleFS.remove(LAYOUT_FILE ".rst");
+    LittleFS.remove(COASTER_FILE ".rst");
 }
 
 static void restore_commit_staged(void) {
@@ -228,6 +238,8 @@ static void restore_commit_staged(void) {
     // same for the print screen layout (no layout in the backup = default layout)
     LittleFS.remove(LAYOUT_FILE);
     if (LittleFS.exists(LAYOUT_FILE ".rst")) LittleFS.rename(LAYOUT_FILE ".rst", LAYOUT_FILE);
+    LittleFS.remove(COASTER_FILE);
+    if (LittleFS.exists(COASTER_FILE ".rst")) LittleFS.rename(COASTER_FILE ".rst", COASTER_FILE);
 }
 
 static void restore_fail(restore_t *r, const char *msg) {
@@ -264,7 +276,11 @@ static void restore_feed(restore_t *r, const uint8_t *data, size_t len) {
                 r->remaining = l.substring(sp + 1).toInt();
                 int slot = knomi_gif_slot_by_name(name.c_str());
                 if (sp < 0 || r->remaining > GIF_MAX_FILE_SIZE) { restore_fail(r, "Bad animation block"); return; }
-                if (name == "layout") {
+                if (name == "coaster") {
+                    if (r->remaining > 1024) { restore_fail(r, "Bad coaster face settings"); return; }
+                    r->file = LittleFS.open(COASTER_FILE ".rst", "w");
+                    if (!r->file) { restore_fail(r, "Could not write to flash"); return; }
+                } else if (name == "layout") {
                     if (r->remaining > 12288) { restore_fail(r, "Bad print screen layout"); return; }
                     r->file = LittleFS.open(LAYOUT_FILE ".rst", "w");
                     if (!r->file) { restore_fail(r, "Could not write to flash"); return; }

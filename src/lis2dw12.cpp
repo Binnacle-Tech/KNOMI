@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <LIS2DW12Sensor.h>
 #include "pinout.h"
+#include "knomi_coaster.h"
 
 #ifdef LIS2DW_SUPPORT
 
@@ -23,9 +24,9 @@ int32_t lis2dw12_acc[3];
  *  - the axis gravity pulls on is the printer's Z; the axis through the screen is
  *    Y (the KNOMI faces the front); the remaining in-plane axis is X.
  */
-#define SAMPLE_MS     20      // 50 Hz
-#define GRAVITY_ALPHA 0.01f   // ~2 s time constant for the gravity estimate
-#define PEAK_DECAY    0.85f   // per sample
+#define SAMPLE_MS     5       // 200 Hz (the coaster face wants the motion, not just peaks)
+#define GRAVITY_ALPHA 0.0025f // ~2 s time constant for the gravity estimate
+#define PEAK_DECAY    0.96f   // per sample (same fall-off as 0.85 at 50 Hz)
 
 void lis2dw12_task(void * parameter) {
     Serial.println("\r\n******** LIS2DW12 startup *****\r\n");
@@ -36,7 +37,7 @@ void lis2dw12_task(void * parameter) {
         }
     }
     Serial.println("LIS2DW12 found!");
-    lis2dw12.Set_X_ODR(100.0f);
+    lis2dw12.Set_X_ODR(200.0f);
     lis2dw12.Set_X_FS(4.0f);
     lis2dw12.Enable_X();
     Serial.println("\r\n******** LIS2DW12 init ok *****\r\n");
@@ -70,6 +71,9 @@ void lis2dw12_task(void * parameter) {
             az = z_axis; ay = 2; ax = (z_axis == 0) ? 1 : 0;
         }
         const uint8_t map[3] = {ax, ay, az};
+        // signed printer-frame motion in g for the coaster face; +Z is up (against gravity)
+        float up = g[az] >= 0 ? 1.0f : -1.0f;
+        coaster_push_sample(dyn[ax] / 1000.0f, dyn[ay] / 1000.0f, up * dyn[az] / 1000.0f);
         for (int i = 0; i < 3; i++) {
             float v = fabsf(dyn[map[i]]);
             peak[i] = max(v, peak[i] * PEAK_DECAY);

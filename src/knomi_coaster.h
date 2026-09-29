@@ -1,0 +1,29 @@
+#ifndef KNOMI_COASTER_H
+#define KNOMI_COASTER_H
+// Coaster face: a face drawn live from the accelerometer (and printer state) instead of a GIF.
+// Its head and pupils hang on springs driven by toolhead motion, and it picks a mood from how
+// hard and how long it's being thrown. Tuning lives in /coaster.json (web page /coaster).
+#include "lvgl.h"
+#ifdef __cplusplus
+#include <WString.h>
+extern "C" {
+#endif
+
+void coaster_init(void);                                  // LVGL task, once, after the UI exists
+void coaster_loop(void);                                  // LVGL task, every loop pass
+lv_obj_t * coaster_create(lv_obj_t * parent, int size);   // a face object, size px square (240 = full screen)
+void coaster_forget(lv_obj_t * obj);                      // before deleting a face object
+bool coaster_idle_enabled(void);                          // idle screen shows the face instead of GIFs
+void coaster_request_reload(void);                        // any task: re-read /coaster.json
+void coaster_push_sample(float x, float y, float z);      // sensor task: printer-frame accel in g, gravity removed
+
+#ifdef __cplusplus
+}
+String coaster_state_json(void);   // live mood + meters for the web page
+String coaster_tuning_json(void);  // current tuning (defaults if never saved)
+const char * coaster_save_json(const char * json, size_t len);  // web task; NULL or an error
+void coaster_set_idle(bool on);    // web task
+#endif
+
+#define COASTER_PATH "/coaster.json"
+#endif

@@ -18,6 +18,7 @@ Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint
 - **Custom GIF animations without reflashing.** Upload a GIF to any slot from the web page (idle, homing, probing, QGL, printing, done and more), stored on the KNOMI's flash.
 - **More animation states:** input shaper calibration, PID tuning, nozzle cleaning, filament load/unload and **paused** (M600, PAUSE, MMU/ERCF).
 - **Printing screen with useful info:** time left, nozzle/bed temps, Z height or layer, file name.
+- **Coaster face:** an idle face that reacts to the toolhead through the KNOMI's accelerometer: its eyes slosh with every move, it gets excited, screams on fast travel, shivers during input shaper tests and dozes off when nothing moves.
 - **Print screen designer:** a drag-and-drop editor on the KNOMI's web page. Place text with live values, progress rings, gauges, bars and animations, and rotate between up to 4 pages (e.g. a face most of the time, stats every 30 s).
 - **Auto-dim and screen-off**, saved brightness, and wake on touch or printer activity.
 - **Animations can follow the UI color** instead of always being red.

@@ -9,6 +9,7 @@
 #include "ui_overlay/lv_overlay.h"
 #include "knomi_power.h"
 #include "knomi_ble.h"
+#include "knomi_coaster.h"
 
 
 /****************** lvgl ui call function ******************/
@@ -42,6 +43,29 @@ void lv_extrude_rollers_rebuild(bool use_defaults) {
     extrude_roller_fill(ui_roller_set_extrude_length, knomi_config.extrude_mm, "mm", len_sel);
     extrude_roller_fill(ui_roller_set_extrude_speed, knomi_config.extrude_mms, "mm/s", spd_sel);
     lv_btn_set_extrude(NULL);  // labels on the extruder screen
+}
+
+// Idle screen: the coaster face replaces the idle GIFs (busy animations still play as GIFs)
+static lv_obj_t * coaster_main = NULL;
+static void idle_face_sync(void) {
+    if (!coaster_main || !ui_img_main_gif) return;
+    bool face = coaster_idle_enabled() && knomi_gif_idle_enabled(knomi_gif_shown_slot(ui_img_main_gif));
+    bool shown = !lv_obj_has_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);
+    if (face != shown) {
+        if (face) {
+            lv_obj_clear_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui_img_main_gif, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(ui_img_main_gif, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    // the hidden idle GIF keeps being swapped by the rotation; don't spend time decoding it
+    lv_gif_t * g = (lv_gif_t *)ui_img_main_gif;
+    if (g->timer) {
+        if (face && !g->timer->paused) lv_timer_pause(g->timer);
+        if (!face && g->timer->paused) lv_timer_resume(g->timer);
+    }
 }
 
 static void apply_display_settings(void) {
@@ -117,6 +141,9 @@ void lvgl_ui_task(void * parameter) {
     // Set theme color
     lv_theme_color_style();
 
+    // Coaster face tuning (before the print layout, which may place faces)
+    coaster_init();
+
     // Printing screen info view + paused overlay
     lv_print_info_init();
 
@@ -129,6 +156,10 @@ void lvgl_ui_task(void * parameter) {
     ui_img_main_gif = lv_gif_create(ui_ScreenMainGif);
     knomi_gif_show(ui_img_main_gif, GIF_SLOT_IDLE1);
     lv_obj_align(ui_img_main_gif, LV_ALIGN_CENTER, 0, 0);
+    // Coaster face for the idle screen (Settings > Screen & animations > Idle screen)
+    coaster_main = coaster_create(ui_ScreenMainGif, 240);
+    lv_obj_center(coaster_main);
+    lv_obj_add_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);
 
     // Boot / WiFi setup / WiFi lost screens (dark, QR code setup)
     lv_setup_screens_init();
@@ -187,6 +218,8 @@ void lvgl_ui_task(void * parameter) {
         lv_loop_auto_idle(status);
         lv_loop_btn_event();
         knomi_gif_process();
+        coaster_loop();
+        idle_face_sync();
         knomi_power_loop();
         lv_setup_screens_loop();
         if (knomi_display_settings_dirty) {

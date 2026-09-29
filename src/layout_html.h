@@ -71,7 +71,7 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
 <header class="rail"><div class="wrap wide rail-in">
   <div class="brand"><a class="n" href="/">KNOMI<span class="dot">.</span></a><span class="f">Printer display</span></div>
   <span class="rail-sp"></span>
-  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a class="on" href="/layout">Print screen</a><a href="/update">Firmware</a></nav>
+  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a class="on" href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a></nav>
   )rawliteral" BINNACLE_MODES R"rawliteral(
 </div></header>
 <main class="wrap wide">
@@ -141,6 +141,7 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
             <option value="default">Info (the default)</option>
             <option value="face">Face, stats every 30 s</option>
             <option value="facepct">Face, stats every 10 % and at the end</option>
+            <option value="coaster">Coaster face, stats every 10 % and at the end</option>
             <option value="big">Big percent</option>
             <option value="gauge">Gauge</option>
             <option value="blank">Blank</option>
@@ -209,6 +210,8 @@ function starters(k){
     {t:"arc",x:120,y:120,d:236,w:4,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
     {t:"text",x:120,y:200,f:16,c:"m",w:0,a:"c",txt:"{pct}%  ·  {left}"}]},info]}}
   if(k=="facepct"){var f=starters("face");f.pages[0].s=60;f.pages[1].m="e";f.pages[1].s=10;f.pages[1].tr={pe:10,lm:10,fl:1};return f}
+  if(k=="coaster"){var c=starters("facepct");c.pages[0].el=[{t:"face",x:120,y:120,d:240},
+    {t:"arc",x:120,y:120,d:236,w:4,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1}];return c}
   if(k=="big")return{v:1,pages:[{s:10,el:[{t:"arc",x:120,y:120,d:232,w:14,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
     {t:"text",x:120,y:76,f:14,c:"m",w:140,a:"c",sc:1,txt:"{file}"},
     {t:"text",x:120,y:118,f:48,c:"x",w:0,a:"c",txt:"{pct}%"},
@@ -232,7 +235,8 @@ var ADDS=[
   ["Progress gauge",{t:"arc",x:120,y:120,d:200,w:10,s:225,e:135,c:"t",b:"#1B2731",p:1,rd:1}],
   ["Progress bar",{t:"bar",x:120,y:170,w:130,h:8,c:"t",b:"#1B2731",rd:1}],
   ["Ring",{t:"arc",x:120,y:120,d:236,w:2,s:0,e:360,c:"t",b:"",p:0}],
-  ["Animation",{t:"gif",x:120,y:120,g:"print"}]
+  ["Animation",{t:"gif",x:120,y:120,g:"print"}],
+  ["Coaster face",{t:"face",x:120,y:120,d:240}]
 ];
 
 /* ---------- render ---------- */
@@ -273,6 +277,14 @@ function layered(pg){
       h+='<div class="el barel'+s+'" data-i="'+i+'" style="left:'+e.x+'px;top:'+e.y+'px;width:'+e.w+'px;height:'+e.h+'px;border-radius:'+r+'px;background:'+col(e.b)+'"><i style="width:'+pct()+'%;background:'+col(e.c)+';border-radius:'+r+'px"></i></div>';
     }else if(e.t=="gif"){
       h+='<div class="el gifel'+s+'" data-i="'+i+'" style="left:'+e.x+'px;top:'+e.y+'px"><img alt="" src="/gif/file?slot='+encodeURIComponent(e.g)+'&v='+V+'"></div>';
+    }else if(e.t=="face"){
+      // resting coaster face (it moves on the KNOMI)
+      var c=col("t"),d=e.d||240;
+      h+='<div class="el gifel'+s+'" data-i="'+i+'" style="left:'+e.x+'px;top:'+e.y+'px;width:'+d+'px;height:'+d+'px">'+
+        '<svg viewBox="0 0 240 240" width="'+d+'" height="'+d+'" style="display:block;pointer-events:none">'+
+        '<g stroke="'+c+'" stroke-width="5" stroke-linecap="round" fill="none"><line x1="40" y1="104" x2="92" y2="104"/><line x1="148" y1="104" x2="200" y2="104"/>'+
+        '<path stroke-width="4" d="M106 140 a7 7 0 0 0 14 0 a7 7 0 0 0 14 0"/></g>'+
+        '<g fill="'+c+'"><path d="M55 104 a11 11 0 0 0 22 0z"/><path d="M163 104 a11 11 0 0 0 22 0z"/></g></svg></div>';
     }
   });
   return h;
@@ -281,6 +293,7 @@ function label(e){
   if(e.t=="text")return e.txt||"(empty text)";
   if(e.t=="arc")return(e.p?"Progress ":"")+(span(e)>=360?"ring":"arc")+" ⌀"+e.d;
   if(e.t=="bar")return"Progress bar "+e.w+"×"+e.h;
+  if(e.t=="face")return"Coaster face ⌀"+(e.d||240);
   if(e.t=="gif"){var g=state.gifs.filter(function(x){return x.name==e.g})[0];return"Animation: "+(g?g.label:e.g)}
   return e.t;
 }
@@ -314,7 +327,7 @@ function colorField(k,lbl,allowNone){
 function renderProps(){
   var box=$("props"),e=sel>=0?L.pages[page].el[sel]:null;
   if(!e){box.innerHTML='<div class="empty-props">Select an element.</div>';$("ptitle").textContent="Properties";return}
-  $("ptitle").textContent={text:"Text",arc:"Ring / arc",bar:"Progress bar",gif:"Animation"}[e.t];
+  $("ptitle").textContent={text:"Text",arc:"Ring / arc",bar:"Progress bar",gif:"Animation",face:"Coaster face"}[e.t];
   var h='<div class="props">';
   if(e.t=="text"){
     h+='<div class="full"><label class="field-label">Text</label><input type="text" data-k="txt" maxlength="120"><div class="tokens">';
@@ -337,6 +350,9 @@ function renderProps(){
     h+=num("x","X",0,240)+num("y","Y",0,240)+num("w","Width",4,240)+num("h","Height",2,120);
     h+=colorField("c","Color")+colorField("b","Track",true);
     h+='<div class="half"><label class="chk"><input type="checkbox" data-b="rd"> Rounded</label></div>';
+  }else if(e.t=="face"){
+    h+=num("x","X",0,240)+num("y","Y",0,240)+num("d","Size",60,240,"half");
+    h+='<div class="full hint">The face reacts to the toolhead live on the KNOMI; this preview shows it at rest. <a href="/coaster">Tune it</a></div>';
   }else if(e.t=="gif"){
     h+='<div class="half"><label class="field-label">Animation</label><select data-k="g">'+
       state.gifs.map(function(g){return'<option value="'+g.name+'">'+esc(g.label)+'</option>'}).join("")+'</select></div>';
