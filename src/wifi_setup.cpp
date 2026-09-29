@@ -353,7 +353,8 @@ void wifi_scan_refresh(void) {
         // scanDeleted or failed
         // Serial.println("Scan faile!");
     } else if (n == WIFI_SCAN_RUNNING) {
-        Serial.println("Scaning...");
+        static uint32_t said = 0;
+        if (millis() - said > 5000) { Serial.println("wifi: scanning..."); said = millis(); }
     }
 }
 

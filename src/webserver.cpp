@@ -823,8 +823,10 @@ void webserver_setup(void) {
         int paramsNr = request->params();
         for (int i = 0; i < paramsNr; i++) {
             AsyncWebParameter* p = request->getParam(i);
-            Serial.printf("name: %s\r\n", p->name().c_str());
-            Serial.printf("value: %s\r\n", p->value().c_str());
+            // never log secrets (the log is readable from the web page)
+            const String & pn = p->name();
+            bool secret = pn.indexOf("password") >= 0 || pn.indexOf("pwd") >= 0 || pn == "api_key";
+            Serial.printf("setting %s = %s\r\n", pn.c_str(), secret ? "(hidden)" : p->value().c_str());
 
             for (uint8_t i = 0; i < ACOUNT(web_post_info); i++) {
                 if (strcmp(web_post_info[i].name, p->name().c_str()) == 0) {

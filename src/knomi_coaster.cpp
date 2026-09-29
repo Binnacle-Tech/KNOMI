@@ -292,6 +292,12 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
             if (m == M_STARTLED) stats.jolts++;
         }
         mood = m; mood_t = 0;
+        static uint32_t said_ms = 0;
+        static int said_mood = -1;
+        if (mood != said_mood && millis() - said_ms > 2000) {
+            Serial.printf("coaster: %s\r\n", MOOD_NAMES[mood]);
+            said_mood = mood; said_ms = millis();
+        }
     } else mood_t += dt;
     if (d.printing && env > stats.peak) stats.peak = env;
 }

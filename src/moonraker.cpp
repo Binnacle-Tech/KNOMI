@@ -101,7 +101,8 @@ String MOONRAKER::send_request(const char * type, String path, String body) {
          */
         if (strcmp(type, "GET") == 0)
             unconnected = true;
-        Serial.printf("%s http %s error.\r\n", octo ? "octoprint" : "moonraker", type);
+        Serial.printf("%s: %s %s failed: %s\r\n", octo ? "octoprint" : "moonraker", type, path.c_str(),
+                      HTTPClient::errorToString(code).c_str());
     }
     client.end(); //Free the resources
 
@@ -375,7 +376,9 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
         return;
     }
     String status = send_request("GET", "/api/plugin/knomi");
+    static int plugin_seen = -1;   // log changes only
     if (last_code == 200 && !status.isEmpty()) {
+        if (plugin_seen != 1) { Serial.println("octoprint: KNOMI plugin found"); plugin_seen = 1; }
         octo_plugin_retry_ms = 0;
         DynamicJsonDocument json_parse(status.length() * 2 + 128);
         if (deserializeJson(json_parse, status) == DeserializationError::Ok) {
@@ -403,6 +406,10 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
         data.paused_ext = data.runout = false;
         data.fan = 0; data.speed = 0;
         if (last_code == 404) data.progress_mode = 0;
+        if (last_code == 404 && plugin_seen != 0) {
+            Serial.println("octoprint: KNOMI plugin not installed (animations for homing, QGL... need it)");
+            plugin_seen = 0;
+        }
         if (last_code == 404) {
             // plugin not installed, don't hammer OctoPrint with 404s
             octo_plugin_retry_ms = millis() + 30000;
