@@ -52,7 +52,7 @@ static void load_tuning(void) {
     T = TUNE_DEF;
     File f = LittleFS.open(COASTER_PATH, "r");
     if (!f) return;
-    StaticJsonDocument<768> d;
+    DynamicJsonDocument d(1024);
     if (deserializeJson(d, f) == DeserializationError::Ok) {
         T.wobble = constrain(d["wobble"] | T.wobble, 0.8f, 6.0f);
         T.settle = constrain(d["settle"] | T.settle, 0.05f, 1.0f);
@@ -380,7 +380,7 @@ static void feel_save(void) {
 static void feel_load(void) {
     File f = LittleFS.open(FEEL_PATH, "r");
     if (f) {
-        StaticJsonDocument<1536> d;
+        DynamicJsonDocument d(2048);   // on the heap: the LVGL task's stack is small
         if (deserializeJson(d, f) == DeserializationError::Ok) {
             JsonArrayConst lk = d["like"];
             if (lk.size() == LK_COUNT) { for (int i = 0; i < LK_COUNT; i++) like[i] = constrain((int)(lk[i] | 0), -100, 100); likes_rolled = true; }

@@ -616,7 +616,7 @@ void moonraker_task(void * parameter) {
     moonraker.data.z_um = INT32_MIN;
 
     xTaskCreate(moonraker_post_task, "moonraker post",
-        4096,  // Stack size (bytes)
+        8192,  // HTTP + the Coaster sidebar JSON  // Stack size (bytes)
         NULL,  // Parameter to pass
         8,     // Task priority
         NULL   // Task handle

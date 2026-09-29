@@ -47,7 +47,7 @@ void setup() {
     knomi_ble_init(); // Bluetooth link to the OctoPrint plugin, if enabled, before the UI and web server use it
 
     xTaskCreate(lvgl_ui_task, "lvgl ui",
-        4096,  // Stack size (bytes)
+        16384, // Stack size (bytes): Coaster's drawing, settings and feelings run here
         NULL,  // Parameter to pass
         10,     // Task priority
         NULL   // Task handle
