@@ -309,7 +309,16 @@ static int8_t like[LK_COUNT];      // -100 hates .. 100 loves
 static bool likes_rolled = false;
 static int8_t season_seen = -1;     // last season it noticed, so a new one is an event once
 static int16_t bday_year = 0;       // last birthday it celebrated
-static float L(int k) { return like[k] / 100.0f; }
+// ---- what it learns: habits from the prints you do, and tastes that grow from them ----
+static int8_t learned[LK_COUNT];    // -50..50 on top of what it was born with
+static float openness = 0;          // rolled once: 1 loves a change of pace, -1 creature of habit
+static uint16_t habit_n = 0;        // prints it has learned from
+static float habit_len = 0;         // average log2(print minutes)
+static float habit_hx = 0, habit_hy = 0;   // average start hour, as a point on a 24 h circle
+static float habit_peak = 0;        // average hardest move, g
+static int eff(int k) { return constrain((int)like[k] + learned[k], -100, 100); }
+static float L(int k) { return eff(k) / 100.0f; }
+static void learn(int k, int delta) { learned[k] = (int8_t)constrain((int)learned[k] + delta, -50, 50); }
 
 static void roll_likes(void) {
     for (int i = 0; i < LK_COUNT; i++) like[i] = (int8_t)(esp_random() % 41) - 20;   // mostly "don't mind"
@@ -359,7 +368,10 @@ static void feel_save(void) {
     f.printf("{\"h\":%.3f,\"streak\":%d,\"prints\":%u,\"seen\":%ld,\"season\":%d,\"bday\":%d,\"like\":[",
              H, streak, prints_done, (long)last_seen, season_seen, bday_year);
     for (int i = 0; i < LK_COUNT; i++) f.printf("%s%d", i ? "," : "", like[i]);
-    f.print("]}");
+    f.printf("],\"learned\":[");
+    for (int i = 0; i < LK_COUNT; i++) f.printf("%s%d", i ? "," : "", learned[i]);
+    f.printf("],\"open\":%.2f,\"hn\":%u,\"hlen\":%.3f,\"hx\":%.3f,\"hy\":%.3f,\"hpeak\":%.3f}",
+             openness, habit_n, habit_len, habit_hx, habit_hy, habit_peak);
     f.close();
     feel_dirty = false;
     feel_save_ms = millis();
@@ -368,10 +380,15 @@ static void feel_save(void) {
 static void feel_load(void) {
     File f = LittleFS.open(FEEL_PATH, "r");
     if (f) {
-        StaticJsonDocument<768> d;
+        StaticJsonDocument<1536> d;
         if (deserializeJson(d, f) == DeserializationError::Ok) {
             JsonArrayConst lk = d["like"];
             if (lk.size() == LK_COUNT) { for (int i = 0; i < LK_COUNT; i++) like[i] = constrain((int)(lk[i] | 0), -100, 100); likes_rolled = true; }
+            JsonArrayConst ln = d["learned"];
+            if (ln.size() == LK_COUNT) for (int i = 0; i < LK_COUNT; i++) learned[i] = constrain((int)(ln[i] | 0), -50, 50);
+            openness = clampf(d["open"] | 0.0f, -1, 1);
+            habit_n = d["hn"] | 0; habit_len = d["hlen"] | 0.0f;
+            habit_hx = d["hx"] | 0.0f; habit_hy = d["hy"] | 0.0f; habit_peak = d["hpeak"] | 0.0f;
             season_seen = d["season"] | -1;
             bday_year = d["bday"] | 0;
             H = clampf(d["h"] | 0.3f, -1, 1);
@@ -384,7 +401,11 @@ static void feel_load(void) {
     esp_reset_reason_t r = esp_reset_reason();
     reset_kind = (r == ESP_RST_SW || r == ESP_RST_DEEPSLEEP) ? 1
                : (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT) ? 2 : 0;
-    if (!likes_rolled) { roll_likes(); feel_dirty = true; }
+    if (!likes_rolled) {
+        roll_likes();
+        openness = (esp_random() % 201) / 100.0f - 1;
+        feel_dirty = true;
+    }
     Serial.printf("coaster: feels %s (%.2f), %u prints, streak %d\r\n", feel_name(), H, prints_done, streak);
 }
 
@@ -410,9 +431,78 @@ static void feel_judge_boot(void) {
     feel_save();
 }
 
+
+// ---- habits: is this print like the ones it's used to? ----
+static bool novelty_pending = false;
+static float t_uneasy = 0;
+static int local_hour(void) {
+    time_t now = time(NULL);
+    if (now < 1700000000) return -1;
+    now += T.tz_min * 60;
+    struct tm t; gmtime_r(&now, &t);
+    return t.tm_hour;
+}
+static float habit_hour(void) {   // the usual start hour, or -1 if it has no habit yet
+    if (habit_n < 5 || habit_hx * habit_hx + habit_hy * habit_hy < 0.15f) return -1;
+    float h = atan2f(habit_hy, habit_hx) / (2 * PI) * 24;
+    return h < 0 ? h + 24 : h;
+}
+static void change_of_pace(float how_new, const char * novel, const char * uneasy) {
+    // loves surprises: excited. Creature of habit: uneasy for a bit
+    if (openness > 0.15f) {
+        feel(0.12f * openness * how_new, novel);
+        t_ready = 3; feel_boot_quirk(true);   // a happy bounce
+    } else if (openness < -0.15f) {
+        feel(0.1f * openness * how_new, uneasy);
+        t_uneasy = 6;
+    }
+}
+// a couple of minutes into a print, when the time estimate has settled
+static void judge_new_print(const moonraker_data_t & d) {
+    novelty_pending = false;
+    if (habit_n < 5) return;   // still learning what "usual" is
+    float est_min = (d.print_time + d.time_left) / 60.0f;
+    if (d.time_left > 0 && est_min > 1) {
+        float diff = log2f(est_min) - habit_len;          // +1 = twice as long as usual
+        if (diff > 1.3f) change_of_pace(min(2.0f, diff - 0.3f), "a long one, a change of pace!", "a long one... not used to that");
+        else if (diff < -1.3f) change_of_pace(min(2.0f, -diff - 0.3f), "a quick one for once!", "that's short... odd");
+    }
+    int hr = local_hour();
+    float hh = habit_hour();
+    if (hr >= 0 && hh >= 0) {
+        float dh = fabsf(hr + 0.5f - hh); dh = min(dh, 24 - dh);
+        if (dh > 5) change_of_pace(1, "printing at a new time!", "printing at this hour?");
+    }
+}
+// a print finished: learn from it
+static void learn_from_print(const moonraker_data_t & d, float peak) {
+    float mins = max(1.0f, d.print_time / 60.0f);
+    float lg = log2f(mins);
+    float k = habit_n < 10 ? 1.0f / (habit_n + 1) : 0.1f;   // average over roughly the last 10 prints
+    habit_len += (lg - habit_len) * k;
+    int hr = local_hour();
+    if (hr >= 0) {
+        float a = (hr + 0.5f) / 24 * 2 * PI;
+        habit_hx += (cosf(a) - habit_hx) * k; habit_hy += (sinf(a) - habit_hy) * k;
+        if (hr >= 23 || hr < 6) learn(LK_NIGHT, 2);        // late prints: a night owl in the making
+    }
+    if (habit_n >= 5 && peak > habit_peak * 1.8f && peak > 0.6f)
+        feel(0.1f * L(LK_FAST), eff(LK_FAST) >= 0 ? "that was a wild ride!" : "too wild for me");
+    habit_peak += (peak - habit_peak) * k;
+    if (habit_n < 60000) habit_n++;
+    // what you print a lot, it gets used to, and a little fond of
+    if (mins <= 30) { learn(LK_SHORT, 3); learn(LK_LONG, -1); }
+    else if (mins >= 240) { learn(LK_LONG, 3); learn(LK_SHORT, -1); }
+    if (d.fan >= 60) learn(LK_FANS, 1);
+    Serial.printf("coaster: used to %.0f min prints around %.0f:00, %.2f g (%u prints)\r\n",
+                  exp2f(habit_len), habit_hour(), habit_peak, habit_n);
+}
+
 // once a second: slow drifts, heating for nothing, being left alone
 static void feel_tick(const moonraker_data_t & d) {
     if (!boot_judged) feel_judge_boot();
+    if (novelty_pending && d.printing && d.print_time > 120) judge_new_print(d);
+    if (!d.printing) novelty_pending = false;
     // the time of year: its favorite season lifts it, the one it dislikes wears on it
     time_t now = time(NULL);
     float base_h = 0.15f;
@@ -435,8 +525,8 @@ static void feel_tick(const moonraker_data_t & d) {
             if (season_seen != k) {
                 if (season_seen >= 0) {   // not the very first boot
                     char w[30];
-                    if (like[lk] >= 50) { snprintf(w, sizeof(w), "yay, %s!", LIKE_NAMES[lk]); feel(0.15f, w); }
-                    else if (like[lk] <= -50) { snprintf(w, sizeof(w), "ugh, %s", LIKE_NAMES[lk]); feel(-0.1f, w); }
+                    if (eff(lk) >= 50) { snprintf(w, sizeof(w), "yay, %s!", LIKE_NAMES[lk]); feel(0.15f, w); }
+                    else if (eff(lk) <= -50) { snprintf(w, sizeof(w), "ugh, %s", LIKE_NAMES[lk]); feel(-0.1f, w); }
                 }
                 season_seen = k;
                 feel_dirty = true;
@@ -476,7 +566,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     t_startle = max(0.0f, t_startle - dt); t_dizzy = max(0.0f, t_dizzy - dt);
     t_giggle = max(0.0f, t_giggle - dt); t_celebrate = max(0.0f, t_celebrate - dt);
     t_ready = max(0.0f, t_ready - dt); t_sad = max(0.0f, t_sad - dt); t_phew = max(0.0f, t_phew - dt);
-    t_confused = max(0.0f, t_confused - dt); t_mad = max(0.0f, t_mad - dt);
+    t_confused = max(0.0f, t_confused - dt); t_mad = max(0.0f, t_mad - dt); t_uneasy = max(0.0f, t_uneasy - dt);
     feel_acc += dt;
     if (feel_acc >= 1) { feel_acc -= 1; feel_tick(d); }
     if (step > 1.8f && from_rest && vib < 0.35f && t_startle <= 0 && t_celebrate <= 0) {
@@ -532,6 +622,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     else if (t_whee > 0) m = M_WHEE;
     else if (thrill > 0.35f) m = M_EXCITED;
     else if (t_sad > 0) m = M_SAD;
+    else if (t_uneasy > 0) m = M_NERVOUS;                 // not used to this kind of print
     else if (d.runout && d.printing) m = M_HUNGRY;
     else if (fabsf(vz) > 2.0f) m = M_ELEVATOR;
     else if (paused) m = M_BORED;
@@ -543,7 +634,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     else if (d.printing && d.progress >= 90) m = M_ANTICIPATE;
     else if (d.printing && d.speed >= 130) m = M_NERVOUS;
     else if (d.printing && d.fan >= 80) m = M_WINDY;
-    else if (still_t > T.sleep * (night ? (like[LK_NIGHT] >= 50 ? 1.5f : 0.5f) : 1.0f) && !d.printing) m = M_SLEEPY;   // night owls stay up
+    else if (still_t > T.sleep * (night ? (eff(LK_NIGHT) >= 50 ? 1.5f : 0.5f) : 1.0f) && !d.printing) m = M_SLEEPY;   // night owls stay up
     else if (cooling) m = M_COOLING;
     else if (env > 0.05f || vib > 0.05f) m = M_RIDING;
     else m = M_CALM;
@@ -881,7 +972,7 @@ static void watch_printer(const moonraker_data_t & d) {
     if (d.printing && was_printing && d.progress != last_progress &&
         (d.progress / 25) > (last_progress / 25) && d.progress < 100) quirk_cheer();
     if (d.printing) last_progress = d.progress;
-    if (!was_printing && d.printing) stats = {};
+    if (!was_printing && d.printing) { stats = {}; novelty_pending = true; }
     if (was_printing && !d.printing) {
         report = stats;
         report.valid = true;
@@ -893,6 +984,7 @@ static void watch_printer(const moonraker_data_t & d) {
         if (last_progress >= 98) {
             t_celebrate = 4.5f; spawn_confetti();
             streak++; prints_done++;
+            learn_from_print(d, stats.peak);
             float extra = d.print_time > 4 * 3600 ? 0.1f * L(LK_LONG) : d.print_time < 1800 ? 0.1f * L(LK_SHORT) : 0;
             feel(0.2f + 0.04f * min((int)streak, 5) + extra,
                  streak >= 3 ? "print streak!" : d.print_time > 4 * 3600 ? "finished a long print" : "finished a print");
@@ -1580,7 +1672,7 @@ void coaster_loop(void) {
 }
 
 String coaster_state_json(void) {
-    char buf[900];
+    char buf[1400];
     int n = snprintf(buf, sizeof(buf), "{\"feel\":%.2f,\"feeling\":\"%s\",\"streak\":%d,\"prints\":%u,\"why\":[",
                      H, feel_name(), streak, prints_done);
     for (int i = 0; i < fnotes_n && n < 440; i++)
@@ -1591,7 +1683,13 @@ String coaster_state_json(void) {
     n += snprintf(buf + n, sizeof(buf) - n, "],\"dislikes\":[");
     first = true;
     for (int i = 0; i < LK_COUNT; i++) if (like[i] <= -50) { n += snprintf(buf + n, sizeof(buf) - n, "%s\"%s\"", first ? "" : ",", LIKE_NAMES[i]); first = false; }
-    n += snprintf(buf + n, sizeof(buf) - n, "],");
+    n += snprintf(buf + n, sizeof(buf) - n, "],\"learned\":[");
+    first = true;
+    for (int i = 0; i < LK_COUNT; i++) if (abs(learned[i]) >= 10) {
+        n += snprintf(buf + n, sizeof(buf) - n, "%s{\"t\":\"%s\",\"d\":%d}", first ? "" : ",", LIKE_NAMES[i], learned[i]); first = false;
+    }
+    n += snprintf(buf + n, sizeof(buf) - n, "],\"open\":%.2f,\"habit\":{\"n\":%u,\"min\":%.0f,\"hour\":%.1f,\"peak\":%.2f},",
+                  openness, habit_n, habit_n ? exp2f(habit_len) : 0.0f, habit_hour(), habit_peak);
     snprintf(buf + n, sizeof(buf) - n,
              "\"mood\":\"%s\",\"quirk\":\"%s\",\"thrill\":%.2f,\"buzz\":%.2f,\"dizzy\":%.2f,\"used_to\":%.2f,\"motion\":%.2f,\"idle\":%s,\"sensor\":%s}",
              MOOD_NAMES[mood], QUIRK_NAMES[quirk], thrill, vib, t_dizzy > 0 ? 1.0f : dizzy_meter / T.dizzy, base, env,
@@ -1613,10 +1711,12 @@ void coaster_poke(void) {
     static uint32_t pokes[8]; static uint8_t pi = 0;
     uint32_t now = millis(), oldest = pokes[pi];
     pokes[pi] = now; pi = (pi + 1) % 8;
-    int limit_ms = like[LK_POKES] <= -50 ? 40000 : like[LK_POKES] >= 50 ? 6000 : 15000;
+    int limit_ms = eff(LK_POKES) <= -50 ? 40000 : eff(LK_POKES) >= 50 ? 6000 : 15000;
     if (oldest && now - oldest < (uint32_t)limit_ms && t_mad <= 0) { t_mad = 4; t_giggle = 0; feel(-0.03f, "poked too much"); head_kick(0, 50); return; }
     if (t_mad > 0) return;
     feel(0.005f + 0.01f * L(LK_POKES), NULL);
+    static uint32_t poke_day_ms = 0;   // poked on many days: gets used to it
+    if (millis() - poke_day_ms > 86400000UL || !poke_day_ms) { poke_day_ms = millis(); learn(LK_POKES, 2); feel_dirty = true; }
     t_giggle = max(t_giggle, 1.6f);
     head_kick(frand(-50, 50), -45);
 }

@@ -159,7 +159,8 @@ body{padding-top:0}
             <div class="meter"><span>Feeling</span><div class="bar"><i id="kFeelBar" style="background:var(--cyan)"></i></div><b id="kFeel">…</b></div>
             <p class="note" id="kWhy"></p>
             <p class="note" id="kLikes"></p>
-            <p class="note">Every Coaster is born with its own likes and dislikes. You can't change them, only get to know them.</p>
+            <p class="note" id="kHabits"></p>
+            <p class="note">Every Coaster is born with its own likes and dislikes, and picks up new ones from what you print. You can't change them, only get to know them.</p>
           </div>
           <div id="kReport" class="note"></div>
         </div>
@@ -320,6 +321,13 @@ function knomiPoll(){
       $("kWhy").textContent=j.why&&j.why.length?"Lately: "+j.why.map(function(w){return w.t+" ("+(w.d>0?"+":"")+w.d+")"}).join(" · "):"";
       $("kLikes").textContent=(j.likes&&j.likes.length?"Likes "+j.likes.join(", ")+". ":"")+(j.dislikes&&j.dislikes.length?"Doesn't like "+j.dislikes.join(", ")+".":"")+
         (j.prints?" "+j.prints+" prints together"+(j.streak>1?", "+j.streak+" in a row.":"."):"");
+      var hb=j.habit||{},lines=[];
+      lines.push(j.open>0.15?"Loves a change of pace.":j.open<-0.15?"A creature of habit.":"Takes things as they come.");
+      if(hb.n>=5){var hr=hb.hour>=0?Math.round(hb.hour):-1;
+        lines.push("Used to "+(hb.min>=90?(hb.min/60).toFixed(1)+" h":Math.round(hb.min)+" min")+" prints"+(hr>=0?", usually started around "+((hr+11)%12+1)+(hr<12?" am":" pm"):"")+".")}
+      else lines.push("Still learning your habits ("+(hb.n||0)+" of 5 prints).");
+      if(j.learned&&j.learned.length)lines.push("Learned: "+j.learned.map(function(l){return(l.d>0?"warming up to ":"going off ")+l.t}).join(", ")+".");
+      $("kHabits").textContent=lines.join(" ");
     }
     $("kNote").textContent=j.sensor?"Live mood from the KNOMI's own accelerometer. Used to "+j.used_to.toFixed(2)+" g of motion right now.":
       "This board has no accelerometer, so the face reacts to printer data only (Z moves, heat, pause, print done).";
