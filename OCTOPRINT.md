@@ -128,6 +128,14 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 
 **Its own ways:** each Coaster is born with a pre-print ritual (a deep breath, cracking its knuckles, an eye roll and a nod, or a stretch), a hobby (counting layers out loud, singing, stargazing or tidying up after prints) and a favorite spot to rest its eyes. It rates every finished print out of 5 stars, gives files you print a lot a nickname, and remembers the ones that failed or made it dizzy. It notices which day you usually print, has a morning routine the first time it wakes each day, and celebrates milestones (first print, 10, 25, 50, 100... prints, hours printed, a year together). It starts out a bit shy and warms up as you print and poke it. It dreams when it sleeps (a thought bubble with its favorite season, a spool, a boat or a star), daydreams on long prints, sometimes nods off on very long ones and jolts awake at the next layer, gets the odd bout of hiccups (a poke cures them), and after a great or a bad day has a little sun or rain cloud over its head.
 
+**Little reactions:** its likes and dislikes show on the spot, not only in its mood. A fast move, the part fan kicking in, heating up, a poke, a long or quick print, its favorite or least favorite filament, waking up at night, half an hour of quiet, its favorite or least favorite season: things it likes get a delighted grin, a wink or a cheer; things it doesn't get a wince, an eye roll, a sigh or a huff.
+
+**Signature move:** each Coaster has its own flourish (spinning its eyes, a double wink, a shimmy, a jump for joy, or a look left and right) that it does after every good print.
+
+**Tally:** it counts every layer it has ever ridden through and cheers at the round numbers (100, 1,000, 5,000... up to a million). The album shows the count.
+
+**Talking to itself:** on long, steady prints it mutters under its breath, in small text under its face: "hmm", "steady...", "nice layer", "almost...", "no strings..." with PETG, "la la la" when it's happy.
+
 **Quirks:** every few seconds Coaster does something small on its own, printing or not: glances around, blinks, winks, yawns, hums, sneezes, stretches, rolls its eyes, sighs when it's down, huffs when it's mad. It nods at each layer change and cheers at 25, 50 and 75 %. Each KNOMI gets its own personality from its chip ID.
 
 **OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood, how it's feeling (plugin 0.7.1+) and the last report card. The KNOMI sends its mood to the plugin (over WiFi or Bluetooth).
