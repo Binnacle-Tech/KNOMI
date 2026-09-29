@@ -52,10 +52,11 @@ static void update_task(void * arg) {
     http.setUserAgent("KNOMI-" FW_VERSION);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(15000);
+    http.useHTTP10(true);   // no chunked replies: the JSON is parsed straight off the stream
     String url;
 
     // 1. latest release
-    Serial.println("update: checking GitHub for the latest release");
+    Serial.printf("update: checking GitHub for the latest release (free RAM %u)\r\n", ESP.getFreeHeap());
     if (!http.begin(*tls, "https://api.github.com/repos/" UPDATE_REPO "/releases/latest")) { fail("Couldn't reach GitHub"); goto out; }
     http.addHeader("Accept", "application/vnd.github+json");
     {
@@ -81,6 +82,7 @@ static void update_task(void * arg) {
             if (strcmp(a["name"] | "", BOARD_ASSET) == 0) url = a["browser_download_url"].as<String>();
         }
         if (url.isEmpty()) { fail("The release has no " BOARD_ASSET); goto out; }
+        Serial.printf("update: latest is %s, this is %s\r\n", tag, FW_VERSION);
     }
 
     // 2. download straight into the other OTA partition
@@ -93,6 +95,7 @@ static void update_task(void * arg) {
         int code = http.GET();
         if (code != 200) { snprintf(msg, sizeof(msg), "Download failed (%d)", code); fail(msg); http.end(); goto out; }
         int total = http.getSize();
+        Serial.printf("update: %d bytes\r\n", total);
         if (total <= 0) { fail("Download has no size"); http.end(); goto out; }
         if (!Update.begin(total, U_FLASH)) { fail("Not enough room for the update"); http.end(); goto out; }
         WiFiClient * stream = http.getStreamPtr();

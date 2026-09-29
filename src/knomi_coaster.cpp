@@ -25,7 +25,10 @@ typedef struct {
     bool idle;
     uint8_t hat;   // 0 seasonal, 1 off, 2 party, 3 santa, 4 witch
 } coaster_tune_t;
-static const coaster_tune_t TUNE_DEF = {2.4f, 0.28f, 1.0f, 12.0f, 0.9f, 5.0f, 20.0f, true, 0};  // Coaster is the mascot: on by default
+static const coaster_tune_t TUNE_DEF = {2.0f, 0.2f, 1.0f, 20.0f, 0.6f, 5.0f, 20.0f, true, 0}; // Coaster is the mascot: on by default
+// OP18: sensitivity 1.0 now moves the head as much as 3.0 did before (tuned on recorded prints)
+#define SENSE_K  3.0f
+#define BOUNCE   6.0f    // px per compressed g: the head jiggles along with the toolhead
 static coaster_tune_t T = TUNE_DEF;
 static volatile bool reload_pending = false;
 
@@ -37,7 +40,9 @@ static void load_tuning(void) {
     if (deserializeJson(d, f) == DeserializationError::Ok) {
         T.wobble = constrain(d["wobble"] | T.wobble, 0.8f, 6.0f);
         T.settle = constrain(d["settle"] | T.settle, 0.05f, 1.0f);
-        T.sense  = constrain(d["sense"]  | T.sense,  0.2f, 3.0f);
+        float sn = d["sense"] | T.sense;
+        if (!d.containsKey("v") && d.containsKey("sense")) sn /= SENSE_K;   // saved before OP18
+        T.sense  = constrain(sn, 0.2f, 3.0f);
         T.habit  = constrain(d["habit"]  | T.habit,  2.0f, 60.0f);
         T.scare  = constrain(d["scare"]  | T.scare,  0.3f, 2.5f);
         T.dizzy  = constrain(d["dizzy"]  | T.dizzy,  1.0f, 20.0f);
@@ -59,6 +64,7 @@ const char * coaster_save_json(const char * json, size_t len) {
     static const char * keys[] = {"wobble", "settle", "sense", "habit", "scare", "dizzy", "sleep"};
     for (const char * k : keys) if (in[k].is<float>()) out[k] = in[k].as<float>();
     if (in["hat"].is<int>()) out["hat"] = constrain(in["hat"].as<int>(), 0, 4);
+    out["v"] = 2;
     out["idle"] = in.containsKey("idle") ? (bool)(in["idle"] | false) : T.idle;
     File f = LittleFS.open(COASTER_PATH, "w");
     if (!f) return "Couldn't write to flash";
@@ -74,6 +80,8 @@ void coaster_set_idle(bool on) {
     File f = LittleFS.open(COASTER_PATH, "r");
     if (f) { deserializeJson(d, f); f.close(); }
     d["idle"] = on;
+    if (!d.containsKey("v") && d.containsKey("sense")) d["sense"] = (d["sense"].as<float>()) / SENSE_K;
+    d["v"] = 2;
     f = LittleFS.open(COASTER_PATH, "w");
     if (f) { serializeJson(d, f); f.close(); }
     T.idle = on;   // takes effect right away; the rest reloads on the LVGL task
@@ -111,13 +119,13 @@ enum {
     M_CALM, M_RIDING, M_EXCITED, M_SCREAM, M_STARTLED, M_ELEVATOR, M_SLEEPY,
     M_BORED, M_SHIVER, M_DIZZY, M_GIGGLE, M_CELEBRATE, M_READY,
     M_SAD, M_ERROR, M_LONELY, M_CONFUSED, M_HEATING, M_COOLING, M_FOCUS, M_ANTICIPATE,
-    M_HUNGRY, M_WINDY, M_NERVOUS, M_BRACE, M_LEVEL, M_SCRUB, M_COUNT
+    M_HUNGRY, M_WINDY, M_NERVOUS, M_BRACE, M_LEVEL, M_SCRUB, M_WHEE, M_COUNT
 };
 static const char * MOOD_NAMES[M_COUNT] = {
     "calm", "riding", "excited", "screaming", "startled", "elevator", "sleepy",
     "bored", "shivering", "dizzy", "giggle", "celebrate", "ready",
     "sad", "shocked", "lonely", "confused", "heating up", "cooling off", "focused", "almost there",
-    "hungry", "windy", "hanging on", "bracing", "leveling", "scrubbing",
+    "hungry", "windy", "hanging on", "bracing", "leveling", "scrubbing", "whee",
 };
 
 // sensing
@@ -125,6 +133,8 @@ static float lp[3], mfl[3], hist[6][3];
 static uint8_t hist_i = 0;
 static float env = 0, base = 0, vib = 0, step = 0, thrill = 0, scream_t = 0, dizzy_meter = 0, still_t = 0;
 static bool from_rest = false;
+static float act2 = 0, motion = 0, quiet_t = 0, t_whee = 0;   // short RMS of motion, time since it was quiet
+static float bx[3];              // compressed motion for the head bounce
 // mood
 static int mood = M_CALM;
 static float mood_t = 0;
@@ -135,6 +145,7 @@ static float hx = 0, hy = 0, hvx = 0, hvy = 0, hs = 0, hvs = 0;
 static float px_ = 0, py_ = 0, pvx = 0, pvy = 0;
 // expression
 typedef struct { float open, size, cheek, orbit, w, curve, omega, gape, zig, wave, tilt; } expr_t;
+// same order as the enum above
 static const expr_t MOODS[M_COUNT] = {
     /* calm      */ {0.5f,  1.0f,  0, 0, 14, 0.0f, 1.0f, 0.0f, 0, 0, 0},
     /* riding    */ {0.56f, 1.0f,  0, 0, 14, 0.3f, 0.7f, 0.0f, 0, 0, 0},
@@ -159,10 +170,11 @@ static const expr_t MOODS[M_COUNT] = {
     /* almost    */ {0.8f,  1.05f, 0, 0, 12, 0.5f, 0.0f, 0.2f, 0, 0, 0},
     /* hungry    */ {0.7f,  1.0f,  0, 0,  8, 0.0f, 0.0f, 0.9f, 0, 0, 0},
     /* windy     */ {0.3f,  1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.6f, 0},
+    /* nervous   */ {0.9f,  0.9f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.6f, 0, -0.3f},   // "hanging on"
     /* bracing   */ {0.08f, 1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.5f, 0, -0.3f},
     /* leveling  */ {0.5f,  1.0f,  0, 0, 12, 0.0f, 0.0f, 0.0f, 0, 0, 0},
     /* scrubbing */ {0.8f,  1.0f,  0.6f, 0, 12, 0.5f, 0.0f, 0.0f, 0, 0.6f, 0},
-    /* nervous   */ {0.9f,  0.9f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.6f, 0, -0.3f},
+    /* whee      */ {1.0f,  1.15f, 0, 0, 13, 0.8f, 0.0f, 1.3f, 0, 0, 0},   // a burst of motion after a pause
 };
 static expr_t E = MOODS[M_CALM];
 static float look = 0, wander_x = 0, wander_tx = 0, wander_t = 0;
@@ -204,7 +216,9 @@ static void sense(const float a[3], float dt) {
     float hp = 0;
     for (int i = 0; i < 3; i++) { lp[i] += (a[i] - lp[i]) * k15; float h = a[i] - lp[i]; hp += h * h; }
     float mag = sqrtf(lp[0] * lp[0] + lp[1] * lp[1] + lp[2] * lp[2]);
-    env = max(mag, env * expf(-dt / 0.6f));
+    env = max(mag, env * expf(-dt / 0.3f));
+    act2 += (mag * mag - act2) * (1 - expf(-dt / 0.12f));
+    motion = sqrtf(act2);
     vib += (sqrtf(hp) - vib) * (1 - expf(-dt / 0.6f));
     // sudden step: change of the 40 Hz signal over 25 ms, starting from rest (endstop hits)
     float k40 = 1 - expf(-2 * PI * 40 * dt);
@@ -214,7 +228,14 @@ static void sense(const float a[3], float dt) {
     from_rest = sqrtf(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]) < 0.3f;
     memcpy(hist[hist_i], mfl, sizeof(mfl));
     hist_i = (hist_i + 1) % 6;
-    base += (env - base) * (1 - expf(-dt / max(1.0f, T.habit)));
+    base += (motion - base) * (1 - expf(-dt / max(1.0f, T.habit)));
+    // a burst of motion after a pause (a travel, a new perimeter): "whee!"
+    t_whee = max(0.0f, t_whee - dt);
+    if (motion < 0.1f) quiet_t += dt;
+    else if (motion > 0.15f) {
+        if (quiet_t > 0.3f && t_whee <= 0) { t_whee = 0.5f; hvy -= 60 * T.sense; }
+        quiet_t = 0;
+    }
     thrill = max(0.0f, env - 0.7f * base) / T.scare;
     still_t = (env < 0.03f && vib < 0.03f) ? still_t + dt : 0;
 }
@@ -269,6 +290,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     else if (t_startle > 0) m = M_STARTLED;
     else if (vib > 0.28f) m = M_SHIVER;
     else if (thrill > 1 && scream_t > 0.4f) m = M_SCREAM;
+    else if (t_whee > 0) m = M_WHEE;
     else if (thrill > 0.35f) m = M_EXCITED;
     else if (t_sad > 0) m = M_SAD;
     else if (d.runout && d.printing) m = M_HUNGRY;
@@ -302,16 +324,24 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     if (d.printing && env > stats.peak) stats.peak = env;
 }
 
+// soft compression: small moves still show, big ones don't just pin the head to the edge
+static inline float squash(float v) { return copysignf(powf(fabsf(v), 0.6f), v); }
+
 static void step_body(float dt) {
-    float w = 2 * PI * T.wobble, k = w * w, c = 2 * T.settle * w, gain = T.sense * k * 18;
+    float q[3] = {squash(lp[0]), squash(lp[1]), squash(lp[2])};
+    float sn = T.sense * SENSE_K;
+    float w = 2 * PI * T.wobble, k = w * w, c = 2 * T.settle * w, gain = sn * k * 18;
     // inertia: the head lags opposite the acceleration. screen x <- X, screen y <- Z (up = -y), depth <- Y
-    hvx += (-k * hx - c * hvx - gain * lp[0]) * dt;
-    hvy += (-k * hy - c * hvy + gain * lp[2]) * dt;
-    hvs += (-k * hs - c * hvs - T.sense * k * 0.16f * lp[1]) * dt;
+    hvx += (-k * hx - c * hvx - gain * q[0]) * dt;
+    hvy += (-k * hy - c * hvy + gain * q[2]) * dt;
+    hvs += (-k * hs - c * hvs - sn * k * 0.16f * q[1]) * dt;
+    // the spring can't follow 3-10 Hz toolhead motion, so the head also jiggles with it directly
+    float k8 = 1 - expf(-2 * PI * 8 * dt);
+    for (int i = 0; i < 3; i++) bx[i] += (q[i] - bx[i]) * k8;
     hx = clampf(hx + hvx * dt, -34, 34); hy = clampf(hy + hvy * dt, -30, 30); hs = clampf(hs + hvs * dt, -0.3f, 0.3f);
-    float w2 = w * 1.35f, k2 = w2 * w2, c2 = 2 * T.settle * 0.6f * w2, g2 = T.sense * k2 * 11;
-    pvx += (-k2 * px_ - c2 * pvx - g2 * lp[0]) * dt;
-    pvy += (-k2 * py_ - c2 * pvy + g2 * lp[2]) * dt;
+    float w2 = w * 1.35f, k2 = w2 * w2, c2 = 2 * T.settle * 0.6f * w2, g2 = sn * k2 * 11;
+    pvx += (-k2 * px_ - c2 * pvx - g2 * q[0]) * dt;
+    pvy += (-k2 * py_ - c2 * pvy + g2 * q[2]) * dt;
     px_ += pvx * dt; py_ += pvy * dt;
     float r = sqrtf(px_ * px_ + py_ * py_);
     if (r > 13) { px_ *= 13 / r; py_ *= 13 / r; pvx *= 0.4f; pvy *= 0.4f; }
@@ -559,7 +589,8 @@ static void draw_face(lv_event_t * e) {
     if (mood == M_HEATING) jit = 0.4f + heat_effort * 1.8f;   // straining, harder as it gets close
     if (mood == M_NERVOUS) jit = max(jit, 0.8f);
     if (mood == M_WINDY) jit = max(jit, 0.6f);
-    float cx = 120 + hx + frand(-jit, jit), cy = 118 + hy + frand(-jit, jit);
+    float bs = BOUNCE * T.sense * SENSE_K;
+    float cx = 120 + clampf(hx - bs * bx[0], -34, 34) + frand(-jit, jit), cy = 118 + clampf(hy + bs * bx[2], -30, 30) + frand(-jit, jit);
     float sx = 1 - hs * 0.5f, sy = 1 + hs;
     cy += 14 * bubble_k;
     if (act == ACT_REPORT && p.s > 0.8f) cy -= 34;

@@ -570,6 +570,13 @@ static void coaster_sync_plugin(void) {
         int code = client.POST("{\"command\":\"coaster\"," + s.substring(1));
         client.end();
         ok = code == 200 || code == 204;
+        static int said = 0;
+        if (code != said) {   // log changes only
+            if (ok) Serial.println("octoprint: Coaster shows in the OctoPrint sidebar");
+            else Serial.printf("octoprint: couldn't send Coaster to the plugin (%d%s)\r\n", code,
+                               code == 400 ? ", plugin older than 0.6.0?" : code == 403 ? ", check the API key" : "");
+            said = code;
+        }
         if (!ok) backoff_until = millis() + 60000;   // plugin missing or too old
     }
     if (ok) { last = s; last_ms = millis(); }

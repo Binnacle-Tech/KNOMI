@@ -218,7 +218,8 @@ var $=function(id){return document.getElementById(id)};
 var HZ=240, DT=1/HZ, G=9806.65;
 
 /* ---------------- tuning ---------------- */
-var TUNE_DEF={wobble:2.4,settle:0.28,sense:1.0,habit:12,scare:0.9,dizzy:5,sleep:20};
+var TUNE_DEF={wobble:2.0,settle:0.2,sense:1.0,habit:20,scare:0.6,dizzy:5,sleep:20};
+var SENSE_K=3, BOUNCE=6;   // same as the firmware
 var TUNE_META=[
   ["wobble","Wobble","Hz",0.8,6,0.1,"How fast the head bounces back. Low is floppy, high is stiff."],
   ["settle","Settle","",0.05,1,0.01,"Damping. Low keeps it wobbling after a move; 1 stops dead."],
@@ -267,7 +268,7 @@ function knomiCard(){fetch("/coaster/card").then(function(r){return r.json()}).t
 knomiCard();setInterval(knomiCard,10000);
 $("saveK").addEventListener("click",function(){knomiSave("Saved. The KNOMI uses it now.")});
 $("loadK").addEventListener("click",function(){knomiLoad().then(function(){say("Back to the KNOMI's tuning")})});
-var KCOL={sad:"#9AA7F0",shocked:"#E06C5A",lonely:"#7E8F9F",confused:"#F0C079",impatient:"#E8A33D","cooling off":"#4FD1C5",focused:"#4FD1C5","almost there":"#E8A33D",hungry:"#F0C079",windy:"#4FD1C5","hanging on":"#E06C5A",ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D"};
+var KCOL={sad:"#9AA7F0",shocked:"#E06C5A",lonely:"#7E8F9F",confused:"#F0C079",impatient:"#E8A33D","cooling off":"#4FD1C5",focused:"#4FD1C5","almost there":"#E8A33D",hungry:"#F0C079",windy:"#4FD1C5","hanging on":"#E06C5A",ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D",whee:"#E8A33D"};
 function knomiPoll(){
   fetch("/coaster/state").then(function(r){return r.json()}).then(function(j){
     var c=$("kMood");c.textContent=j.mood;c.style.color=KCOL[j.mood]||"#E8A33D";
@@ -405,7 +406,7 @@ function stepDevice(dt){
 }
 
 /* ---------------- sensing: what the face "feels" ---------------- */
-var S={lp:[0,0,0],m:[0,0,0],ring:[],prev:[0,0,0],rmsShort:0,base:0,vib:0,step:0,thrill:0,screamT:0,dizzyMeter:0,stillT:0,vz:0,last:[0,0,0]};
+var S={act2:0,act:0,quietT:0,whee:0,bx:[0,0,0],lp:[0,0,0],m:[0,0,0],ring:[],prev:[0,0,0],rmsShort:0,base:0,vib:0,step:0,thrill:0,screamT:0,dizzyMeter:0,stillT:0,vz:0,last:[0,0,0]};
 function sense(a,dt){
   // low-pass ~15 Hz = the "felt" motion, the rest is vibration
   var aLP=1-Math.exp(-2*Math.PI*15*dt);
@@ -413,7 +414,8 @@ function sense(a,dt){
   for(var i=0;i<3;i++){S.lp[i]+=(a[i]-S.lp[i])*aLP;var h=a[i]-S.lp[i];hpE+=h*h}
   var mag=Math.hypot(S.lp[0],S.lp[1],S.lp[2]);
   // peak envelope: toolhead moves are short hard pulses (a 15k mm/s² travel accelerates for ~30 ms)
-  S.rmsShort=Math.max(mag,S.rmsShort*Math.exp(-dt/0.6));
+  S.rmsShort=Math.max(mag,S.rmsShort*Math.exp(-dt/0.3));
+  S.act2+=(mag*mag-S.act2)*(1-Math.exp(-dt/0.12));S.act=Math.sqrt(S.act2);
   S.vib+=(Math.sqrt(hpE)-S.vib)*(1-Math.exp(-dt/0.6));
   // sudden step: change of the 40 Hz-filtered signal over the last 25 ms (endstop hits, not normal accel ramps)
   var aM=1-Math.exp(-2*Math.PI*40*dt);
@@ -421,7 +423,10 @@ function sense(a,dt){
   S.ring.push(S.m.slice());if(S.ring.length>6)S.ring.shift();
   var o=S.ring[0];S.step=Math.hypot(S.m[0]-o[0],S.m[1]-o[1],S.m[2]-o[2]);
   S.fromRest=Math.hypot(o[0],o[1],o[2])<0.3;
-  S.base+=(S.rmsShort-S.base)*(1-Math.exp(-dt/Math.max(1,T.habit)));  // habituation
+  S.base+=(S.act-S.base)*(1-Math.exp(-dt/Math.max(1,T.habit)));  // habituation
+  // a burst of motion after a pause (a travel, a new perimeter): whee!
+  S.whee=Math.max(0,S.whee-dt);
+  if(S.act<0.1)S.quietT+=dt;else if(S.act>0.15){if(S.quietT>0.3&&S.whee<=0){S.whee=0.5;headKick(0,-60*T.sense)}S.quietT=0}
   S.thrill=Math.max(0,S.rmsShort-0.7*S.base)/T.scare;
   // Z speed in mm/s (integrated, leaking back to 0). On the KNOMI this would come from OctoPrint's Z position.
   S.vz=(S.vz+a[2]*G*dt)*Math.exp(-dt/3);
@@ -450,6 +455,7 @@ function pickMood(dt){
   else if(timers.startle>0){m="startled";w="Sudden jolt ("+S.step.toFixed(1)+" g in 25 ms)."}
   else if(S.vib>0.28){m="shivering";w=S.vib.toFixed(2)+" g of buzz above 15 Hz."}
   else if(S.thrill>1&&S.screamT>0.4){m="screaming";w=S.rmsShort.toFixed(2)+" g peaks, used to "+S.base.toFixed(2)+" g."}
+  else if(S.whee>0){m="whee";w="Moving again after a pause."}
   else if(S.thrill>0.35){m="excited";w=S.rmsShort.toFixed(2)+" g peaks, used to "+S.base.toFixed(2)+" g."}
   else if(Math.abs(S.vz)>4){m="elevator";w=(S.vz>0?"Going up":"Going down")+" at "+Math.abs(S.vz).toFixed(0)+" mm/s."}
   else if(printer.paused){m="bored";w="Printer paused."}
@@ -463,16 +469,20 @@ function pickMood(dt){
 /* ---------------- body: springs ---------------- */
 var head={x:0,y:0,vx:0,vy:0,s:0,vs:0}, pup={x:0,y:0,vx:0,vy:0};
 function headKick(vx,vy){head.vx+=vx;head.vy+=vy}
-function stepBody(a,dt){
-  var w=2*Math.PI*T.wobble,k=w*w,c=2*T.settle*w, gain=T.sense*k*18; // 18 px per g at rest
+function squash(v){return (v<0?-1:1)*Math.pow(Math.abs(v),0.6)}
+function stepBody(lp,dt){
+  var a=[squash(lp[0]),squash(lp[1]),squash(lp[2])], sn=T.sense*SENSE_K;
+  var w=2*Math.PI*T.wobble,k=w*w,c=2*T.settle*w, gain=sn*k*18; // 18 px per (squashed) g at rest
+  // the spring can't follow 3-10 Hz toolhead motion, so the head also jiggles with it directly
+  var k8=1-Math.exp(-2*Math.PI*8*dt);for(var i=0;i<3;i++)S.bx[i]+=(a[i]-S.bx[i])*k8;
   // inertia: the head lags opposite the acceleration. screen x ← X, screen y ← Z (up = -y), depth ← Y
   head.vx+=(-k*head.x-c*head.vx-gain*a[0])*dt;
   head.vy+=(-k*head.y-c*head.vy+gain*a[2])*dt;
-  head.vs+=(-k*head.s-c*head.vs-T.sense*k*0.16*a[1])*dt;
+  head.vs+=(-k*head.s-c*head.vs-sn*k*0.16*a[1])*dt;
   head.x+=head.vx*dt;head.y+=head.vy*dt;head.s+=head.vs*dt;
   head.x=clamp(head.x,-34,34);head.y=clamp(head.y,-30,30);head.s=clamp(head.s,-0.3,0.3);
   // pupils: looser spring inside the eye, they slosh after the head
-  var w2=2*Math.PI*T.wobble*1.35,k2=w2*w2,c2=2*T.settle*0.6*w2,g2=T.sense*k2*11;
+  var w2=2*Math.PI*T.wobble*1.35,k2=w2*w2,c2=2*T.settle*0.6*w2,g2=sn*k2*11;
   pup.vx+=(-k2*pup.x-c2*pup.vx-g2*a[0]-head.vx*0.0)*dt;
   pup.vy+=(-k2*pup.y-c2*pup.vy+g2*a[2])*dt;
   pup.x+=pup.vx*dt;pup.y+=pup.vy*dt;
@@ -498,7 +508,8 @@ var MOODS={
   shivering:{open:0.42,size:1,   cheek:0,orbit:0,w:14,curve:0,  omega:0,gape:0,  zig:1,wave:0},
   dizzy:    {open:0.5, size:1,   cheek:0,orbit:1,w:14,curve:0,  omega:0,gape:0,  zig:0,wave:1},
   giggle:   {open:1,   size:1.05,cheek:1,orbit:0,w:12,curve:0.8,omega:0,gape:0.8,zig:0,wave:0},
-  celebrate:{open:1,   size:1.1, cheek:1,orbit:0,w:15,curve:0.9,omega:0,gape:1,  zig:0,wave:0}
+  celebrate:{open:1,   size:1.1, cheek:1,orbit:0,w:15,curve:0.9,omega:0,gape:1,  zig:0,wave:0},
+  whee:     {open:1,   size:1.15,cheek:0,orbit:0,w:13,curve:0.8,omega:0,gape:1.3,zig:0,wave:0}
 };
 var blink={t:rnd(2,5),closing:0};
 function blinkNow(){blink.closing=0.16}
@@ -565,7 +576,7 @@ function draw(){
   ctx.fillStyle="#000";ctx.fillRect(0,0,240,240);
   ctx.strokeStyle=fc;ctx.fillStyle=fc;ctx.lineWidth=SW;ctx.lineCap="round";ctx.lineJoin="round";
   var jit=Math.min(3,S.vib*6)*E.zig;
-  var cx=120+head.x+rnd(-jit,jit), cy=118+head.y+rnd(-jit,jit);
+  var bs=BOUNCE*T.sense*SENSE_K, cx=120+clamp(head.x-bs*S.bx[0],-34,34)+rnd(-jit,jit), cy=118+clamp(head.y+bs*S.bx[2],-30,30)+rnd(-jit,jit);
   var sx=1-head.s*0.5, sy=1+head.s;
   if(timers.giggle>0)cy-=Math.abs(Math.sin(now*14))*6;
   if(timers.celebrate>0)cy-=Math.abs(Math.sin(now*9))*8;
@@ -622,7 +633,7 @@ function frame(t){
   uiT-=el;if(uiT<=0){uiT=0.1;updateUi()}
   requestAnimationFrame(frame);
 }
-var MOODCOL={calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D"};
+var MOODCOL={calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D",whee:"#E8A33D"};
 function updateUi(){
   var chip=$("moodChip");if(chip.textContent!==mood){chip.textContent=mood;chip.style.color=MOODCOL[mood]||"#E8A33D"}
   $("why").textContent=why;

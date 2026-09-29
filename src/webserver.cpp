@@ -438,6 +438,12 @@ static long int_param(AsyncWebServerRequest *request, const char *name, long lo,
     return v;
 }
 
+// ESPAsyncWebServer matches "/log" for "/log/info" too (any "/log/..." path), and the first
+// handler registered wins. Pages that have sub-paths only answer their exact URL.
+static ArRequestFilterFunction exact(const char * uri) {
+    return [uri](AsyncWebServerRequest * r) { return r->url() == uri; };
+}
+
 static void bluetooth_routes(void) {
     server.on("/bluetooth", HTTP_POST, [](AsyncWebServerRequest *request){
         uint8_t was_enabled = knomi_config.bt_enabled;
@@ -472,7 +478,7 @@ static void bluetooth_routes(void) {
             return;
         }
         request->send(200, "text/html", message_page("Bluetooth saved", note));
-    });
+    }).setFilter(exact("/bluetooth"));
     server.on("/bluetooth/forget", HTTP_POST, [](AsyncWebServerRequest *request){
         knomi_ble_forget_bonds();
         request->send(200, "text/html", message_page("Paired devices forgotten",
@@ -566,7 +572,7 @@ extern const char layout_default_json[];
 static void layout_routes(void) {
     server.on("/layout", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send_P(200, "text/html", layout_html);
-    });
+    }).setFilter(exact("/layout"));
     server.on("/layout.json", HTTP_GET, [](AsyncWebServerRequest *request){
         if (!request->hasParam("default") && LittleFS.exists("/layout.json")) {
             request->send(LittleFS, "/layout.json", "application/json");
@@ -665,7 +671,7 @@ static void update_routes(void) {
 static void log_routes(void) {
     server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send_P(200, "text/html", log_html);
-    });
+    }).setFilter(exact("/log"));
     server.on("/log.txt", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *r = request->beginResponse(200, "text/plain; charset=utf-8", knomi_log_text());
         r->addHeader("Cache-Control", "no-store");
@@ -713,7 +719,7 @@ static void log_routes(void) {
 static void coaster_routes(void) {
     server.on("/coaster", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send_P(200, "text/html", coaster_html);
-    });
+    }).setFilter(exact("/coaster"));
     server.on("/coaster.json", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send(200, "application/json", coaster_tuning_json());
     });
@@ -797,8 +803,6 @@ void webserver_setup(void) {
     } else {
         Serial.println("mDNS start ok!");
     }
-    AsyncElegantOTA.begin(&server);
-
     server.on("/favicon.ico", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *response = request->beginResponse_P(200, "image/x-icon", btt_logo_only_ico, sizeof(btt_logo_only_ico));
         request->send(response);
@@ -811,6 +815,7 @@ void webserver_setup(void) {
     coaster_routes();
     log_routes();
     update_routes();
+    AsyncElegantOTA.begin(&server);   // after /update/github and /update/progress, or its /update grabs them
     bluetooth_routes();
     backup_routes(server);
 
