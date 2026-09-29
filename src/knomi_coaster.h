@@ -17,6 +17,7 @@ bool coaster_idle_enabled(void);                          // idle screen shows t
 void coaster_request_reload(void);                        // any task: re-read /coaster.json
 void coaster_push_sample(float x, float y, float z);      // sensor task: printer-frame accel in g, gravity removed
 void coaster_event_ready(float secs);                     // LVGL task: heated up, print starting
+void coaster_poke(void);                                  // LVGL task: tapped / tickled
 
 #ifdef __cplusplus
 }

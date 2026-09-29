@@ -562,12 +562,16 @@ static int pick_page(const moonraker_data_t & d) {
 }
 
 static void screen_tap_cb(lv_event_t * e) {
-    if (layout_visible) print_layout_next_page();
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c == LV_EVENT_SHORT_CLICKED) { if (layout_visible) print_layout_next_page(); }
+    else coaster_poke();   // hold anywhere on the print screen: tickle Coaster
 }
 
 void print_layout_init(void) {
     load();
     lv_obj_add_event_cb(ui_ScreenPrinting, screen_tap_cb, LV_EVENT_SHORT_CLICKED, NULL);
+    lv_obj_add_event_cb(ui_ScreenPrinting, screen_tap_cb, LV_EVENT_LONG_PRESSED, NULL);
+    lv_obj_add_event_cb(ui_ScreenPrinting, screen_tap_cb, LV_EVENT_LONG_PRESSED_REPEAT, NULL);
 }
 
 void print_layout_request_reload(void) { reload_pending = true; }

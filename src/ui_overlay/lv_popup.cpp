@@ -1,6 +1,8 @@
 #include "ui/ui.h"
 #include "knomi.h"
 #include "moonraker.h"
+#include "lv_overlay.h"
+#include "../knomi_coaster.h"
 
 typedef enum {
     LV_POPUP_NULL = 0,
@@ -13,7 +15,9 @@ typedef enum {
 static lv_popup_status_t lv_popup_status = LV_POPUP_NULL;
 static lv_obj_t * previous_menu;
 
+static void popup_face_show(bool show);
 void lv_popup_warning(const char * warning, bool clickable) {
+    popup_face_show(false);   // other popups (pairing codes, action errors) have no face
     lv_textarea_set_text(ui_textarea_popup, warning);
 
     if (clickable) {
@@ -46,10 +50,22 @@ void ui_event_popup_ok(lv_event_t * e)
     }
 }
 
+// Coaster on the connection / printer error popups (lonely, confused, shocked)
+static lv_obj_t * popup_face = NULL;
+static void popup_face_show(bool show) {
+    if (!popup_face) {
+        popup_face = coaster_create(ui_ScreenPopup, 84);
+        lv_obj_align(popup_face, LV_ALIGN_TOP_MID, 0, 2);
+    }
+    if (show) lv_obj_clear_flag(popup_face, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(popup_face, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void lv_goto_popup_screen(lv_popup_status_t state, const char * warning) {
     if (lv_popup_status == state) return;
     lv_popup_status = state;
     lv_popup_warning(warning, false);
+    popup_face_show(true);
 }
 
 static void lv_remove_popup_screen(void) {

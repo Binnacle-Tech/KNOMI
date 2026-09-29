@@ -9,8 +9,8 @@
 #include "knomi.h"
 #include "knomi_gif.h"
 #include "lv_overlay.h"
+#include "../knomi_coaster.h"
 
-LV_IMG_DECLARE(gif_wifi_off);
 
 #define COLOR_BG    0x000000
 #define COLOR_TEXT  0xE7EEF4
@@ -75,9 +75,9 @@ void lv_setup_screens_init(void) {
     dark(ui_ScreenWIFIDisconnect);
     lv_obj_add_flag(ui_img_wifi_disconnect, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui_label_wifi_disconnect, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_t * off = lv_gif_create(ui_ScreenWIFIDisconnect);
-    lv_gif_set_src(off, &gif_wifi_off);
-    lv_obj_align(off, LV_ALIGN_CENTER, 0, -26);
+    // Coaster looks around for the network (lonely)
+    lv_obj_t * off = coaster_create(ui_ScreenWIFIDisconnect, 130);
+    lv_obj_align(off, LV_ALIGN_CENTER, 0, -34);
     lv_obj_t * lost = label(ui_ScreenWIFIDisconnect, &ui_font_InterSemiBold18, COLOR_TEXT, 26);
     lv_label_set_text(lost, "WiFi lost");
     lost_label = label(ui_ScreenWIFIDisconnect, &ui_font_InterSemiBold14, COLOR_MUTED, 52);

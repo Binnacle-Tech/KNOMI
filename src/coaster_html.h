@@ -256,7 +256,7 @@ function knomiSave(msg){
 }
 $("saveK").addEventListener("click",function(){knomiSave("Saved. The KNOMI uses it now.")});
 $("loadK").addEventListener("click",function(){knomiLoad().then(function(){say("Back to the KNOMI's tuning")})});
-var KCOL={ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D"};
+var KCOL={sad:"#9AA7F0",shocked:"#E06C5A",lonely:"#7E8F9F",confused:"#F0C079",impatient:"#E8A33D","cooling off":"#4FD1C5",focused:"#4FD1C5","almost there":"#E8A33D",hungry:"#F0C079",windy:"#4FD1C5","hanging on":"#E06C5A",ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D"};
 function knomiPoll(){
   fetch("/coaster/state").then(function(r){return r.json()}).then(function(j){
     var c=$("kMood");c.textContent=j.mood;c.style.color=KCOL[j.mood]||"#E8A33D";

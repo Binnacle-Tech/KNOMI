@@ -33,6 +33,9 @@ typedef struct {
     bool cleaning;    // nozzle wipe/brush
     bool filament;    // filament load/unload
     bool paused_ext;  // paused outside the print job API (M600, MMU, macro) per plugin/_KNOMI_STATUS
+    bool runout;      // out of filament (plugin: M600 or a runout message), until resumed
+    uint8_t fan;      // part cooling fan %, from the plugin (0 = off or unknown)
+    uint16_t speed;   // speed factor % (M220), from the plugin; 0 = unknown
 
     // printing screen extras
     uint32_t print_time;   // seconds elapsed

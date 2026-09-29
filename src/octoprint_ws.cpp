@@ -49,6 +49,9 @@ static void apply_plugin(JsonVariantConst d) {
     moonraker.data.cleaning = d["cleaning"] | false;
     moonraker.data.filament = d["filament"] | false;
     moonraker.data.paused_ext = d["paused"] | false;
+    moonraker.data.runout = d["runout"] | false;
+    moonraker.data.fan = d["fan"] | 0;
+    moonraker.data.speed = d["speed"] | 0;
     JsonVariantConst tp = d["time_progress"];
     if (!tp.isNull()) moonraker.data.progress_mode = tp.as<bool>() ? 2 : 1;
 }

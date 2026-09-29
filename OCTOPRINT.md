@@ -91,7 +91,25 @@ Layer changes use the printer's layer number when it reports one, otherwise each
 
 ## Coaster face
 Coaster is the mascot and every face on the KNOMI: the idle screen, getting ready when a print starts, bored while paused and celebrating after the print. It's a face drawn live instead of a GIF, in the same flat style as the stock faces. Its head and pupils hang on springs driven by the KNOMI's accelerometer (now read at 200 Hz), so toolhead moves slosh them around. It picks a mood from how hard and how long it's being thrown, and gets used to steady shaking:
-calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (input shaper test), elevator (Z moves, from OctoPrint's Z), sleepy, bored (paused), plus a sweat drop when the nozzle is hot and confetti when a print finishes.
+calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (input shaper test), elevator (Z moves, from OctoPrint's Z), sleepy, bored (paused), plus a sweat drop that grows with the nozzle temperature and confetti when a print finishes. It also reacts to the printer:
+
+| What happens | Coaster |
+|---|---|
+| Print cancelled or failed | sad |
+| Printer not operational / Klipper shutdown | shocked and trembling (on the error popup) |
+| WiFi or OctoPrint lost | lonely, looking around (WiFi-lost screen and connection popup) |
+| API key rejected | confused |
+| Heating up | impatient, glancing at the heater |
+| After a print, while the nozzle cools | cooling off, content |
+| First layer | focused squint |
+| Last 10 % | almost there |
+| Hours into a long print | heavier eyelids |
+| Screen dims or turns off | dozes off |
+| Filament runout / M600 (plugin 0.5+) | hungry, chomping |
+| Part fan 80 %+ (plugin 0.5+) | squinting into the wind |
+| Speed factor 130 %+ (plugin 0.5+) | hanging on |
+
+**Touch:** tap Coaster on the idle screen to poke it, hold to keep tickling. On the print screen a tap still changes pages; hold to tickle.
 
 - **Where:** every face screen. The busy animations without a face (homing, QGL, probing, input shaping, PID, cleaning, filament, printing) still play as GIFs you can replace.
 - **Print screen:** add "Coaster face" in the designer, or start from "Coaster face, stats every 10 %".

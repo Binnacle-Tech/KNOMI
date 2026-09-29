@@ -75,6 +75,12 @@ static void idle_face_sync(void) {
     }
 }
 
+// touch: tap Coaster to poke it, hold to keep tickling
+static void coaster_touch_cb(lv_event_t * e) {
+    lv_event_code_t c = lv_event_get_code(e);
+    if (c == LV_EVENT_SHORT_CLICKED || c == LV_EVENT_LONG_PRESSED || c == LV_EVENT_LONG_PRESSED_REPEAT) coaster_poke();
+}
+
 static void apply_display_settings(void) {
     lv_slider_set_value(ui_slider_backlight, knomi_config.backlight, LV_ANIM_OFF);
     knomi_power_wake();
@@ -167,6 +173,7 @@ void lvgl_ui_task(void * parameter) {
     coaster_main = coaster_create(ui_ScreenMainGif, 240);
     lv_obj_center(coaster_main);
     lv_obj_add_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(ui_ScreenMainGif, coaster_touch_cb, LV_EVENT_ALL, NULL);
 
     // Boot / WiFi setup / WiFi lost screens (dark, QR code setup)
     lv_setup_screens_init();

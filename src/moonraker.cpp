@@ -386,6 +386,9 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
             data.cleaning = json_parse["cleaning"].as<bool>();
             data.filament = json_parse["filament"].as<bool>();
             data.paused_ext = json_parse["paused"].as<bool>();
+            data.runout = json_parse["runout"] | false;
+            data.fan = json_parse["fan"] | 0;
+            data.speed = json_parse["speed"] | 0;
             JsonVariant tp = json_parse["time_progress"];
             data.progress_mode = tp.isNull() ? 0 : (tp.as<bool>() ? 2 : 1);
         }
@@ -393,7 +396,8 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
         data.homing = data.probing = data.qgling = false;
         data.heating_nozzle = data.heating_bed = false;
         data.shaping = data.pid_tuning = data.cleaning = data.filament = false;
-        data.paused_ext = false;
+        data.paused_ext = data.runout = false;
+        data.fan = 0; data.speed = 0;
         if (last_code == 404) data.progress_mode = 0;
         if (last_code == 404) {
             // plugin not installed, don't hammer OctoPrint with 404s

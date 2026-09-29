@@ -100,3 +100,5 @@ void knomi_power_loop(void) {
         case PWR_SLEEP: set_level(0); break;
     }
 }
+
+bool knomi_power_dozing(void) { return state != PWR_AWAKE; }

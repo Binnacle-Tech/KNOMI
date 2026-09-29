@@ -6,6 +6,8 @@
 #include <ArduinoJson.h>
 #include "knomi.h"
 #include "moonraker.h"
+#include "knomi_power.h"
+#include "knomi_ble.h"
 #include "knomi_coaster.h"
 #include "ui_overlay/lv_overlay.h"
 #include "ui/ui.h"
@@ -102,11 +104,15 @@ static float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b :
 
 enum {
     M_CALM, M_RIDING, M_EXCITED, M_SCREAM, M_STARTLED, M_ELEVATOR, M_SLEEPY,
-    M_BORED, M_SHIVER, M_DIZZY, M_GIGGLE, M_CELEBRATE, M_READY, M_COUNT
+    M_BORED, M_SHIVER, M_DIZZY, M_GIGGLE, M_CELEBRATE, M_READY,
+    M_SAD, M_ERROR, M_LONELY, M_CONFUSED, M_HEATING, M_COOLING, M_FOCUS, M_ANTICIPATE,
+    M_HUNGRY, M_WINDY, M_NERVOUS, M_COUNT
 };
 static const char * MOOD_NAMES[M_COUNT] = {
     "calm", "riding", "excited", "screaming", "startled", "elevator", "sleepy",
     "bored", "shivering", "dizzy", "giggle", "celebrate", "ready",
+    "sad", "shocked", "lonely", "confused", "impatient", "cooling off", "focused", "almost there",
+    "hungry", "windy", "hanging on",
 };
 
 // sensing
@@ -117,7 +123,8 @@ static bool from_rest = false;
 // mood
 static int mood = M_CALM;
 static float mood_t = 0;
-static float t_startle = 0, t_dizzy = 0, t_giggle = 0, t_celebrate = 0, t_ready = 0;
+static float t_startle = 0, t_dizzy = 0, t_giggle = 0, t_celebrate = 0, t_ready = 0, t_sad = 0;
+static uint32_t cool_until = 0;   // "cooling off" after a print, up to 10 minutes
 // body
 static float hx = 0, hy = 0, hvx = 0, hvy = 0, hs = 0, hvs = 0;
 static float px_ = 0, py_ = 0, pvx = 0, pvy = 0;
@@ -137,6 +144,17 @@ static const expr_t MOODS[M_COUNT] = {
     /* giggle    */ {1.0f,  1.05f, 1, 0, 12, 0.8f, 0.0f, 0.8f, 0, 0},
     /* celebrate */ {1.0f,  1.1f,  1, 0, 15, 0.9f, 0.0f, 1.0f, 0, 0},
     /* ready     */ {1.0f,  1.1f,  0, 0, 13, 0.8f, 0.0f, 0.5f, 0, 0},
+    /* sad       */ {0.35f, 1.0f,  0, 0, 12, -0.9f, 0.0f, 0.0f, 0, 0},
+    /* shocked   */ {1.0f,  0.75f, 0, 0, 10, 0.0f, 0.0f, 0.35f, 0, 0.8f},
+    /* lonely    */ {0.45f, 1.0f,  0, 0,  9, -0.6f, 0.0f, 0.0f, 0, 0},
+    /* confused  */ {0.55f, 1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.5f},
+    /* impatient */ {0.5f,  1.0f,  0, 0,  9, 0.0f, 0.0f, 0.0f, 0, 0},
+    /* cooling   */ {0.3f,  1.0f,  0, 0, 12, 0.5f, 0.4f, 0.0f, 0, 0},
+    /* focused   */ {0.28f, 0.9f,  0, 0,  7, 0.0f, 0.0f, 0.0f, 0, 0},
+    /* almost    */ {0.8f,  1.05f, 0, 0, 12, 0.5f, 0.0f, 0.2f, 0, 0},
+    /* hungry    */ {0.7f,  1.0f,  0, 0,  8, 0.0f, 0.0f, 0.9f, 0, 0},
+    /* windy     */ {0.3f,  1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.6f},
+    /* nervous   */ {0.9f,  0.9f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.6f, 0},
 };
 static expr_t E = MOODS[M_CALM];
 static float look = 0, wander_x = 0, wander_tx = 0, wander_t = 0;
@@ -183,7 +201,7 @@ static void head_kick(float vx, float vy) { hvx += vx; hvy += vy; }
 static void pick_mood(float dt, const moonraker_data_t & d) {
     t_startle = max(0.0f, t_startle - dt); t_dizzy = max(0.0f, t_dizzy - dt);
     t_giggle = max(0.0f, t_giggle - dt); t_celebrate = max(0.0f, t_celebrate - dt);
-    t_ready = max(0.0f, t_ready - dt);
+    t_ready = max(0.0f, t_ready - dt); t_sad = max(0.0f, t_sad - dt);
     if (step > 1.8f && from_rest && vib < 0.35f && t_startle <= 0 && t_celebrate <= 0) {
         t_startle = 0.7f; blink_now(); head_kick(0, -40);
     }
@@ -191,18 +209,41 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     else { scream_t = max(0.0f, scream_t - dt * 2); dizzy_meter = max(0.0f, dizzy_meter - dt * 0.6f); }
     if (dizzy_meter > T.dizzy && t_dizzy <= 0) { t_dizzy = 3.5f; dizzy_meter = 0; }
     bool paused = d.printing && (d.pause || d.paused_ext);
+    // connection trouble (these show on the WiFi-lost screen and the error popups)
+    bool link = wifi_get_connect_status() == WIFI_STATUS_CONNECTED || knomi_ble_link_active();
+    bool lonely = !link || moonraker.unconnected;
+    bool confused = !lonely && moonraker.auth_failed;
+    bool error = !lonely && !confused && moonraker.unready;
+    bool heating = (d.nozzle_target > 0 && d.nozzle_actual < d.nozzle_target - 3) ||
+                   (d.bed_target > 0 && d.bed_actual < d.bed_target - 2);
+    bool first_layer = d.printing && !paused && d.print_time > 0 &&
+                       (d.layer_total > 0 ? d.layer <= 1 : (d.z_um != INT32_MIN && d.z_um <= 400));
+    bool cooling = !d.printing && d.nozzle_target == 0 && d.nozzle_actual >= 60 &&
+                   (int32_t)(cool_until - millis()) > 0;
     int m;
     if (t_celebrate > 0) m = M_CELEBRATE;
     else if (t_giggle > 0) m = M_GIGGLE;
+    else if (lonely) m = M_LONELY;
+    else if (confused) m = M_CONFUSED;
+    else if (error) m = M_ERROR;
     else if (t_ready > 0) m = M_READY;
     else if (t_dizzy > 0) m = M_DIZZY;
     else if (t_startle > 0) m = M_STARTLED;
     else if (vib > 0.28f) m = M_SHIVER;
     else if (thrill > 1 && scream_t > 0.4f) m = M_SCREAM;
     else if (thrill > 0.35f) m = M_EXCITED;
+    else if (t_sad > 0) m = M_SAD;
+    else if (d.runout && d.printing) m = M_HUNGRY;
     else if (fabsf(vz) > 2.0f) m = M_ELEVATOR;
     else if (paused) m = M_BORED;
+    else if (heating) m = M_HEATING;
+    else if (knomi_power_dozing()) m = M_SLEEPY;          // the screen dims: Coaster dozes off with it
+    else if (first_layer) m = M_FOCUS;
+    else if (d.printing && d.progress >= 90) m = M_ANTICIPATE;
+    else if (d.printing && d.speed >= 130) m = M_NERVOUS;
+    else if (d.printing && d.fan >= 80) m = M_WINDY;
     else if (still_t > T.sleep && !d.printing) m = M_SLEEPY;
+    else if (cooling) m = M_COOLING;
     else if (env > 0.05f || vib > 0.05f) m = M_RIDING;
     else m = M_CALM;
     if (m != mood) { mood = m; mood_t = 0; } else mood_t += dt;
@@ -232,8 +273,12 @@ static void step_expr(float dt) {
     float * e = (float *)&E; const float * tt = (const float *)&t;
     for (unsigned i = 0; i < sizeof(expr_t) / sizeof(float); i++) e[i] += (tt[i] - e[i]) * kk;
     float want = mood == M_BORED ? sinf(now_s * 1.3f) * 12
-               : (mood == M_CALM || mood == M_RIDING || mood == M_SLEEPY) ? wander_x : 0;
+               : mood == M_LONELY ? sinf(now_s * 0.7f) * 14                        // looking around for OctoPrint
+               : mood == M_CONFUSED ? (fmodf(now_s, 2.4f) < 1.2f ? -10 : 10)       // glancing left, right
+               : mood == M_HEATING ? (fmodf(now_s, 3.0f) < 0.8f ? 12 : 0)         // checking the heater
+               : (mood == M_CALM || mood == M_RIDING || mood == M_SLEEPY || mood == M_COOLING) ? wander_x : 0;
     look += (want - look) * kk;
+    if (mood == M_HUNGRY) E.gape = 0.9f * fabsf(sinf(now_s * 5));   // chomp chomp
     if (blink_closing > 0) blink_closing -= dt;
     else {
         blink_t -= dt;
@@ -255,7 +300,11 @@ static void spawn_confetti(void) {
 // printer events: print finished, Z moving (elevator)
 static void watch_printer(const moonraker_data_t & d) {
     if (d.printing) last_progress = d.progress;
-    if (was_printing && !d.printing && last_progress >= 98) { t_celebrate = 4.5f; spawn_confetti(); }
+    if (was_printing && !d.printing) {
+        if (last_progress >= 98) { t_celebrate = 4.5f; spawn_confetti(); }
+        else t_sad = 8;                                   // cancelled or failed
+        cool_until = millis() + 10 * 60000UL;
+    }
     was_printing = d.printing;
     // Z speed over the last 1.5 s from the printer's reported Z (the accelerometer can't feel slow Z moves)
     if (millis() - zhist_ms >= 250) {
@@ -360,6 +409,9 @@ static void draw_face(lv_event_t * e) {
     p.fc = lv_theme_color();
 
     float jit = min(3.0f, vib * 6) * E.zig;
+    if (mood == M_ERROR) jit = 1.5f;                  // trembling
+    if (mood == M_NERVOUS) jit = max(jit, 0.8f);
+    if (mood == M_WINDY) jit = max(jit, 0.6f);
     float cx = 120 + hx + frand(-jit, jit), cy = 118 + hy + frand(-jit, jit);
     float sx = 1 - hs * 0.5f, sy = 1 + hs;
     if (t_giggle > 0) cy -= fabsf(sinf(now_s * 14)) * 6;
@@ -368,20 +420,28 @@ static void draw_face(lv_event_t * e) {
     cy += sinf(now_s * 1.6f) * 1.5f * (1 - clampf(E.open * 4, 0, 1));   // breathing while asleep
     float blinkk = blink_closing > 0 ? sinf(PI * (1 - blink_closing / 0.16f)) : 0;
     float open = E.open * (1 - blinkk);
+    // long prints wear it out: heavier lids after 2 h, up to 35 % lower by 8 h (big moves still wake it up)
+    const moonraker_data_t & dd = moonraker.data;
+    if (dd.printing && (mood == M_CALM || mood == M_RIDING || mood == M_FOCUS || mood == M_WINDY)) {
+        float tired = clampf((dd.print_time / 3600.0f - 2) / 6, 0, 0.35f);
+        open *= 1 - tired;
+    }
     draw_eye(p, cx - 54 * sx, cy - 14 * sy, -1, sx, open);
     draw_eye(p, cx + 54 * sx, cy - 14 * sy, 1, sx, open);
     draw_mouth(p, cx, cy + 22 * sy);
 
     // sweat drop while the nozzle is hot
     const moonraker_data_t & d = moonraker.data;
-    if (d.nozzle_actual >= 170 && mood != M_SLEEPY) {
+    // sweat drop: appears from 120 °C and grows with the nozzle temperature
+    if (d.nozzle_actual >= 120 && mood != M_SLEEPY) {
+        float sz = clampf((d.nozzle_actual - 120) / 130.0f, 0, 1) * 0.8f + 0.5f;
         float q = fmodf(now_s * 0.5f, 1), dx = cx + 86 * sx, dy = cy - 40 + q * 26;
         lv_opa_t op = (lv_opa_t)(255 * (1 - q * 0.8f));
         lv_draw_rect_dsc_t rd; lv_draw_rect_dsc_init(&rd);
         rd.bg_color = p.fc; rd.bg_opa = op; rd.radius = LV_RADIUS_CIRCLE;
-        lv_area_t a = {X(p, dx - 4), Y(p, dy - 3), X(p, dx + 4), Y(p, dy + 5)};
+        lv_area_t a = {X(p, dx - 4 * sz), Y(p, dy - 3 * sz), X(p, dx + 4 * sz), Y(p, dy + 5 * sz)};
         lv_draw_rect(p.ctx, &rd, &a);
-        line(p, dx, dy - 8, dx, dy - 2, 3, op);
+        line(p, dx, dy - 8 * sz, dx, dy - 2 * sz, 3 * sz, op);
     }
     if (mood == M_SLEEPY) {
         lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);
@@ -488,3 +548,9 @@ String coaster_state_json(void) {
 }
 
 void coaster_event_ready(float secs) { t_ready = secs > 0 ? secs : 0; }
+
+// touch: a tap pokes it, holding keeps tickling (LVGL task)
+void coaster_poke(void) {
+    t_giggle = max(t_giggle, 1.6f);
+    head_kick(frand(-50, 50), -45);
+}

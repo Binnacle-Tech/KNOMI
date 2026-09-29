@@ -29,7 +29,7 @@ static bool files_valid = false;
 // status flag bits, same order as the plugin's FLAGS tuple
 enum {
     K_HOMING = 0, K_PROBING, K_QGLING, K_HEAT_NOZZLE, K_HEAT_BED,
-    K_SHAPING, K_PID, K_CLEANING, K_FILAMENT, K_PAUSED,
+    K_SHAPING, K_PID, K_CLEANING, K_FILAMENT, K_PAUSED, K_RUNOUT,
 };
 
 bool knomi_ble_apply_status(const char *json, size_t len) {
@@ -65,6 +65,9 @@ bool knomi_ble_apply_status(const char *json, size_t len) {
     d.cleaning = k & (1 << K_CLEANING);
     d.filament = k & (1 << K_FILAMENT);
     d.paused_ext = k & (1 << K_PAUSED);
+    d.runout = k & (1 << K_RUNOUT);
+    d.fan = doc["f"] | 0;
+    d.speed = doc["sp"] | 0;
     if (doc["w"] | 0) wifi_request = true;
     moonraker.data_unlock = true;
     return true;
