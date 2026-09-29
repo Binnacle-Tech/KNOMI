@@ -327,7 +327,8 @@ function album(){fetch("/coaster/album").then(function(r){return r.json()}).then
   var rows=[["First switched on",born],["Birthday",bdt],["Prints together",a.prints+(a.failed?" ("+a.failed+" didn't make it)":"")],
     ["Best streak",a.best+" in a row"],["Time printing",a.hours.toFixed(1)+" h"],["Longest print",a.longest?hm(a.longest):"none yet"],
     ["Wildest ride",a.wildest?a.wildest.toFixed(2)+" g":"none yet"],["Screams, dizzy spells",a.screams+", "+a.dizzies],
-    ["Favorite time of year",a.season],["Personality","most "+top[0]+", least "+top[top.length-1]+(a.open>0.15?", loves a change of pace":a.open<-0.15?", a creature of habit":"")],
+    ["Favorite time of year",a.season],["How it rates your prints",a.rated?a.rating.toFixed(1)+" stars on average (last one "+a.last_rating+")":"no ratings yet"],
+    ["Before every print, it",a.ritual||"?"],["Hobby",a.hobby||"?"],["You two are",a.trust||"?"],["Personality","most "+top[0]+", least "+top[top.length-1]+(a.open>0.15?", loves a change of pace":a.open<-0.15?", a creature of habit":"")],
     ["Favorite filament",fil.length?fil[0].name+(fil[0].prints?" ("+fil[0].prints+" prints)":""):"?"],["Least favorite",fil.length?fil[fil.length-1].name:"?"],
     ["Feeling",a.feeling]];
   $("album").innerHTML="<dl class='kv'>"+rows.map(function(r){return"<dt>"+esc(r[0])+"</dt><dd>"+esc(r[1])+"</dd>"}).join("")+"</dl>";
@@ -611,7 +612,7 @@ function stepExpr(dt){
 }
 
 /* ---------------- quirks (same as the firmware) ---------------- */
-var QUIRKS={glance:1.6,"double blink":0.5,"slow blink":1.3,wink:0.8,yawn:2.4,hum:3.6,sneeze:1.7,"look up":1.9,stretch:1.8,"eye roll":1.3,nod:0.7,cheer:1.3,sigh:1.9,huff:0.9,cough:1.1};
+var QUIRKS={glance:1.6,"double blink":0.5,"slow blink":1.3,wink:0.8,yawn:2.4,hum:3.6,sneeze:1.7,"look up":1.9,stretch:1.8,"eye roll":1.3,nod:0.7,cheer:1.3,sigh:1.9,huff:0.9,cough:1.1,hiccup:0.5,doze:5.0,daydream:4.0};
 var Q={name:"",t:0,side:1,fired:{},next:5}, QF={}, notes=[], sacc={x:0,y:0,tx:0,ty:0,t:1};
 function qReset(){QF={look:0,lookY:0,openL:1,openR:1,gape:0,curve:0,w:0,cheek:0,dx:0,dy:0,sq:0}}qReset();
 function bump(t,d,e){return clamp(Math.min(t/e,(d-t)/e),0,1)}
@@ -661,6 +662,9 @@ function stepQuirks(dt){
     case "nod":QF.dy=Math.sin(Math.PI*clamp(t/D,0,1))*6;break;
     case "sigh":e=bump(t,D,0.5);QF.openL=QF.openR=1-0.6*e;QF.dy=5*e;QF.curve=-0.3*e;QF.gape=0.25*e;QF.w=-6*e;break;
     case "huff":e=bump(t,D,0.12);QF.dy=4*e;QF.gape=0.4*e;QF.w=-7*e;QF.dx=Math.sin(t*40)*1.5*e;if(qOnce(0))headKick(0,60);break;
+    case "hiccup":e=bump(t,D,0.08);QF.openL=QF.openR=1+0.5*e;QF.gape=0.3*e;QF.w=-7*e;QF.dy=-3*e;if(qOnce(0))headKick(rnd(-15,15),-90);break;
+    case "doze":if(t<4.2){e=clamp(t/3.5,0,1);QF.openL=QF.openR=1-0.95*e;QF.dy=5*e;QF.sq=-0.04*e}else{if(qOnce(0)){headKick(0,-110);blinkNow()}QF.openL=QF.openR=1.35}break;
+    case "daydream":e=bump(t,D,0.6);QF.look+=Q.side*12*e;QF.lookY-=6*e;QF.openL=QF.openR=1-0.15*e;QF.curve=0.2*e;break;
     case "cough":e=bump(t,D,0.15);QF.openL=QF.openR=1-0.6*e;QF.gape=0.5*e*Math.abs(Math.sin(t*9));QF.w=-6*e;if(t>0.1&&qOnce(0))headKick(0,70);if(t>0.5&&qOnce(1))headKick(0,55);break;
     case "cheer":e=bump(t,D,0.2);QF.cheek=e;QF.curve=0.8*e;QF.gape=0.6*e;QF.dy=-Math.abs(Math.sin(t*10))*6*e;QF.openL=QF.openR=1+e;break;
   }
@@ -676,7 +680,7 @@ function stepParticles(dt){confetti.forEach(function(p){p.vy+=420*dt;p.x+=p.vx*d
 
 /* ---------------- drawing ---------------- */
 var cv=$("face"),ctx=cv.getContext("2d"),now=0;
-var LINE=26, R=11, SW=5; // half lid length, pupil radius, stroke
+var LINE=26*1.1, R=11*1.1, SW=6; // half lid length, pupil radius, stroke (1.1x the stock faces, like the firmware)
 function lerp(a,b,t){return a+(b-a)*t}
 function drawEye(ex,ey,side,sx,open,lookY){
   var r=R*E.size, L=LINE*sx;
@@ -701,7 +705,7 @@ function drawEye(ex,ey,side,sx,open,lookY){
 }
 function tri(u){return 2*Math.abs(2*(u-Math.floor(u+0.5)))-1}
 function drawMouth(mx,my){
-  var N=28,top=[],bot=[],w=E.w;
+  var N=28,top=[],bot=[],w=E.w*1.1;
   for(var i=0;i<=N;i++){
     var t=-1+2*i/N, x=mx+t*w, env=1-t*t;
     var y=my+E.curve*7*env+E.omega*5*Math.abs(Math.sin(Math.PI*t))
@@ -709,7 +713,7 @@ function drawMouth(mx,my){
       +E.wave*3*Math.sin(t*5+now*9);
     top.push([x,y]);bot.push([x,y+E.gape*9*Math.pow(env,0.7)]);
   }
-  ctx.lineWidth=4;ctx.beginPath();
+  ctx.lineWidth=5;ctx.beginPath();
   top.forEach(function(p,i){i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])});
   if(E.gape>0.06){for(var j=bot.length-1;j>=0;j--)ctx.lineTo(bot[j][0],bot[j][1]);ctx.closePath();ctx.fill()}
   ctx.stroke();
@@ -721,7 +725,7 @@ function draw(){
   drawDecoBack();
   ctx.strokeStyle=fc;ctx.fillStyle=fc;ctx.lineWidth=SW;ctx.lineCap="round";ctx.lineJoin="round";
   var jit=Math.min(3,S.vib*6)*E.zig;
-  var bs=BOUNCE*T.sense*SENSE_K, cx=120+clamp(head.x-bs*S.bx[0],-34,34)+rnd(-jit,jit), cy=118+clamp(head.y+bs*S.bx[2],-30,30)+rnd(-jit,jit);
+  var bs=BOUNCE*T.sense*SENSE_K, cx=120+clamp(head.x-bs*S.bx[0],-30,30)+rnd(-jit,jit), cy=118+clamp(head.y+bs*S.bx[2],-28,28)+rnd(-jit,jit);
   var hsq=head.s+QF.sq, sx=1-hsq*0.5, sy=1+hsq;
   cx+=QF.dx;cy+=QF.dy;
   if(timers.giggle>0)cy-=Math.abs(Math.sin(now*14))*6;
@@ -733,9 +737,9 @@ function draw(){
   var keep={curve:E.curve,w:E.w,cheek:E.cheek,gape:E.gape};
   E.curve+=QF.curve;E.w=Math.max(4,E.w+QF.w);E.cheek=Math.max(E.cheek,QF.cheek);E.gape=Math.max(E.gape,QF.gape);
   var keepO=E.omega;E.omega*=1-clamp(QF.gape/0.4,0,1);
-  drawEye(cx-54*sx,cy-14*sy,-1,sx,clamp(open*QF.openL,0,1.1),QF.lookY);
-  drawEye(cx+54*sx,cy-14*sy,1,sx,clamp(open*QF.openR,0,1.1),QF.lookY);
-  drawMouth(cx,cy+22*sy);
+  drawEye(cx-58*sx,cy-15*sy,-1,sx,clamp(open*QF.openL,0,1.1),QF.lookY);
+  drawEye(cx+58*sx,cy-15*sy,1,sx,clamp(open*QF.openR,0,1.1),QF.lookY);
+  drawMouth(cx,cy+24*sy);
   for(var k in keep)E[k]=keep[k];E.omega=keepO;
   drawDecoFront(cx,cy,sx,sy);ctx.strokeStyle=fc;ctx.fillStyle=fc;ctx.lineWidth=SW;
   notes.forEach(function(n){ctx.globalAlpha=clamp(n.life/0.6,0,1);ctx.beginPath();ctx.ellipse(n.x,n.y,4,3,0,0,7);ctx.fill();
@@ -906,7 +910,7 @@ function drawShades(cx,ey,sx){
   var k=deco.shades;if(k<0.02)return;
   var drop=(1-k)*-40;ctx.globalAlpha=Math.min(1,k*1.5);
   ctx.fillStyle=faceColor;ctx.strokeStyle=faceColor;ctx.lineWidth=3;
-  [-1,1].forEach(function(s){var x=cx+s*54*sx;ctx.beginPath();ctx.moveTo(x-31,ey-11+drop);ctx.lineTo(x+31,ey-11+drop);ctx.quadraticCurveTo(x+30,ey+15+drop,x,ey+15+drop);ctx.quadraticCurveTo(x-30,ey+15+drop,x-31,ey-11+drop);ctx.fill()});
+  [-1,1].forEach(function(s){var x=cx+s*58*sx;ctx.beginPath();ctx.moveTo(x-31,ey-11+drop);ctx.lineTo(x+31,ey-11+drop);ctx.quadraticCurveTo(x+30,ey+15+drop,x,ey+15+drop);ctx.quadraticCurveTo(x-30,ey+15+drop,x-31,ey-11+drop);ctx.fill()});
   ctx.beginPath();ctx.moveTo(cx-24*sx,ey-8+drop);ctx.quadraticCurveTo(cx,ey-14+drop,cx+24*sx,ey-8+drop);ctx.stroke();
   ctx.strokeStyle="#000";ctx.lineWidth=2;ctx.globalAlpha=Math.min(1,k*1.5)*0.7;
   [-1,1].forEach(function(s){var x=cx+s*54*sx;ctx.beginPath();ctx.moveTo(x-14,ey-5+drop);ctx.lineTo(x-6,ey-5+drop);ctx.stroke()});

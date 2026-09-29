@@ -46,6 +46,7 @@ static int key_index(const char * v, const char * const * keys, int n, int fallb
 static const coaster_tune_t TUNE_DEF = {2.0f, 0.2f, 1.0f, 20.0f, 0.6f, 5.0f, 20.0f, true, DECO_AUTO, 0, 0, false, 9, 28, 0, 1, 1}; // Coaster is the mascot: on by default
 // OP18: sensitivity 1.0 now moves the head as much as 3.0 did before (tuned on recorded prints)
 #define SENSE_K  3.0f
+#define FACE_K   1.1f    // face scale: a bit bigger than the stock faces, it's read from across the room on a moving toolhead
 #define BOUNCE   6.0f    // px per compressed g: the head jiggles along with the toolhead
 static coaster_tune_t T = TUNE_DEF;
 static volatile bool reload_pending = false;
@@ -158,6 +159,10 @@ enum {
     M_SAD, M_ERROR, M_LONELY, M_CONFUSED, M_HEATING, M_COOLING, M_FOCUS, M_ANTICIPATE,
     M_HUNGRY, M_WINDY, M_NERVOUS, M_BRACE, M_LEVEL, M_SCRUB, M_WHEE, M_MAD, M_COUNT
 };
+enum { Q_NONE, Q_GLANCE, Q_DBLINK, Q_SLOWBLINK, Q_WINK, Q_YAWN, Q_HUM, Q_SNEEZE, Q_LOOKUP,
+       Q_STRETCH, Q_ROLL, Q_NOD, Q_CHEER, Q_SIGH, Q_HUFF, Q_COUGH, Q_HICCUP, Q_DOZE, Q_DAYDREAM, Q_COUNT };
+static void quirk_queue(int a, int b = 0, int c = 0);
+static void spawn_confetti(void);
 static const char * MOOD_NAMES[M_COUNT] = {
     "calm", "riding", "excited", "screaming", "startled", "elevator", "sleepy",
     "bored", "shivering", "dizzy", "giggle", "celebrate", "ready",
@@ -201,7 +206,7 @@ static const expr_t MOODS[M_COUNT] = {
     /* shocked   */ {1.0f,  0.75f, 0, 0, 10, 0.0f, 0.0f, 0.35f, 0, 0.8f, -0.4f},
     /* lonely    */ {0.45f, 1.0f,  0, 0,  9, -0.6f, 0.0f, 0.0f, 0, 0, -0.5f},
     /* confused  */ {0.55f, 1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.5f, 0.3f},
-    /* impatient */ {0.42f, 0.95f, 0, 0, 13, 0.0f, 0.0f, 0.0f, 0.8f, 0, 1.0f},  // straining to heat the hotend
+    /* impatient */ {0.56f, 0.95f, 0, 0, 13, 0.0f, 0.0f, 0.0f, 0.9f, 0, 1.0f},  // straining to heat the hotend (pupils show under the brows)
     /* cooling   */ {0.3f,  1.0f,  0, 0, 12, 0.5f, 0.4f, 0.0f, 0, 0, 0},
     /* focused   */ {0.28f, 0.9f,  0, 0,  7, 0.0f, 0.0f, 0.0f, 0, 0, 0},
     /* almost    */ {0.8f,  1.05f, 0, 0, 12, 0.5f, 0.0f, 0.2f, 0, 0, 0},
@@ -231,6 +236,7 @@ static bit_t confetti[40];
 static uint8_t confetti_n = 0;
 
 static void blink_now(void) { blink_closing = 0.16f; }
+static float heat_frac = 0;         // how far the heater has got, 0..1 (the heat ring)
 static float heat_effort = 0;     // 0..1 how hard it's working (nozzle heating counts double)
 static float t_phew = 0;          // relief when the heater reaches temperature
 static bool was_heating = false;
@@ -308,7 +314,22 @@ static int16_t streak = 0;          // prints finished in a row
 static uint32_t born = 0;           // first time it saw the clock
 static uint32_t total_s = 0, longest_s = 0, prints_failed = 0, screams_total = 0, dizzies_total = 0;
 static uint16_t wildest_cg = 0, best_streak = 0;   // hardest move ever, 1/100 g
-typedef struct { uint32_t h; uint16_t n; } file_seen_t;   // files it has printed, by name hash
+typedef struct { uint32_t h; uint16_t n; uint8_t fails, wild; } file_seen_t;   // files it has printed, by name hash
+static int cur_file = -1;           // this print's slot in files_seen
+// rolled once per Coaster: its pre-print ritual, its hobby, where its eyes like to rest
+enum { RIT_BREATH, RIT_KNUCKLES, RIT_NOD, RIT_STRETCH, RIT_COUNT };
+static const char * RITUAL_NAMES[RIT_COUNT] = {"takes a deep breath", "cracks its knuckles", "rolls its eyes and nods", "has a good stretch"};
+enum { HOB_LAYERS, HOB_SINGING, HOB_STARS, HOB_TIDY, HOB_COUNT };
+static const char * HOBBY_NAMES[HOB_COUNT] = {"counting layers", "singing", "stargazing", "keeping tidy"};
+static int8_t ritual = -1, hobby = -1, look_bias = 0;
+static uint16_t week[7];            // print starts per weekday
+static uint16_t rating_sum = 0, rating_n = 0;
+static uint8_t last_rating = 0;
+static uint16_t poke_days = 0;      // days you poked it: part of how much it trusts you
+static uint32_t milestones = 0;     // bits: print counts and hours it has celebrated
+static int16_t anniv_year = 0;
+// weather over its head after a big day: + sun, - rain cloud
+static float weather = 0, weather_t = 0;
 static file_seen_t files_seen[12];
 static uint32_t prints_done = 0;
 static time_t last_seen = 0;        // saved every 10 minutes: how long it was off
@@ -388,6 +409,17 @@ static void roll_likes(void) {
     Serial.println();
 }
 
+// how well it knows you, 0..1: prints together, days together, days you poked it
+static float coaster_trust(void) {
+    time_t now = time(NULL);
+    float days = (born && now > (time_t)born) ? (now - born) / 86400.0f : 0;
+    return clampf(0.15f + prints_done * 0.015f + days * 0.01f + poke_days * 0.01f, 0, 1);
+}
+static const char * trust_name(void) {
+    float t = coaster_trust();
+    return t < 0.3f ? "getting to know you" : t < 0.6f ? "friends" : t < 0.9f ? "good friends" : "best friends";
+}
+
 static const char * feel_name(void) {
     return H > 0.6f ? "happy" : H > 0.25f ? "content" : H > -0.15f ? "okay" : H > -0.45f ? "down" : H > -0.75f ? "unhappy" : "miserable";
 }
@@ -401,6 +433,7 @@ static void feel(float delta, const char * why, bool speak = false) {
     strlcpy(fnotes[0].why, why, sizeof(fnotes[0].why));
     fnotes[0].d = (int8_t)lroundf(clampf(delta * 100, -99, 99));
     if (fnotes_n < 5) fnotes_n++;
+    if (fabsf(delta) >= 0.15f) { weather = delta > 0 ? 1 : -1; weather_t = 25; }   // a little sun or a rain cloud over its head
     Serial.printf("coaster: %s (%+.2f), feels %s (%.2f -> %.2f)\r\n", why, delta, feel_name(), before, H);
     if (speak) {   // said out loud, first letter up
         char t[40]; strlcpy(t, why, sizeof(t)); t[0] = toupper(t[0]);
@@ -427,7 +460,10 @@ static void feel_save(void) {
     f.printf("],\"mprints\":[");
     for (int i = 0; i < MAT_COUNT; i++) f.printf("%s%u", i ? "," : "", mat_prints[i]);
     f.printf("],\"files\":[");
-    for (int i = 0; i < 12; i++) f.printf("%s[%u,%u]", i ? "," : "", files_seen[i].h, files_seen[i].n);
+    for (int i = 0; i < 12; i++) f.printf("%s[%u,%u,%u,%u]", i ? "," : "", files_seen[i].h, files_seen[i].n, files_seen[i].fails, files_seen[i].wild);
+    f.printf("],\"ritual\":%d,\"hobby\":%d,\"bias\":%d,\"rsum\":%u,\"rn\":%u,\"rlast\":%u,\"pokes\":%u,\"ms\":%u,\"anniv\":%d,\"week\":[",
+             ritual, hobby, look_bias, rating_sum, rating_n, last_rating, poke_days, milestones, anniv_year);
+    for (int i = 0; i < 7; i++) f.printf("%s%u", i ? "," : "", week[i]);
     f.printf("],\"born\":%u,\"total\":%u,\"longest\":%u,\"failed\":%u,\"screams\":%u,\"dizzies\":%u,\"wildest\":%u,\"best\":%u}",
              born, total_s, longest_s, prints_failed, screams_total, dizzies_total, wildest_cg, best_streak);
     f.close();
@@ -457,7 +493,13 @@ static void feel_load(void) {
             if (ml.size() == MAT_COUNT) { for (int i = 0; i < MAT_COUNT; i++) mat_like[i] = constrain((int)(ml[i] | 0), -100, 100); mats_rolled = true; }
             if (mn.size() == MAT_COUNT) for (int i = 0; i < MAT_COUNT; i++) mat_learn[i] = constrain((int)(mn[i] | 0), -50, 50);
             if (mp.size() == MAT_COUNT) for (int i = 0; i < MAT_COUNT; i++) mat_prints[i] = mp[i] | 0;
-            for (int i = 0; i < 12 && i < (int)fs.size(); i++) files_seen[i] = {fs[i][0] | 0u, (uint16_t)(fs[i][1] | 0)};
+            for (int i = 0; i < 12 && i < (int)fs.size(); i++)
+                files_seen[i] = {fs[i][0] | 0u, (uint16_t)(fs[i][1] | 0), (uint8_t)(fs[i][2] | 0), (uint8_t)(fs[i][3] | 0)};
+            ritual = d["ritual"] | -1; hobby = d["hobby"] | -1; look_bias = d["bias"] | 0;
+            rating_sum = d["rsum"] | 0; rating_n = d["rn"] | 0; last_rating = d["rlast"] | 0;
+            poke_days = d["pokes"] | 0; milestones = d["ms"] | 0u; anniv_year = d["anniv"] | 0;
+            JsonArrayConst wk = d["week"];
+            if (wk.size() == 7) for (int i = 0; i < 7; i++) week[i] = wk[i] | 0;
             born = d["born"] | 0u; total_s = d["total"] | 0u; longest_s = d["longest"] | 0u; prints_failed = d["failed"] | 0u;
             screams_total = d["screams"] | 0u; dizzies_total = d["dizzies"] | 0u; wildest_cg = d["wildest"] | 0; best_streak = d["best"] | 0;
         }
@@ -467,6 +509,11 @@ static void feel_load(void) {
     reset_kind = (r == ESP_RST_SW || r == ESP_RST_DEEPSLEEP) ? 1
                : (r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT || r == ESP_RST_BROWNOUT) ? 2 : 0;
     if (!mats_rolled) { roll_mats(); feel_dirty = true; }
+    if (ritual < 0 || ritual >= RIT_COUNT || hobby < 0 || hobby >= HOB_COUNT) {
+        ritual = esp_random() % RIT_COUNT; hobby = esp_random() % HOB_COUNT; look_bias = (int8_t)(esp_random() % 17) - 8;
+        feel_dirty = true;
+        Serial.printf("coaster: before a print it %s, its hobby is %s\r\n", RITUAL_NAMES[ritual], HOBBY_NAMES[hobby]);
+    }
     if (!likes_rolled) {
         roll_likes();
         openness = (esp_random() % 201) / 100.0f - 1;
@@ -551,12 +598,22 @@ static void judge_material_and_file(const moonraker_data_t & d) {
         uint32_t h = name_hash(d.file_path);
         int slot = -1, oldest = 0;
         for (int i = 0; i < 12; i++) { if (files_seen[i].h == h) slot = i; if (files_seen[i].n < files_seen[oldest].n) oldest = i; }
-        if (slot >= 0 && files_seen[slot].n >= 2) {
-            char t[48]; snprintf(t, sizeof(t), "This one again? That's %u times.", files_seen[slot].n + 1);
+        char t[56];
+        if (slot >= 0 && files_seen[slot].fails) {               // it remembers
+            snprintf(t, sizeof(t), files_seen[slot].fails > 1 ? "This one failed %u times..." : "This one failed last time...", files_seen[slot].fails);
+            say(t, 1); t_uneasy = 5;
+        } else if (slot >= 0 && files_seen[slot].wild >= 2) {
+            say("Not the spinny one again...", 1); t_uneasy = 3;
+        } else if (slot >= 0 && files_seen[slot].n >= 5) {       // a nickname
+            static const char * nick[] = {"Ah, old faithful.", "The usual!", "Our classic.", "This one? Again? Fine."};
+            say(nick[h % 4], 0);
+        } else if (slot >= 0 && files_seen[slot].n >= 2) {
+            snprintf(t, sizeof(t), "This one again? That's %u times.", files_seen[slot].n + 1);
             say(t, 0);
         } else if (slot < 0) say("Something new!", 0);
-        if (slot < 0) { slot = oldest; files_seen[slot] = {h, 0}; }
+        if (slot < 0) { slot = oldest; files_seen[slot] = {h, 0, 0, 0}; }
         if (files_seen[slot].n < 60000) files_seen[slot].n++;
+        cur_file = slot;
         feel_dirty = true;
     }
 }
@@ -667,6 +724,33 @@ static void feel_tick(const moonraker_data_t & d) {
     } else unlinked_s = 0;
     if (d.runout && d.printing && !was_runout) feel(-0.05f, "ran out of filament");
     was_runout = d.runout && d.printing;
+    weather_t = max(0.0f, weather_t - 1);
+    // milestones: print counts, hours together, a year since it was first switched on
+    {
+        static const uint16_t pm[] = {1, 10, 25, 50, 100, 250, 500, 1000};
+        static const uint16_t hm[] = {10, 50, 100, 250, 500, 1000};
+        for (int i = 0; i < 8; i++) if (prints_done >= pm[i] && !(milestones & (1u << i))) {
+            milestones |= 1u << i;
+            char t[40]; snprintf(t, sizeof(t), pm[i] == 1 ? "Our first print together!" : "%u prints together!", pm[i]);
+            feel(0.1f, "a milestone"); say(t, 2); quirk_queue(Q_CHEER, Q_STRETCH); t_celebrate = 3; spawn_confetti();
+            break;
+        }
+        for (int i = 0; i < 6; i++) if (total_s / 3600 >= hm[i] && !(milestones & (1u << (8 + i)))) {
+            milestones |= 1u << (8 + i);
+            char t[40]; snprintf(t, sizeof(t), "%u hours of printing together!", hm[i]);
+            feel(0.1f, "a milestone"); say(t, 2); quirk_queue(Q_CHEER);
+            break;
+        }
+        time_t nw = time(NULL);
+        if (born && nw > 1700000000) {
+            int years = (int)((nw - (time_t)born) / (365L * 86400));
+            if (years > anniv_year) {
+                anniv_year = years;
+                char t[40]; snprintf(t, sizeof(t), years == 1 ? "A year together today!" : "%d years together today!", years);
+                feel(0.2f, "an anniversary", false); say(t, 2); t_celebrate = 4.5f; spawn_confetti();
+            }
+        }
+    }
     // now and then, when nothing's going on, it says something
     static uint32_t chat_s = 900;
     if (!d.printing && (mood == M_CALM || mood == M_BORED || mood == M_COOLING) && T.talk && --chat_s == 0) {
@@ -683,6 +767,12 @@ static void feel_tick(const moonraker_data_t & d) {
         else if (pick == 3) strlcpy(t, H < -0.3f ? "Kind of a slow day..." : H > 0.5f ? "Good day today." : "Hmm.", sizeof(t));
         else if (pick == 4) snprintf(t, sizeof(t), "Some %s would be nice.", MAT_NAMES[fav_mat]);
         else if (pick == 5 && night) strlcpy(t, "It's late...", sizeof(t));
+        if (!t[0] && esp_random() % 2) {   // it notices your habits
+            int tot = 0, top = 0;
+            for (int i = 0; i < 7; i++) { tot += week[i]; if (week[i] > week[top]) top = i; }
+            static const char * days[] = {"Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"};
+            if (tot >= 8 && week[top] * 10 >= tot * 4) snprintf(t, sizeof(t), "You always print on %s.", days[top]);
+        }
         if (t[0] && strcmp(t, "Hmm.") != 0) say(t, 0);
     }
     if ((feel_dirty && millis() - feel_save_ms > 20000) || millis() - feel_save_ms > 600000UL) feel_save();
@@ -706,6 +796,19 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     static bool was_dozing = false;
     bool dozing = knomi_power_dozing();
     if (was_dozing && !dozing && night && !d.printing) { t_confused = 4; blink_now(); }
+    else if (was_dozing && !dozing && !d.printing) {   // first wake-up of the day: its morning routine
+        static int last_day = -1;
+        time_t nw = time(NULL);
+        if (nw > 1700000000) {
+            int day = (int)((nw + T.tz_min * 60) / 86400);
+            if (day != last_day && last_day >= 0) {
+                quirk_queue(Q_STRETCH, Q_YAWN, Q_GLANCE);
+                int hr = local_hour();
+                if (hr >= 5 && hr < 12) say(H > 0 ? "Morning!" : "Mmh... morning.", 1);
+            }
+            last_day = day;
+        }
+    }
     was_dozing = dozing;
     // connection trouble (these show on the WiFi-lost screen and the error popups)
     bool link = wifi_get_connect_status() == WIFI_STATUS_CONNECTED || knomi_ble_link_active();
@@ -719,6 +822,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     float e_noz = noz_heat ? 0.4f + 0.6f * clampf((float)d.nozzle_actual / d.nozzle_target, 0, 1) : 0;
     float e_bed = bed_heat ? 0.2f + 0.3f * clampf((float)d.bed_actual / d.bed_target, 0, 1) : 0;
     heat_effort = max(e_noz, e_bed);
+    heat_frac = noz_heat ? clampf((float)d.nozzle_actual / d.nozzle_target, 0, 1) : bed_heat ? clampf((float)d.bed_actual / d.bed_target, 0, 1) : 0;
     if (was_heating && !heating && (d.nozzle_target > 0 || d.bed_target > 0)) t_phew = 1.8f;
     was_heating = heating;
     bool first_layer = d.printing && !paused && d.print_time > 0 &&
@@ -810,11 +914,9 @@ static void step_body(float dt) {
 // around, winks, yawns, hums, sneezes, stretches. Each KNOMI gets its own personality
 // (from its chip ID), so one is curious, another sleepy, another hums a lot.
 
-enum { Q_NONE, Q_GLANCE, Q_DBLINK, Q_SLOWBLINK, Q_WINK, Q_YAWN, Q_HUM, Q_SNEEZE, Q_LOOKUP,
-       Q_STRETCH, Q_ROLL, Q_NOD, Q_CHEER, Q_SIGH, Q_HUFF, Q_COUGH, Q_COUNT };
 static const char * QUIRK_NAMES[Q_COUNT] = {"", "glance", "double blink", "slow blink", "wink", "yawn", "hum",
-                                            "sneeze", "look up", "stretch", "eye roll", "nod", "cheer", "sigh", "huff", "cough"};
-static const float QUIRK_DUR[Q_COUNT] = {0, 1.6f, 0.5f, 1.3f, 0.8f, 2.4f, 3.6f, 1.7f, 1.9f, 1.8f, 1.3f, 0.7f, 1.3f, 1.9f, 0.9f, 1.1f};
+                                            "sneeze", "look up", "stretch", "eye roll", "nod", "cheer", "sigh", "huff", "cough", "hiccup", "doze", "daydream"};
+static const float QUIRK_DUR[Q_COUNT] = {0, 1.6f, 0.5f, 1.3f, 0.8f, 2.4f, 3.6f, 1.7f, 1.9f, 1.8f, 1.3f, 0.7f, 1.3f, 1.9f, 0.9f, 1.1f, 0.5f, 5.0f, 4.0f};
 static int quirk = Q_NONE, quirk_side = 1;
 static float quirk_t = 0, quirk_next = 6;
 static uint8_t quirk_fired = 0;                 // one-shot steps inside a quirk (bit per step)
@@ -847,6 +949,13 @@ static bool quirk_step(int n) {   // true once, the first time the quirk reaches
     return true;
 }
 
+// a few quirks in a row (morning routine, pre-print ritual)
+static uint8_t qqueue[4], qqueue_n = 0;
+static void quirk_queue(int a, int b, int c) {
+    qqueue_n = 0;
+    for (int q : {a, b, c}) if (q) qqueue[qqueue_n++] = (uint8_t)q;
+}
+static float hiccups_left = 0, hiccup_next = 0;   // a bout of hiccups: seconds left, until the next hic
 static void quirk_start(int q) {
     quirk = q; quirk_t = 0; quirk_fired = 0; quirk_side = esp_random() & 1 ? 1 : -1;
 }
@@ -905,6 +1014,18 @@ static int quirk_pick(void) {
     // how it feels changes what it does: sighs when down, more humming and winking when happy
     if (H < -0.2f) { w[Q_SIGH] += 3 * -H; w[Q_HUM] *= 1 + H; w[Q_WINK] *= 1 + H; w[Q_CHEER] = 0; }
     if (H > 0.4f) { w[Q_HUM] *= 1.6f; w[Q_WINK] *= 1.4f; }
+    // long prints: it daydreams, and sleepy ones nod off now and then
+    const moonraker_data_t & pd = moonraker.data;
+    if (pd.printing && pd.print_time > 3600 && (mood == M_RIDING || mood == M_CALM)) {
+        w[Q_DAYDREAM] += 1.2f * tr_curious;
+        if (pd.print_time > 2 * 3600 && habit_n) w[Q_DOZE] += 0.8f * tr_sleepy;
+    }
+    // hobbies
+    if (hobby == HOB_SINGING) w[Q_HUM] *= 2;
+    if (hobby == HOB_STARS) w[Q_LOOKUP] = w[Q_LOOKUP] * 2 + 0.5f;
+    // how well it knows you: shy at first, more playful later
+    float trust = coaster_trust();
+    w[Q_WINK] *= 0.3f + trust; w[Q_HUM] *= 0.5f + trust; w[Q_GLANCE] *= 1.5f - trust * 0.5f;
     // the filament: ABS and ASA fumes make it cough, PETG makes it keep an eye on the nozzle
     if (moonraker.data.printing && (cur_mat == MAT_ABS || cur_mat == MAT_ASA)) w[Q_COUGH] += 2;
     if (moonraker.data.printing && cur_mat == MAT_PETG) w[Q_GLANCE] += 1;
@@ -932,11 +1053,21 @@ static void step_quirks(float dt) {
     if (mood != M_SLEEPY && mood != M_DIZZY && act != ACT_PROBING) { QF.look = sacc_x; QF.look_y = sacc_y; }
 
     if (quirk != Q_NONE && busy && quirk != Q_CHEER && quirk != Q_NOD) quirk = Q_NONE;
+    if (hiccups_left > 0) {   // a bout of hiccups: every few seconds, whatever else is going on
+        hiccups_left -= dt; hiccup_next -= dt;
+        if (hiccup_next <= 0 && (quirk == Q_NONE || quirk == Q_GLANCE)) { quirk_start(Q_HICCUP); hiccup_next = frand(1.8f, 4.5f); }
+    }
+    if (quirk == Q_NONE && qqueue_n && !busy) {
+        quirk_start(qqueue[0]);
+        memmove(qqueue, qqueue + 1, --qqueue_n);
+    }
     if (quirk == Q_NONE) {
         if (busy) { quirk_next = max(quirk_next, 2.0f); return; }
         quirk_next -= dt;
         if (quirk_next > 0) return;
-        quirk_next = frand(4, 13) * (H < -0.5f ? 1.8f : 1.0f) * (mood == M_MAD ? 0.5f : 1.0f);
+        quirk_next = frand(4, 13) * (H < -0.5f ? 1.8f : 1.0f) * (mood == M_MAD ? 0.5f : 1.0f) * (1.4f - 0.5f * coaster_trust());
+        // now and then, out of nowhere: hiccups (silly ones get them more)
+        if (hiccups_left <= 0 && esp_random() % 1000 < (uint32_t)(4 * tr_silly)) { hiccups_left = frand(25, 60); hiccup_next = 0; }
         int q = quirk_pick();
         if (q == Q_NONE) return;
         quirk_start(q);
@@ -1020,6 +1151,19 @@ static void step_quirks(float dt) {
             QF.dy = 4 * e; QF.gape = 0.4f * e; QF.w = -7 * e; QF.dx = sinf(t * 40) * 1.5f * e;
             if (quirk_step(0)) head_kick(0, 60);
             break;
+        case Q_HICCUP:      // hic!
+            e = bump(t, D, 0.08f);
+            QF.open_l = QF.open_r = 1 + 0.5f * e; QF.gape = 0.3f * e; QF.w = -7 * e; QF.dy = -3 * e;
+            if (quirk_step(0)) head_kick(frand(-15, 15), -90);
+            break;
+        case Q_DOZE:        // a long quiet print: eyes slowly shut... then it jolts awake
+            if (t < 4.2f) { e = clampf(t / 3.5f, 0, 1); QF.open_l = QF.open_r = 1 - 0.95f * e; QF.dy = 5 * e; QF.sq = -0.04f * e; }
+            else { if (quirk_step(0)) { head_kick(0, -110); blink_now(); } QF.open_l = QF.open_r = 1.35f; }
+            break;
+        case Q_DAYDREAM:    // eyes drift off to one side and up, a thought floats by
+            e = bump(t, D, 0.6f);
+            QF.look += quirk_side * 12 * e; QF.look_y -= 6 * e; QF.open_l = QF.open_r = 1 - 0.15f * e; QF.curve = 0.2f * e;
+            break;
         case Q_COUGH:       // ABS fumes: two little coughs
             e = bump(t, D, 0.15f);
             QF.open_l = QF.open_r = 1 - 0.6f * e; QF.gape = 0.5f * e * fabsf(sinf(t * 9)); QF.w = -6 * e;
@@ -1045,7 +1189,7 @@ static void step_notes(float dt) {
 
 static void step_expr(float dt) {
     wander_t -= dt;
-    if (wander_t <= 0) { wander_tx = frand(-12, 12); wander_t = frand(1.2f, 3.5f); }
+    if (wander_t <= 0) { wander_tx = clampf(frand(-12, 12) + look_bias, -14, 14); wander_t = frand(1.2f, 3.5f); }
     wander_x += (wander_tx - wander_x) * (1 - expf(-dt * 5));
     expr_t t = MOODS[mood];
     // the slow feeling shows through the everyday faces: a smile, or droopy worried brows
@@ -1103,7 +1247,11 @@ static void watch_printer(const moonraker_data_t & d) {
     }
     // small reactions to the print going well: a nod per layer, a cheer at 25/50/75 %
     static int16_t seen_layer = 0;
-    if (d.printing && d.layer > 1 && seen_layer && d.layer != seen_layer) coaster_quirk_nod();
+    if (d.printing && d.layer > 1 && seen_layer && d.layer != seen_layer) {
+        coaster_quirk_nod();
+        if (hobby == HOB_LAYERS && d.layer % 25 == 0) { char t[24]; snprintf(t, sizeof(t), "Layer %d!", d.layer); say(t, 1); }
+        if (quirk == Q_DOZE) quirk_t = max(quirk_t, 4.2f);   // a layer change jolts it awake
+    }
     seen_layer = d.printing ? d.layer : 0;
     if (d.printing && was_printing && d.progress != last_progress &&
         (d.progress / 25) > (last_progress / 25) && d.progress < 100) {
@@ -1112,7 +1260,19 @@ static void watch_printer(const moonraker_data_t & d) {
     }
     if (d.printing && was_printing && last_progress < 90 && d.progress >= 90 && d.progress < 100) say("Almost done!", 1);
     if (d.printing) last_progress = d.progress;
-    if (!was_printing && d.printing) { stats = {}; novelty_pending = true; }
+    if (!was_printing && d.printing) {
+        stats = {}; novelty_pending = true; cur_file = -1;
+        // its pre-print ritual, the same every time
+        static const uint8_t rit[RIT_COUNT][3] = {{Q_SLOWBLINK, Q_NOD, 0}, {Q_HUFF, Q_HUFF, Q_CHEER}, {Q_ROLL, Q_NOD, 0}, {Q_STRETCH, 0, 0}};
+        if (ritual >= 0 && ritual < RIT_COUNT) quirk_queue(rit[ritual][0], rit[ritual][1], rit[ritual][2]);
+        time_t now = time(NULL);
+        if (now > 1700000000) {
+            now += T.tz_min * 60;
+            struct tm t_; gmtime_r(&now, &t_);
+            if (week[t_.tm_wday] < 60000) week[t_.tm_wday]++;
+            if (night && eff(LK_NIGHT) < 50) say("Late night again?", 0);
+        }
+    }
     if (was_printing && !d.printing) {
         report = stats;
         report.valid = true;
@@ -1131,8 +1291,18 @@ static void watch_printer(const moonraker_data_t & d) {
             char t[48];
             if (streak >= 3) snprintf(t, sizeof(t), "Done! That's %d in a row!", streak);
             else strlcpy(t, d.print_time > 4 * 3600 ? "Done! Phew, that was a long one." : "Done! That was fun.", sizeof(t));
-            say(t, 2);
+            // its rating: a smooth ride it enjoyed gets 5 stars
+            float sc = 4.2f - 0.02f * min(40, (int)stats.screams) - 0.5f * min(2, (int)stats.dizzies)
+                     + 0.6f * H + (cur_mat >= 0 ? 0.5f * mat_eff(cur_mat) / 100.0f : 0)
+                     + (d.print_time > 4 * 3600 ? 0.5f * L(LK_LONG) : d.print_time < 1800 ? 0.5f * L(LK_SHORT) : 0);
+            last_rating = (uint8_t)constrain((int)lroundf(sc), 1, 5);
+            rating_sum += last_rating; rating_n++;
+            static const char * why5[] = {"", "Rough.", "Bumpy.", "Not bad.", "Smooth ride.", "Loved it!"};
+            char r[56]; snprintf(r, sizeof(r), "%s %u/5 stars. %s", t, last_rating, why5[last_rating]);
+            say(r, 2);
             if (streak > best_streak) best_streak = streak;
+            if (hobby == HOB_TIDY) quirk_queue(Q_CHEER, Q_STRETCH);   // tidies up after itself
+            if (cur_file >= 0 && stats.dizzies && files_seen[cur_file].wild < 255) files_seen[cur_file].wild++;
         } else {
             t_sad = 8;                                    // cancelled or failed
             streak = 0;
@@ -1140,6 +1310,7 @@ static void watch_printer(const moonraker_data_t & d) {
             if (last_progress < 5) { feel(-0.05f, "print stopped early"); say("Never mind, then.", 1); }
             else {
                 feel(-0.15f, "print failed"); say("Oh no...", 2);
+                if (cur_file >= 0 && files_seen[cur_file].fails < 255) files_seen[cur_file].fails++;
                 if (cur_mat >= 0) mat_learn[cur_mat] = (int8_t)constrain((int)mat_learn[cur_mat] - 6, -50, 50);
             }
         }
@@ -1208,7 +1379,7 @@ static void line(const pen_t & p, float x0, float y0, float x1, float y1, float 
 }
 
 static void draw_eye(const pen_t & p, float ex, float ey, int side, float sx, float open, float look_y) {
-    const float LINE = 26, R = 11;
+    const float LINE = 26 * FACE_K, R = 11 * FACE_K;
     float r = R * E.size, L = LINE * sx;
     float slide = clampf(px_ * 1.6f + look + QF.look, -(L - r), L - r);
     float squash = clampf(1 + py_ / 22, 0.55f, 1.5f);
@@ -1235,7 +1406,7 @@ static void draw_eye(const pen_t & p, float ex, float ey, int side, float sx, fl
     float k = clampf((open - 0.5f) / 0.3f, 0, 1);   // lid line shrinks into the pupil as it opens
     if (k < 0.98f) {
         float x0 = ex - L + (cx - (ex - L)) * k, x1 = ex + L + (cx - (ex + L)) * k;
-        line(p, x0, lid + slope * (x0 - ex), x1, lid + slope * (x1 - ex), 5, (lv_opa_t)(255 * (1 - k * 0.6f)));
+        line(p, x0, lid + slope * (x0 - ex), x1, lid + slope * (x1 - ex), 6, (lv_opa_t)(255 * (1 - k * 0.6f)));
     }
 }
 
@@ -1243,7 +1414,7 @@ static float tri(float u) { return 2 * fabsf(2 * (u - floorf(u + 0.5f))) - 1; }
 
 static void draw_mouth(const pen_t & p, float mx, float my) {
     const int N = 20;
-    float w = E.w, prevx = 0, prevy = 0;
+    float w = E.w * FACE_K, prevx = 0, prevy = 0;
     float zsign = (mood == M_SHIVER && sinf(now_s * 38) > 0) ? 0.5f : 0;   // chattering only when shivering
     for (int i = 0; i <= N; i++) {
         float t = -1 + 2.0f * i / N, x = mx + t * w, envl = 1 - t * t;
@@ -1253,7 +1424,7 @@ static void draw_mouth(const pen_t & p, float mx, float my) {
             float yb = y + E.gape * 9 * powf(max(envl, 0.0f), 0.7f);
             if (yb - y > 1) line(p, x, y, x, yb, 2.5f * 2 * w / N);
         }
-        if (i) line(p, prevx, prevy, x, y, 4);
+        if (i) line(p, prevx, prevy, x, y, 5);
         prevx = x; prevy = y;
     }
 }
@@ -1528,12 +1699,64 @@ static void draw_flower(const pen_t & p, float x, float y) {
     dot(p, x, y, 2.8f, 2.8f, lv_color_hex(0xFDD835), LV_OPA_COVER);
 }
 
+
+/* ---------------- dreams and weather ---------------- */
+// what it dreams about changes every ~20 s: its favorite season, a spool, a boat, a star
+static void draw_dream(const pen_t & p, float cx, float cy) {
+    float bx0 = cx + 62, by0 = cy - 62;
+    lv_opa_t op = (lv_opa_t)(220 * clampf((mood_t - 12) / 2, 0, 1));
+    dot(p, cx + 36, cy - 34, 2.5f, 2.5f, p.fc, op);            // the little bubbles up to the cloud
+    dot(p, cx + 46, cy - 44, 3.5f, 3.5f, p.fc, op);
+    lv_draw_rect_dsc_t bd; lv_draw_rect_dsc_init(&bd);
+    bd.bg_opa = LV_OPA_TRANSP; bd.border_color = p.fc; bd.border_width = max(1, (int)lroundf(2 * p.s)); bd.border_opa = op;
+    bd.radius = LV_RADIUS_CIRCLE;
+    lv_area_t a = {X(p, bx0 - 20), Y(p, by0 - 17), X(p, bx0 + 20), Y(p, by0 + 17)};
+    lv_draw_rect(p.ctx, &bd, &a);
+    int fav = LK_HOLIDAYS;
+    for (int i = LK_HOLIDAYS; i <= LK_HALLOWEEN; i++) if (eff(i) > eff(fav)) fav = i;
+    int which = (int)(now_s / 20) % 4;
+    float bob = sinf(now_s * 1.5f) * 1.5f, x = bx0, y = by0 + bob;
+    lv_color_t c = p.fc;
+    if (which == 0) {   // its favorite time of year
+        if (fav == LK_HOLIDAYS || fav == LK_WINTER) { for (int k = 0; k < 3; k++) { float an = k * PI / 3; cline(p, x - cosf(an) * 8, y - sinf(an) * 8, x + cosf(an) * 8, y + sinf(an) * 8, 2, c, op); } }
+        else if (fav == LK_VALENTINE) { dot(p, x - 4, y - 2, 4.5f, 4.5f, c, op); dot(p, x + 4, y - 2, 4.5f, 4.5f, c, op); float tr[] = {x - 8.5f, y, x + 8.5f, y, x, y + 9}; fill_poly(p, tr, 3, c, op); }
+        else if (fav == LK_SPRING) { for (int k = 0; k < 5; k++) { float an = k * 2 * PI / 5; dot(p, x + cosf(an) * 5, y + sinf(an) * 5, 3.5f, 3.5f, c, op); } }
+        else if (fav == LK_SUMMER || fav == LK_JULY4 || fav == LK_NEWYEAR) { dot(p, x, y, 5, 5, c, op); for (int k = 0; k < 8; k++) { float an = k * PI / 4; cline(p, x + cosf(an) * 8, y + sinf(an) * 8, x + cosf(an) * 11, y + sinf(an) * 11, 2, c, op); } }
+        else { blob(p, x, y, 9, 4.5f, 0.6f, c, op); cline(p, x + 6, y + 4, x + 10, y + 8, 1.5f, c, op); }   // a leaf (autumn, Halloween)
+    } else if (which == 1) {   // a spool of its favorite filament
+        dot(p, x, y, 10, 10, c, op); dot(p, x, y, 3, 3, lv_color_black(), op);
+    } else if (which == 2) {   // a little boat
+        float hull[] = {x - 11, y + 1, x + 11, y + 1, x + 7, y + 7, x - 7, y + 7};
+        fill_poly(p, hull, 4, c, op); fill_rect(p, x - 4, y - 6, x + 3, y + 1, c);
+    } else {                   // a star
+        float st[10];
+        for (int k = 0; k < 5; k++) { float an = -PI / 2 + k * 4 * PI / 5; st[2 * k] = x + cosf(an) * 10; st[2 * k + 1] = y + sinf(an) * 10; }
+        for (int k = 0; k < 5; k++) cline(p, st[2 * k], st[2 * k + 1], st[(2 * k + 2) % 10], st[(2 * k + 3) % 10], 2, c, op);
+    }
+}
+
+// after a great day a little sun, after a bad one a rain cloud, for half a minute
+static void draw_weather(const pen_t & p, float cx, float cy) {
+    lv_opa_t op = (lv_opa_t)(220 * clampf(weather_t / 3, 0, 1));
+    float x = cx - 64, y = cy - 66 + sinf(now_s * 1.2f) * 2;
+    if (weather > 0) {
+        dot(p, x, y, 6, 6, p.fc, op);
+        for (int k = 0; k < 8; k++) { float an = k * PI / 4 + now_s * 0.5f; cline(p, x + cosf(an) * 9, y + sinf(an) * 9, x + cosf(an) * 12, y + sinf(an) * 12, 2, p.fc, op); }
+    } else {
+        dot(p, x - 6, y + 1, 6, 5, p.fc, op); dot(p, x + 1, y - 3, 7, 6, p.fc, op); dot(p, x + 8, y + 1, 5, 4.5f, p.fc, op);
+        for (int k = 0; k < 3; k++) {
+            float q = fmodf(now_s * 1.4f + k / 3.0f, 1);
+            cline(p, x - 6 + k * 7, y + 8 + q * 10, x - 7 + k * 7, y + 11 + q * 10, 1.8f, p.fc, (lv_opa_t)(op * (1 - q)));
+        }
+    }
+}
+
 static void draw_shades(const pen_t & p, float cx, float ey, float sx) {
     if (shades < 0.02f) return;
     float drop = (1 - shades) * -40;
     lv_opa_t op = (lv_opa_t)(255 * clampf(shades * 1.5f, 0, 1));
     for (int s2 = -1; s2 <= 1; s2 += 2) {
-        float x = cx + s2 * 54 * sx, t = ey - 11 + drop;
+        float x = cx + s2 * 58 * sx, t = ey - 11 + drop;
         float lens[] = {x - 31, t, x + 31, t, x + 28, t + 14, x + 14, t + 25, x - 14, t + 25, x - 28, t + 14};
         fill_poly(p, lens, 6, p.fc, op);
         cline(p, x - 14, ey - 5 + drop, x - 6, ey - 5 + drop, 2, lv_color_black(), op * 7 / 10);   // glint
@@ -1611,7 +1834,7 @@ static void draw_face(lv_event_t * e) {
     if (mood == M_NERVOUS) jit = max(jit, 0.8f);
     if (mood == M_WINDY) jit = max(jit, 0.6f);
     float bs = BOUNCE * T.sense * SENSE_K;
-    float cx = 120 + clampf(hx - bs * bx[0], -34, 34) + frand(-jit, jit), cy = 118 + clampf(hy + bs * bx[2], -30, 30) + frand(-jit, jit);
+    float cx = 120 + clampf(hx - bs * bx[0], -30, 30) + frand(-jit, jit), cy = 118 + clampf(hy + bs * bx[2], -28, 28) + frand(-jit, jit);
     float hsq = hs + QF.sq;
     float sx = 1 - hsq * 0.5f, sy = 1 + hsq;
     cx += QF.dx; cy += QF.dy;
@@ -1639,12 +1862,12 @@ static void draw_face(lv_event_t * e) {
     E.curve += QF.curve; E.w = max(4.0f, E.w + QF.w); E.cheek = max(E.cheek, QF.cheek);
     E.gape = max(E.gape, QF.gape);
     E.omega *= 1 - clampf(QF.gape / 0.4f, 0, 1);   // an open "o" mouth, not the cat "w"
-    draw_eye(p, cx - 54 * sx, cy - 14 * sy + tiltL, -1, sx, clampf(open * QF.open_l, 0, 1.1f), QF.look_y);
-    draw_eye(p, cx + 54 * sx, cy - 14 * sy + tiltR, 1, sx, clampf(open * QF.open_r, 0, 1.1f), QF.look_y);
+    draw_eye(p, cx - 58 * sx, cy - 15 * sy + tiltL, -1, sx, clampf(open * QF.open_l, 0, 1.1f), QF.look_y);
+    draw_eye(p, cx + 58 * sx, cy - 15 * sy + tiltR, 1, sx, clampf(open * QF.open_r, 0, 1.1f), QF.look_y);
     float talk = 0;
     if (bubble && millis() - bsince < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
     E.gape = max(E.gape, talk);
-    draw_mouth(p, cx, cy + 22 * sy);
+    draw_mouth(p, cx, cy + 24 * sy);
     E = keep;
     for (int i = 0; i < 3; i++) {       // humming: little notes floating up
         if (notes[i].life <= 0) continue;
@@ -1678,8 +1901,8 @@ static void draw_face(lv_event_t * e) {
     // sweat drop while the nozzle is hot
     const moonraker_data_t & d = moonraker.data;
     // sweat drop: appears from 120 °C and grows with the nozzle temperature
-    if (d.nozzle_actual >= 120 && mood != M_SLEEPY) {
-        float sz = clampf((d.nozzle_actual - 120) / 130.0f, 0, 1) * 0.8f + 0.5f;
+    if ((d.nozzle_actual >= 120 || mood == M_HEATING) && mood != M_SLEEPY) {
+        float sz = max(clampf((d.nozzle_actual - 120) / 130.0f, 0, 1), mood == M_HEATING ? heat_effort : 0.0f) * 0.8f + 0.5f;
         float q = fmodf(now_s * 0.5f, 1), dx = cx + 86 * sx, dy = cy - 40 + q * 26;
         lv_opa_t op = (lv_opa_t)(255 * (1 - q * 0.8f));
         lv_draw_rect_dsc_t rd; lv_draw_rect_dsc_init(&rd);
@@ -1719,12 +1942,26 @@ static void draw_face(lv_event_t * e) {
         lv_draw_label(p.ctx, &ld, &a, ACT_LABEL[act], NULL);
     }
     if (mood == M_HEATING) {
-        // steam puffing off the top, faster and bigger the harder it works
+        // steam puffing off the top: round puffs that grow as they rise, bigger and faster the harder it works
         for (int i = 0; i < 3; i++) {
-            float q = fmodf(now_s * (0.8f + heat_effort) + i / 3.0f, 1);
-            float px = cx + (i - 1) * 26 * sx + sinf(now_s * 3 + i) * 3, py = cy - 52 - q * 26;
-            float len = 4 + 6 * heat_effort * (1 - q);
-            line(p, px, py, px, py - len, 3, (lv_opa_t)(255 * sinf(q * PI) * (0.4f + 0.6f * heat_effort)));
+            float q = fmodf(now_s * (0.6f + 0.8f * heat_effort) + i / 3.0f, 1);
+            float px = cx + (i - 1) * 24 * sx + sinf(now_s * 2.5f + i * 2) * 4 * q, py = cy - 50 - q * 34;
+            float r = (3.5f + 6 * q) * (0.7f + 0.6f * heat_effort);
+            lv_opa_t op = (lv_opa_t)(230 * sinf(q * PI) * (0.5f + 0.5f * heat_effort));
+            dot(p, px, py, r, r * 0.85f, p.fc, op);
+            dot(p, px + r * 0.7f, py + r * 0.3f, r * 0.6f, r * 0.55f, p.fc, op);
+        }
+        // heat ring around the edge of the screen, filling up with the temperature
+        if (p.s > 0.8f) {
+            float frac = heat_frac;
+            lv_draw_arc_dsc_t ad; lv_draw_arc_dsc_init(&ad);
+            ad.color = p.fc; ad.width = (lv_coord_t)max(2.0f, 5 * p.s); ad.rounded = 1;
+            lv_point_t c0 = {X(p, 120), Y(p, 120)};
+            uint16_t rad = (uint16_t)(116 * p.s);
+            ad.opa = 45;
+            lv_draw_arc(p.ctx, &ad, &c0, rad, 0, 360);
+            ad.opa = 230;
+            if (frac > 0.01f) lv_draw_arc(p.ctx, &ad, &c0, rad, 270, (uint16_t)(270 + 360 * frac) % 360 == 270 ? 269 : (uint16_t)(270 + 360 * frac) % 360);
         }
         // what it's heating, on the full-size face
         if (p.s > 0.8f) {
@@ -1747,7 +1984,16 @@ static void draw_face(lv_event_t * e) {
             lv_area_t a = {X(p, 160 + z * 26), Y(p, 80 - z * 36), X(p, 180 + z * 26), Y(p, 104 - z * 36)};
             lv_draw_label(p.ctx, &ld, &a, "z", NULL);
         }
+        // dreams: after a while asleep, a thought bubble with what it's dreaming about
+        if (big && mood_t > 12) draw_dream(p, cx, cy);
     }
+    if (big && quirk == Q_DAYDREAM) {   // daydreaming: a few thought dots drifting up
+        for (int i = 0; i < 3; i++) {
+            float q = clampf(quirk_t / 1.5f - i * 0.3f, 0, 1);
+            dot(p, cx + quirk_side * (46 + i * 10), cy - 52 - i * 12, 2.5f + i * 1.5f, 2.5f + i * 1.5f, p.fc, (lv_opa_t)(200 * q));
+        }
+    }
+    if (big && weather_t > 0) draw_weather(p, cx, cy);
     // idle clock under the face
     if (big && T.clock && !d.printing && act == ACT_NONE && mood != M_HEATING && bubble_k < 0.3f) {
         time_t now = time(NULL);
@@ -1892,8 +2138,10 @@ void coaster_poke(void) {
     if (oldest && now - oldest < (uint32_t)limit_ms && t_mad <= 0) { t_mad = 4; t_giggle = 0; feel(-0.03f, "poked too much"); say("Hey! Quit it!", 2); head_kick(0, 50); return; }
     if (t_mad > 0) return;
     feel(0.005f + 0.01f * L(LK_POKES), NULL);
-    static uint32_t poke_day_ms = 0;   // poked on many days: gets used to it
-    if (millis() - poke_day_ms > 86400000UL || !poke_day_ms) { poke_day_ms = millis(); learn(LK_POKES, 2); feel_dirty = true; }
+    static uint32_t poke_day_ms = 0;   // poked on many days: gets used to it, and trusts you more
+    if (millis() - poke_day_ms > 86400000UL || !poke_day_ms) { poke_day_ms = millis(); learn(LK_POKES, 2); poke_days++; feel_dirty = true; }
+    if (hiccups_left > 0) { hiccups_left = 0; say("...oh! They're gone. Thanks!", 1); }   // a poke cures hiccups
+    if (coaster_trust() < 0.3f && esp_random() % 2) { quirk_start(Q_GLANCE); return; }    // still a bit shy
     t_giggle = max(t_giggle, 1.6f);
     head_kick(frand(-50, 50), -45);
 }
@@ -1926,6 +2174,8 @@ String coaster_album_json(void) {
     d["hours"] = total_s / 3600.0f; d["longest"] = longest_s; d["wildest"] = wildest_cg / 100.0f;
     d["screams"] = screams_total; d["dizzies"] = dizzies_total;
     d["feeling"] = feel_name(); d["open"] = openness;
+    d["trust"] = trust_name(); d["ritual"] = ritual >= 0 ? RITUAL_NAMES[ritual] : ""; d["hobby"] = hobby >= 0 ? HOBBY_NAMES[hobby] : "";
+    d["rating"] = rating_n ? (float)rating_sum / rating_n : 0; d["rated"] = rating_n; d["last_rating"] = last_rating;
     JsonObject tr = d.createNestedObject("traits");
     tr["curious"] = tr_curious; tr["sleepy"] = tr_sleepy; tr["musical"] = tr_musical; tr["silly"] = tr_silly;
     int fav_season = -1;
@@ -1953,6 +2203,8 @@ String coaster_plugin_json(bool motion) {
                      DECO_KEYS[deco_kind > 0 ? deco_kind : 0], LIGHT_KEYS[T.lights], ANIM_KEYS[T.anim],
                      shades_on ? 1 : 0, act, c32.ch.red, c32.ch.green, c32.ch.blue, T.south ? 1 : 0,
                      moonraker.data.printing ? 1 : 0, heat_effort);
+    n += snprintf(buf + n, sizeof(buf) - n, ",\"hf\":%.2f", heat_frac);
+    if (weather_t > 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"wx\":%d", weather > 0 ? 1 : -1);
     if (cur_mat >= 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"mat\":\"%s\"", MAT_NAMES[cur_mat]);
     if ((int32_t)(say_until - millis()) > 0 && say_buf[0]) {   // what it's saying (no quotes or backslashes in its lines)
         n += snprintf(buf + n, sizeof(buf) - n, ",\"say\":\"%s\"", say_buf);
@@ -1960,7 +2212,7 @@ String coaster_plugin_json(bool motion) {
     if (motion) {
         float bs = BOUNCE * T.sense * SENSE_K;
         n += snprintf(buf + n, sizeof(buf) - n, ",\"hx\":%.1f,\"hy\":%.1f,\"hs\":%.3f,\"px\":%.1f,\"py\":%.1f,\"look\":%.1f",
-                      clampf(hx - bs * bx[0], -34, 34), clampf(hy + bs * bx[2], -30, 30), hs, px_, py_, look);
+                      clampf(hx - bs * bx[0], -30, 30), clampf(hy + bs * bx[2], -28, 28), hs, px_, py_, look);
     }
     if (report.valid)
         n += snprintf(buf + n, sizeof(buf) - n, ",\"report\":{\"done\":%s,\"progress\":%u,\"screams\":%u,\"dizzies\":%u,\"jolts\":%u,\"peak\":%.2f,\"secs\":%u}",
