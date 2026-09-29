@@ -207,7 +207,7 @@ String knomi_html_processor(const String& var){
 String message_page(const String &title, const String &body_html) {
     return String("<!DOCTYPE html><html lang='en'><head><title>KNOMI</title>") + BINNACLE_HEAD +
         "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
-        "<a class='n' href='/'>KNOMI<span class='dot'>.</span></a><span class='f'>Printer display</span></div></div></header>"
+        "<a class='n' href='/'>" KNOMI_MARK "<span>KNOMI<span class='dot'>.</span></span></a><span class='f'>Printer display</span></div></div></header>"
         "<main class='wrap'><section class='mast'><h1>" + title + "<span class='dot'>.</span></h1></section>"
         "<section class='card'><div class='card-b'>" + body_html + "</div>"
         "<div class='card-f'><a class='btn-primary' href='/'>Back to settings</a></div></section></main></body></html>";
@@ -320,7 +320,7 @@ void webserver_wifi_refresh_callback(void) {
 static String gifs_page(void) {
     String page = String("<!DOCTYPE html><html lang='en'><head><title>KNOMI · Animations</title>") + BINNACLE_HEAD +
         "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
-        "<a class='n' href='/'>KNOMI<span class='dot'>.</span></a><span class='f'>Printer display</span></div>"
+        "<a class='n' href='/'>" KNOMI_MARK "<span>KNOMI<span class='dot'>.</span></span></a><span class='f'>Printer display</span></div>"
         "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a><a href='/layout'>Print screen</a><a href='/coaster'>Coaster face</a>"
         "<a href='/update'>Firmware</a></nav>" BINNACLE_MODES "</div></header><main class='wrap'>"
         "<section class='mast'><span class='label'>Animations</span><h1>Animations<span class='dot'>.</span></h1>"

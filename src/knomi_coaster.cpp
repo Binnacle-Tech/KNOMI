@@ -20,7 +20,7 @@ typedef struct {
     float wobble, settle, sense, habit, scare, dizzy, sleep;
     bool idle;
 } coaster_tune_t;
-static const coaster_tune_t TUNE_DEF = {2.4f, 0.28f, 1.0f, 12.0f, 0.9f, 5.0f, 20.0f, false};
+static const coaster_tune_t TUNE_DEF = {2.4f, 0.28f, 1.0f, 12.0f, 0.9f, 5.0f, 20.0f, true};  // Coaster is the mascot: on by default
 static coaster_tune_t T = TUNE_DEF;
 static volatile bool reload_pending = false;
 
@@ -37,7 +37,7 @@ static void load_tuning(void) {
         T.scare  = constrain(d["scare"]  | T.scare,  0.3f, 2.5f);
         T.dizzy  = constrain(d["dizzy"]  | T.dizzy,  1.0f, 20.0f);
         T.sleep  = constrain(d["sleep"]  | T.sleep,  5.0f, 120.0f);
-        T.idle   = d["idle"] | false;
+        T.idle   = d["idle"] | true;
     }
     f.close();
 }

@@ -42,6 +42,8 @@ a{color:var(--cyan)}
 .brand .n{font-family:var(--font-disp);font-weight:700;font-size:19px;letter-spacing:-.01em;color:var(--text);
   white-space:nowrap;text-decoration:none}
 .brand .dot{color:var(--amber)}
+.brand .n{display:inline-flex;align-items:center;gap:8px}
+.brand .mark{width:24px;height:24px;flex:none}
 .brand .f{font-size:var(--t-small);color:var(--muted-2);white-space:nowrap;border-left:1px solid var(--line-2);padding-left:10px}
 .rail-sp{flex:1}
 .rail nav{display:flex;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
@@ -185,6 +187,9 @@ input[type=color]{width:52px;height:36px;padding:2px;background:var(--panel-2);b
   "function setMode(m){if(m=='dark')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',m);" \
   "try{localStorage.setItem('knomi-mode',m)}catch(e){}}" \
   "addEventListener('DOMContentLoaded',function(){var s=document.getElementById('mode-sel');if(s)s.value=document.documentElement.getAttribute('data-theme')||'dark'})</script>"
+
+// Coaster, the mascot, next to the KNOMI wordmark
+#define KNOMI_MARK "<svg class='mark' viewBox='0 0 256 256' aria-hidden='true'><circle cx='128' cy='128' r='126' fill='#000' stroke='#334353' stroke-width='6'/><g stroke='#C02F30' stroke-width='16' stroke-linecap='round' fill='none'><path d='M32 112h80M144 112h80'/><path stroke-width='14' d='M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0'/></g><g fill='#C02F30'><path d='M42 112a30 30 0 0 0 60 0z'/><path d='M154 112a30 30 0 0 0 60 0z'/></g></svg>"
 
 #define BINNACLE_MODES \
   "<div class='modes'><select id='mode-sel' aria-label='Color mode' onchange='setMode(this.value)'>" \

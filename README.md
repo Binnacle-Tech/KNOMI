@@ -9,6 +9,12 @@
 
 Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint-KNOMI)** (needed for the homing / QGL / bed mesh / pause animations and for Bluetooth).
 
+## Meet Coaster
+
+<p align="center"><img src="docs/images/coaster-moods.png" alt="Coaster, the mascot, in six moods: calm, riding, excited, screaming, sleepy and happy when a print is done" width="100%"></p>
+
+Coaster is this firmware's mascot and the default idle screen. Instead of looping a GIF, it's drawn live from the KNOMI 2's accelerometer, so it rides along with your toolhead. Its eyes slosh with every move. It gets excited on fast moves and screams on hard travel, then gets used to it. It flinches at endstop hits, shivers through input shaper tests, rides the elevator during QGL and dozes off when nothing moves. It also sweats when the nozzle is hot and celebrates when a print finishes. Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print screen in the designer.
+
 ## Features
 
 - **OctoPrint support.** Temps, progress, file list, print/pause/resume/cancel, preheat, extrude, home, QGL and bed mesh from the KNOMI touchscreen, authenticated with an OctoPrint application key.
@@ -18,7 +24,7 @@ Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint
 - **Custom GIF animations without reflashing.** Upload a GIF to any slot from the web page (idle, homing, probing, QGL, printing, done and more), stored on the KNOMI's flash.
 - **More animation states:** input shaper calibration, PID tuning, nozzle cleaning, filament load/unload and **paused** (M600, PAUSE, MMU/ERCF).
 - **Printing screen with useful info:** time left, nozzle/bed temps, Z height or layer, file name.
-- **Coaster face:** an idle face that reacts to the toolhead through the KNOMI's accelerometer: its eyes slosh with every move, it gets excited, screams on fast travel, shivers during input shaper tests and dozes off when nothing moves.
+- **Coaster, the mascot:** a live idle face driven by the accelerometer (see above). The stock GIF faces are one setting away.
 - **Print screen designer:** a drag-and-drop editor on the KNOMI's web page. Place text with live values, progress rings, gauges, bars and animations, and rotate between up to 4 pages (e.g. a face most of the time, stats every 30 s).
 - **Auto-dim and screen-off**, saved brightness, and wake on touch or printer activity.
 - **Animations can follow the UI color** instead of always being red.

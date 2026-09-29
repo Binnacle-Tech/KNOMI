@@ -117,7 +117,7 @@ body{padding-top:0}
 @media (max-width:640px){.rail nav a{padding:6px 7px;font-size:12px}}
 </style></head><body>
 <header class="rail"><div class="rail-in">
-  <div class="brand"><a href="/">KNOMI<span class="dot">.</span></a></div><span class="rail-sp"></span>
+  <div class="brand"><a href="/" style="display:inline-flex;align-items:center;gap:8px"><svg class="mark" style="width:24px;height:24px" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="126" fill="#000" stroke="#334353" stroke-width="6"/><g stroke="#C02F30" stroke-width="16" stroke-linecap="round" fill="none"><path d="M32 112h80M144 112h80"/><path stroke-width="14" d="M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0"/></g><g fill="#C02F30"><path d="M42 112a30 30 0 0 0 60 0z"/><path d="M154 112a30 30 0 0 0 60 0z"/></g></svg><span>KNOMI<span class="dot">.</span></span></a></div><span class="rail-sp"></span>
   <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a class="on" href="/coaster">Coaster face</a><a href="/update">Firmware</a></nav>
 </div></header>
 
