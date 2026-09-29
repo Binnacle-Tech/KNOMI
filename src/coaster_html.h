@@ -155,6 +155,12 @@ body{padding-top:0}
             <div class="meter"><span>Dizzy</span><div class="bar"><i id="kDizzy" style="background:var(--violet)"></i></div><b id="kvDizzy">0%</b></div>
           </div>
           <p class="note" id="kNote">Live mood from the KNOMI's own accelerometer.</p>
+          <div class="feel">
+            <div class="meter"><span>Feeling</span><div class="bar"><i id="kFeelBar" style="background:var(--cyan)"></i></div><b id="kFeel">…</b></div>
+            <p class="note" id="kWhy"></p>
+            <p class="note" id="kLikes"></p>
+            <p class="note">Every Coaster is born with its own likes and dislikes. You can't change them, only get to know them.</p>
+          </div>
           <div id="kReport" class="note"></div>
         </div>
       </section>
@@ -300,7 +306,7 @@ function knomiCard(){fetch("/coaster/card").then(function(r){return r.json()}).t
 knomiCard();setInterval(knomiCard,10000);
 $("saveK").addEventListener("click",function(){knomiSave("Saved. The KNOMI uses it now.")});
 $("loadK").addEventListener("click",function(){knomiLoad().then(function(){say("Back to the KNOMI's tuning")})});
-var KCOL={sad:"#9AA7F0",shocked:"#E06C5A",lonely:"#7E8F9F",confused:"#F0C079",impatient:"#E8A33D","cooling off":"#4FD1C5",focused:"#4FD1C5","almost there":"#E8A33D",hungry:"#F0C079",windy:"#4FD1C5","hanging on":"#E06C5A",ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D",whee:"#E8A33D"};
+var KCOL={sad:"#9AA7F0",shocked:"#E06C5A",lonely:"#7E8F9F",confused:"#F0C079",impatient:"#E8A33D","cooling off":"#4FD1C5",focused:"#4FD1C5","almost there":"#E8A33D",hungry:"#F0C079",windy:"#4FD1C5","hanging on":"#E06C5A",ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D",whee:"#E8A33D",mad:"#E06C5A"};
 function knomiPoll(){
   fetch("/coaster/state").then(function(r){return r.json()}).then(function(j){
     var c=$("kMood");c.textContent=j.mood;c.style.color=KCOL[j.mood]||"#E8A33D";
@@ -308,6 +314,13 @@ function knomiPoll(){
     $("kThrill").style.width=th*100+"%";$("kvThrill").textContent=Math.round(j.thrill*100)+"%";
     $("kBuzz").style.width=bz*100+"%";$("kvBuzz").textContent=Math.round(bz*100)+"%";
     $("kDizzy").style.width=dz*100+"%";$("kvDizzy").textContent=Math.round(dz*100)+"%";
+    if(typeof j.feel=="number"){
+      var fv=j.feel;$("kFeelBar").style.width=Math.round((fv+1)*50)+"%";$("kFeelBar").style.background=fv>0.25?"var(--cyan)":fv>-0.15?"var(--amber)":"var(--danger)";
+      $("kFeel").textContent=j.feeling;
+      $("kWhy").textContent=j.why&&j.why.length?"Lately: "+j.why.map(function(w){return w.t+" ("+(w.d>0?"+":"")+w.d+")"}).join(" · "):"";
+      $("kLikes").textContent=(j.likes&&j.likes.length?"Likes "+j.likes.join(", ")+". ":"")+(j.dislikes&&j.dislikes.length?"Doesn't like "+j.dislikes.join(", ")+".":"")+
+        (j.prints?" "+j.prints+" prints together"+(j.streak>1?", "+j.streak+" in a row.":"."):"");
+    }
     $("kNote").textContent=j.sensor?"Live mood from the KNOMI's own accelerometer. Used to "+j.used_to.toFixed(2)+" g of motion right now.":
       "This board has no accelerometer, so the face reacts to printer data only (Z moves, heat, pause, print done).";
   }).catch(function(){$("kMood").textContent="offline"}).then(function(){setTimeout(knomiPoll,500)});
@@ -903,7 +916,7 @@ function frame(t){
   uiT-=el;if(uiT<=0){uiT=0.1;updateUi()}
   requestAnimationFrame(frame);
 }
-var MOODCOL={calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D",whee:"#E8A33D"};
+var MOODCOL={calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D",whee:"#E8A33D",mad:"#E06C5A"};
 function updateUi(){
   var chip=$("moodChip");if(chip.textContent!==mood){chip.textContent=mood;chip.style.color=MOODCOL[mood]||"#E8A33D"}
   $("why").textContent=why;
