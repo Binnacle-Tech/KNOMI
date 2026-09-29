@@ -38,6 +38,11 @@ static void ws_authenticate(void) {
     Serial.println("octoprint ws: authenticated");
 }
 
+// layer and Z the plugin works out from OctoPrint's file position (moonraker.cpp)
+extern int16_t octo_layer, octo_layers;
+extern int32_t octo_z;
+void octo_plugin_layers(JsonVariantConst d);
+
 static void apply_plugin(JsonVariantConst d) {
     if (!d.containsKey("homing")) return;   // other plugin messages (e.g. the sidebar mirror)
     moonraker.data.homing = d["homing"] | false;
@@ -56,6 +61,7 @@ static void apply_plugin(JsonVariantConst d) {
     if (d.containsKey("msg_id")) moonraker_set_msg(d["msg"] | "", d["msg_id"] | 0L);
     JsonVariantConst tp = d["time_progress"];
     if (!tp.isNull()) moonraker.data.progress_mode = tp.as<bool>() ? 2 : 1;
+    octo_plugin_layers(d);
 }
 
 uint8_t octo_progress(JsonVariantConst p); // moonraker.cpp
@@ -78,8 +84,9 @@ static void apply_current(JsonVariantConst c) {
     JsonVariantConst left = c["progress"]["printTimeLeft"];
     data.time_left = left.isNull() ? -1 : left.as<int32_t>();
     JsonVariantConst z = c["currentZ"];
-    data.z_um = z.isNull() ? INT32_MIN : (int32_t)(z.as<double>() * 1000);
-    data.layer = data.layer_total = 0;
+    data.z_um = z.isNull() ? octo_z : (int32_t)(z.as<double>() * 1000);
+    data.layer = octo_layer;
+    data.layer_total = octo_layers;
 
     // temps only carries new samples; keep the previous values when empty
     JsonArrayConst temps = c["temps"];

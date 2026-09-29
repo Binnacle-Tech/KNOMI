@@ -371,6 +371,19 @@ void MOONRAKER::octoprint_parse_printer(const String &printer_info) {
 // Optional companion plugin (OctoPrint-KNOMI) reports homing/probing/QGL/heating.
 // Without it, heating is still detected from temperatures; homing/probing/QGL
 // animations just won't show.
+int16_t octo_layer = 0, octo_layers = 0;   // from the plugin (0.7.0+), 0 = unknown
+int32_t octo_z = INT32_MIN;
+
+void octo_plugin_layers(JsonVariantConst d) {
+    octo_layer = d["layer"] | 0;
+    octo_layers = d["layers"] | 0;
+    JsonVariantConst z = d["z"];
+    octo_z = (octo_layer > 0 && !z.isNull()) ? z.as<int32_t>() : INT32_MIN;
+    static int16_t said = -1;
+    if (octo_layer && said <= 0) Serial.printf("octoprint: layer %d of %d from the plugin\r\n", octo_layer, octo_layers);
+    said = octo_layer;
+}
+
 void MOONRAKER::octoprint_get_knomi_status(void) {
     if (octo_plugin_retry_ms && (int32_t)(millis() - octo_plugin_retry_ms) < 0) {
         return;
@@ -398,6 +411,7 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
             if (json_parse.containsKey("msg_id")) moonraker_set_msg(json_parse["msg"] | "", json_parse["msg_id"] | 0L);
             JsonVariant tp = json_parse["time_progress"];
             data.progress_mode = tp.isNull() ? 0 : (tp.as<bool>() ? 2 : 1);
+            octo_plugin_layers(json_parse.as<JsonVariantConst>());
         }
     } else {
         data.homing = data.probing = data.qgling = false;
@@ -405,6 +419,7 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
         data.shaping = data.pid_tuning = data.cleaning = data.filament = false;
         data.paused_ext = data.runout = false;
         data.fan = 0; data.speed = 0;
+        octo_layer = octo_layers = 0; octo_z = INT32_MIN;
         if (last_code == 404) data.progress_mode = 0;
         if (last_code == 404 && plugin_seen != 0) {
             Serial.println("octoprint: KNOMI plugin not installed (animations for homing, QGL... need it)");
@@ -447,8 +462,10 @@ void MOONRAKER::octoprint_get_progress(void) {
     data.print_time = json_parse["progress"]["printTime"] | 0;
     JsonVariant left = json_parse["progress"]["printTimeLeft"];
     data.time_left = left.isNull() ? -1 : left.as<int32_t>();
-    // no layer info from OctoPrint itself; Z comes over the websocket
-    data.layer = data.layer_total = 0;
+    // OctoPrint itself has no layer info; the plugin works it out from the file position
+    data.layer = octo_layer;
+    data.layer_total = octo_layers;
+    if (octo_z != INT32_MIN) data.z_um = octo_z;
 }
 
 void MOONRAKER::octoprint_get_loop(void) {
