@@ -12,18 +12,12 @@ LV_IMG_DECLARE(gif_shaping);
 LV_IMG_DECLARE(gif_pid);
 LV_IMG_DECLARE(gif_cleaning);
 LV_IMG_DECLARE(gif_filament);
-LV_IMG_DECLARE(gif_paused);
-LV_IMG_DECLARE(gif_idle3);
-LV_IMG_DECLARE(gif_idle4);
 LV_IMG_DECLARE(gif_voron);
-LV_IMG_DECLARE(gif_standby);
 LV_IMG_DECLARE(gif_homing);
 LV_IMG_DECLARE(gif_probing);
 LV_IMG_DECLARE(gif_qgling);
-LV_IMG_DECLARE(gif_heated);
 LV_IMG_DECLARE(gif_print);
 LV_IMG_DECLARE(gif_print_ok);
-LV_IMG_DECLARE(gif_printed);
 
 // lv_setup_screens.cpp
 void lv_setup_screens_init(void);

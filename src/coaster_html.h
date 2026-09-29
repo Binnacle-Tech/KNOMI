@@ -125,7 +125,7 @@ body{padding-top:0}
   <header class="pagehead">
     <span class="eyebrow">KNOMI · reactive face</span>
     <h1>Coaster Face<span class="dot">.</span></h1>
-    <p class="lede">A face drawn live from the KNOMI's accelerometer instead of a GIF. Its eyes and head hang on springs, so every move of the toolhead sloshes them around, and it picks a mood from how hard and how long it's being thrown. Try settings here on the simulated KNOMI (play a print, or grab it and fling it), then save them to your KNOMI. Turn it on for the idle screen below, or place it on the <a href="/layout" style="color:var(--cyan)">print screen</a>.</p>
+    <p class="lede">A face drawn live from the KNOMI's accelerometer instead of a GIF. Its eyes and head hang on springs, so every move of the toolhead sloshes them around, and it picks a mood from how hard and how long it's being thrown. Try settings here on the simulated KNOMI (play a print, or grab it and fling it), then save them to your KNOMI. It's every face on your KNOMI: idle, getting ready, paused and after the print, and you can place it on the <a href="/layout" style="color:var(--cyan)">print screen</a> too.</p>
   </header>
 
   <div class="grid">
@@ -154,7 +154,6 @@ body{padding-top:0}
             <div class="meter"><span>Buzz</span><div class="bar"><i id="kBuzz" style="background:var(--cyan)"></i></div><b id="kvBuzz">0%</b></div>
             <div class="meter"><span>Dizzy</span><div class="bar"><i id="kDizzy" style="background:var(--violet)"></i></div><b id="kvDizzy">0%</b></div>
           </div>
-          <div class="toggles"><label class="toggle"><input type="checkbox" id="kIdle"> Show on the idle screen</label></div>
           <p class="note" id="kNote">Live mood from the KNOMI's own accelerometer.</p>
         </div>
       </section>
@@ -247,18 +246,17 @@ fetch("/status.json").then(function(r){return r.json()}).then(function(j){if(j.t
 function say(msg,bad){var e=$("saved");e.textContent=msg;e.className="saved"+(bad?" bad":"");clearTimeout(say.t);say.t=setTimeout(function(){e.textContent=""},3000)}
 function knomiLoad(){
   return fetch("/coaster.json").then(function(r){return r.json()}).then(function(j){
-    Object.keys(TUNE_DEF).forEach(function(k){if(typeof j[k]=="number")T[k]=j[k]});$("kIdle").checked=!!j.idle;buildSliders();
+    Object.keys(TUNE_DEF).forEach(function(k){if(typeof j[k]=="number")T[k]=j[k]});buildSliders();
   }).catch(function(){say("Couldn't read the KNOMI's tuning",true)});
 }
 function knomiSave(msg){
-  var body=Object.assign({},T,{idle:$("kIdle").checked});
+  var body=Object.assign({},T);
   fetch("/coaster.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
     .then(function(r){if(!r.ok)throw 0;say(msg)}).catch(function(){say("Not saved, try again",true)});
 }
 $("saveK").addEventListener("click",function(){knomiSave("Saved. The KNOMI uses it now.")});
 $("loadK").addEventListener("click",function(){knomiLoad().then(function(){say("Back to the KNOMI's tuning")})});
-$("kIdle").addEventListener("change",function(){knomiSave(this.checked?"Idle screen: coaster face":"Idle screen: animations")});
-var KCOL={calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D"};
+var KCOL={ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D"};
 function knomiPoll(){
   fetch("/coaster/state").then(function(r){return r.json()}).then(function(j){
     var c=$("kMood");c.textContent=j.mood;c.style.color=KCOL[j.mood]||"#E8A33D";

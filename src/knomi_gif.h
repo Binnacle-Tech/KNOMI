@@ -53,7 +53,8 @@ uint8_t knomi_gif_idle_count(void);
 knomi_gif_slot_t knomi_gif_idle_slot(uint8_t n);
 bool knomi_gif_idle_enabled(int slot);
 int knomi_gif_shown_slot(lv_obj_t * obj); // slot last shown on obj, -1 if none
-void knomi_gif_forget(lv_obj_t * obj);     // call before deleting an object shown with knomi_gif_show
+void knomi_gif_forget(lv_obj_t * obj);
+bool knomi_gif_is_face(int slot);          // idle / heated / printed / paused: shown as Coaster, not a GIF     // call before deleting an object shown with knomi_gif_show
 
 // Recolor built-in GIFs to the UI color (GIF_TINT_* from knomi.h). LVGL task only.
 // Call after the theme color or the tint setting changes.

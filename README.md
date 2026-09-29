@@ -2,7 +2,7 @@
 
 **Run the BigTreeTech KNOMI / KNOMI 2 display with OctoPrint.** The stock KNOMI firmware only talks to Moonraker (Mainsail/Fluidd). This fork adds a full OctoPrint backend, so the round Voron Stealthburner display works with **OctoPrint + OctoKlipper**. It also still supports Moonraker.
 
-<p align="center"><img src="docs/images/knomi-screens.png" alt="KNOMI 2 screens: idle face, homing animation, printing screen with time left and temperatures, idle face tinted to the UI color" width="100%"></p>
+<p align="center"><img src="docs/images/knomi-screens.png" alt="KNOMI 2 screens: Coaster on the idle screen, homing animation, printing screen with time left and temperatures, Coaster in the blue UI color" width="100%"></p>
 
 > [!IMPORTANT]
 > **Only tested on a KNOMI 2 with OctoPrint on a Raspberry Pi 5.** The KNOMI 1 build compiles but hasn't been tested on hardware, and neither have other Pi models or hosts. Reports and PRs are welcome.
@@ -13,7 +13,7 @@ Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint
 
 <p align="center"><img src="docs/images/coaster-moods.png" alt="Coaster, the mascot, in six moods: calm, riding, excited, screaming, sleepy and happy when a print is done" width="100%"></p>
 
-Coaster is this firmware's mascot and the default idle screen. Instead of looping a GIF, it's drawn live from the KNOMI 2's accelerometer, so it rides along with your toolhead. Its eyes slosh with every move. It gets excited on fast moves and screams on hard travel, then gets used to it. It flinches at endstop hits, shivers through input shaper tests, rides the elevator during QGL and dozes off when nothing moves. It also sweats when the nozzle is hot and celebrates when a print finishes. Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print screen in the designer.
+Coaster is this firmware's mascot and every face on the KNOMI. Instead of looping a GIF, it's drawn live from the KNOMI 2's accelerometer, so it rides along with your toolhead. Its eyes slosh with every move. It gets excited on fast moves and screams on hard travel, then gets used to it. It flinches at endstop hits, shivers through input shaper tests, rides the elevator during QGL and dozes off when nothing moves. It also sweats when the nozzle is hot and celebrates when a print finishes. Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print screen in the designer.
 
 ## Features
 
@@ -21,10 +21,10 @@ Coaster is this firmware's mascot and the default idle screen. Instead of loopin
 - **Live updates** over OctoPrint's websocket (push, not polling), with an HTTP fallback.
 - **Find OctoPrint on network.** One click on the settings page finds OctoPrint over mDNS.
 - **Bluetooth LE link** to the plugin (optional). No API key needed. WiFi can switch off while Bluetooth is connected and comes back automatically if the link drops.
-- **Custom GIF animations without reflashing.** Upload a GIF to any slot from the web page (idle, homing, probing, QGL, printing, done and more), stored on the KNOMI's flash.
+- **Custom GIF animations without reflashing.** Upload a GIF to any slot from the web page (homing, probing, QGL, printing, done and more), stored on the KNOMI's flash.
 - **More animation states:** input shaper calibration, PID tuning, nozzle cleaning, filament load/unload and **paused** (M600, PAUSE, MMU/ERCF).
 - **Printing screen with useful info:** time left, nozzle/bed temps, Z height or layer, file name.
-- **Coaster, the mascot:** a live idle face driven by the accelerometer (see above). The stock GIF faces are one setting away.
+- **Coaster, the mascot:** every face on the KNOMI is drawn live from the accelerometer and printer state (see above).
 - **Print screen designer:** a drag-and-drop editor on the KNOMI's web page. Place text with live values, progress rings, gauges, bars and animations, and rotate between up to 4 pages (e.g. a face most of the time, stats every 30 s).
 - **Auto-dim and screen-off**, saved brightness, and wake on touch or printer activity.
 - **Animations can follow the UI color** instead of always being red.

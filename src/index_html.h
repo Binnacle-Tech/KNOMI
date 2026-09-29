@@ -228,8 +228,7 @@ async function discoverOcto(){
           <label class="field-label" for="gif_tint">Animations follow the UI color</label>
           <select id="gif_tint" name="gif_tint">
             <option value="0" $tint_0$>Off: stock colors</option>
-            <option value="1" $tint_1$>Idle faces only</option>
-            <option value="2" $tint_2$>All built-in animations</option>
+            <option value="2" $tint_2$>On: built-in animations</option>
           </select>
           <div class="hint">Uses the UI color (next card). Has no effect on the default red or on your uploaded GIFs.</div>
         </div>
@@ -253,32 +252,13 @@ async function discoverOcto(){
           <div class="hint">Buttons, rings and (if turned on above) the animations.</div>
         </div>
         <div class="row">
-          <label class="field-label" for="idle_face">Idle screen</label>
-          <select id="idle_face" name="idle_face">
-            <option value="0" $if_0$>Idle animations (GIFs)</option>
-            <option value="1" $if_1$>Coaster, the mascot (reacts to motion)</option>
-          </select>
-          <div class="hint"><a href="/coaster">Tune how the coaster face reacts</a>.</div>
+          <span class="field-label">Faces</span>
+          <div class="hint" style="margin-top:2px">Every face on the KNOMI is Coaster, reacting live to the toolhead and the printer. <a href="/coaster">Tune how it reacts</a>.</div>
         </div>
         <div class="row">
-          <label class="field-label" for="touch_idle">Back to the idle face after (seconds)</label>
+          <label class="field-label" for="touch_idle">Back to Coaster after (seconds)</label>
           <input type="number" class="mono" id="touch_idle" name="touch_idle" min="0" max="3600" value="$touch_idle$">
           <div class="hint">When you leave a menu open. 0 = stay on the menu.</div>
-        </div>
-        <div class="row">
-          <span class="field-label">Idle faces</span>
-          <div class="checks">
-            <label><input type="checkbox" name="idle_m1" value="1" $idle_c1$>Idle 1</label>
-            <label><input type="checkbox" name="idle_m2" value="1" $idle_c2$>Idle 2</label>
-            <label><input type="checkbox" name="idle_m3" value="1" $idle_c3$>Idle 3</label>
-            <label><input type="checkbox" name="idle_m4" value="1" $idle_c4$>Idle 4</label>
-          </div>
-          <div class="hint">Which faces play while the printer is idle. <a href="/gifs">Preview or replace them</a>.</div>
-        </div>
-        <div class="row">
-          <label class="field-label" for="idle_rot">Switch idle face every (seconds)</label>
-          <input type="number" class="mono" id="idle_rot" name="idle_rot" min="0" max="3600" value="$idle_rot$">
-          <div class="hint">0 = keep showing the first ticked face.</div>
         </div>
         <div class="row" style="grid-column:1/-1">
           <span class="field-label">Heating screens</span>
@@ -292,7 +272,7 @@ async function discoverOcto(){
       <div class="sub">How long each animation plays (seconds, 0 = skip)</div>
       <div class="cols">
         <div class="row">
-          <label class="field-label" for="heated_s">Heated, print starting</label>
+          <label class="field-label" for="heated_s">Coaster gets ready (print starting)</label>
           <input type="number" class="mono" id="heated_s" name="heated_s" min="0" max="600" value="$heated_s$">
         </div>
         <div class="row">
@@ -300,7 +280,7 @@ async function discoverOcto(){
           <input type="number" class="mono" id="print_ok_s" name="print_ok_s" min="0" max="600" value="$print_ok_s$">
         </div>
         <div class="row">
-          <label class="field-label" for="printed_s">After print finished</label>
+          <label class="field-label" for="printed_s">Coaster after the print</label>
           <input type="number" class="mono" id="printed_s" name="printed_s" min="0" max="3600" value="$printed_s$">
         </div>
       </div>

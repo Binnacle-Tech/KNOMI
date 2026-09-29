@@ -46,11 +46,11 @@ The plugin raises them on these commands:
 - filament: LOAD_FILAMENT, UNLOAD_FILAMENT, M701, M702
 
 If your macros have other names, call `_KNOMI_SET VAR=cleaning VALUE=1` / `VALUE=0` inside them.
-Each state has its own built-in animation, as do pause and printing, and there are four idle faces. You can replace any of them (next section).
+Each state has its own built-in animation, as does printing. You can replace any of them (next section). Faces (idle, pause, print starting, after the print) are Coaster.
 
 ## Custom animations
 Open `http://<knomi-ip>/gifs` (or use the link under the printer settings). Every animation has a slot:
-the four idle faces, WiFi setup, homing, probing, QGL, the four new states,
+WiFi setup, homing, probing, QGL, the four new states,
 paused, heated, printing, finished. Upload a GIF to any slot and it applies right away. Use Restore to
 go back to the built-in. Files live in the 7MB flash partition, so they survive firmware updates.
 Limits: 1.5MB per GIF and 5MB loaded in total. The screen is 240x240 and round.
@@ -63,14 +63,13 @@ Limits: 1.5MB per GIF and 5MB loaded in total. The screen is 240x240 and round.
 - **Printing screen:** *Info* shows the file name, %, time left (or elapsed), nozzle/bed temps, and Z height
   (Layer x/y on Moonraker when the slicer reports layers). *Accelerometer* is the stock bars view.
 - **Animations follow the UI color:** recolors the built-in animations to the UI color picked on the KNOMI.
-  *Idle faces only* or *All built-in*. The green "print finished" check stays green. Uploaded GIFs are never recolored.
+  on or off. The green "print finished" check stays green. Uploaded GIFs are never recolored.
 
 
 ## Screen, animations and presets (settings page, sections 03 and 04)
 Everything the touchscreen menus set, plus a few things they can't. Changes apply right away, even mid-print.
 - **UI color** (same as Settings › UI color on the KNOMI).
-- **Idle faces:** which of the four play, and how often they switch (0 = keep one).
-- **Back to the idle face after:** seconds of no touch before a menu closes (0 = never).
+- **Back to Coaster after:** seconds of no touch before a menu closes (0 = never).
 - **Heating screens:** turn the nozzle/bed heating screens off to go straight to the printing screen.
 - **Animation lengths:** heated, print finished, after print finished (0 = skip).
 - **Preheat presets:** names and nozzle/bed temperatures for Temperature › Preheat.
@@ -91,10 +90,10 @@ Layer changes use the printer's layer number when it reports one, otherwise each
 **Save & preview on KNOMI** shows the layout on the real screen for 20 s, using sample values if nothing is printing. You can also start from a few ready-made layouts, and download or load layout files to share them. The layout is included in backups. Settings › Printing screen switches between your layout and the stock accelerometer bars.
 
 ## Coaster face
-Coaster is the mascot and the default idle screen. It's a face drawn live instead of a GIF, in the same flat style as the stock faces. Its head and pupils hang on springs driven by the KNOMI's accelerometer (now read at 200 Hz), so toolhead moves slosh them around. It picks a mood from how hard and how long it's being thrown, and gets used to steady shaking:
+Coaster is the mascot and every face on the KNOMI: the idle screen, getting ready when a print starts, bored while paused and celebrating after the print. It's a face drawn live instead of a GIF, in the same flat style as the stock faces. Its head and pupils hang on springs driven by the KNOMI's accelerometer (now read at 200 Hz), so toolhead moves slosh them around. It picks a mood from how hard and how long it's being thrown, and gets used to steady shaking:
 calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (input shaper test), elevator (Z moves, from OctoPrint's Z), sleepy, bored (paused), plus a sweat drop when the nozzle is hot and confetti when a print finishes.
 
-- **Idle screen:** on by default. Switch back to the GIF faces in Settings › Screen & animations › Idle screen. Homing, QGL and the other busy animations still play as GIFs.
+- **Where:** every face screen. The busy animations without a face (homing, QGL, probing, input shaping, PID, cleaning, filament, printing) still play as GIFs you can replace.
 - **Print screen:** add "Coaster face" in the designer, or start from "Coaster face, stats every 10 %".
 - **Tuning:** the **Coaster face** page (`/coaster`) has a simulated KNOMI to try settings on (play print moves, fling it, or play a Klipper accelerometer CSV), the KNOMI's live mood, and **Save to KNOMI**. Saved in `/coaster.json` and included in backups.
 

@@ -5,6 +5,7 @@
 #include "moonraker.h"
 #include "lv_overlay.h"
 #include "knomi_gif.h"
+#include "../knomi_coaster.h"
 
 static lv_obj_t * pause_gif_obj;
 static bool paused_shown = false;
@@ -12,7 +13,8 @@ static bool paused_shown = false;
 void lv_print_info_init(void) {
     print_layout_init();
 
-    pause_gif_obj = lv_gif_create(ui_ScreenPrinting);
+    // paused: Coaster takes over the screen (it gets bored while the print waits)
+    pause_gif_obj = coaster_create(ui_ScreenPrinting, 240);
     lv_obj_align(pause_gif_obj, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(pause_gif_obj, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(pause_gif_obj, LV_OBJ_FLAG_CLICKABLE); // swipes still reach the screen
@@ -68,17 +70,11 @@ void lv_print_info_update(void) {
     if (paused != paused_shown) {
         paused_shown = paused;
         if (paused) {
-            knomi_gif_show(pause_gif_obj, GIF_SLOT_PAUSED);
             lv_obj_clear_flag(pause_gif_obj, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(pause_gif_obj, LV_OBJ_FLAG_HIDDEN);
         }
         lv_print_info_apply();
-    }
-    // a reload/retint restarts the GIF timer; keep it stopped while hidden
-    if (!paused_shown) {
-        lv_gif_t * g = (lv_gif_t *)pause_gif_obj;
-        if (g->timer && !g->timer->paused) lv_timer_pause(g->timer);
     }
 
     print_layout_update();

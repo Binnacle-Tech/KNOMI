@@ -45,11 +45,18 @@ void lv_extrude_rollers_rebuild(bool use_defaults) {
     lv_btn_set_extrude(NULL);  // labels on the extruder screen
 }
 
-// Idle screen: the coaster face replaces the idle GIFs (busy animations still play as GIFs)
+// Every face is Coaster: idle, "heated, print starting" and "after the print" show the live face;
+// busy animations without a face (homing, QGL, probing...) still play as GIFs
 static lv_obj_t * coaster_main = NULL;
 static void idle_face_sync(void) {
     if (!coaster_main || !ui_img_main_gif) return;
-    bool face = coaster_idle_enabled() && knomi_gif_idle_enabled(knomi_gif_shown_slot(ui_img_main_gif));
+    int slot = knomi_gif_shown_slot(ui_img_main_gif);
+    bool face = knomi_gif_is_face(slot);
+    static int last_slot = -1;
+    if (slot != last_slot) {
+        last_slot = slot;
+        if (slot == GIF_SLOT_HEATED) coaster_event_ready(knomi_config.heated_s);   // gets ready for the print
+    }
     bool shown = !lv_obj_has_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);
     if (face != shown) {
         if (face) {
@@ -156,7 +163,7 @@ void lvgl_ui_task(void * parameter) {
     ui_img_main_gif = lv_gif_create(ui_ScreenMainGif);
     knomi_gif_show(ui_img_main_gif, GIF_SLOT_IDLE1);
     lv_obj_align(ui_img_main_gif, LV_ALIGN_CENTER, 0, 0);
-    // Coaster face for the idle screen (Settings > Screen & animations > Idle screen)
+    // Coaster, the face of every face screen
     coaster_main = coaster_create(ui_ScreenMainGif, 240);
     lv_obj_center(coaster_main);
     lv_obj_add_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);

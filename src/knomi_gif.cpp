@@ -14,9 +14,10 @@ typedef struct {
 // Fallbacks for the new states reuse stock animations until you upload your own
 static const gif_slot_def_t slot_def[GIF_SLOT_NUM] = {
     {"idle1",    "Idle 1",                     &gif_voron},
-    {"idle2",    "Idle 2",                     &gif_standby},
-    {"idle3",    "Idle 3",                     &gif_idle3},
-    {"idle4",    "Idle 4",                     &gif_idle4},
+    // face slots: drawn live as Coaster (knomi_coaster.cpp), no GIFs
+    {"idle2",    "Idle 2",                     NULL},
+    {"idle3",    "Idle 3",                     NULL},
+    {"idle4",    "Idle 4",                     NULL},
     {"welcome",  "WiFi setup / connecting (small, about 100x66)", &gif_setup},
     {"homing",   "Homing",                     &gif_homing},
     {"probing",  "Probing / bed mesh",         &gif_probing},
@@ -25,11 +26,11 @@ static const gif_slot_def_t slot_def[GIF_SLOT_NUM] = {
     {"pid",      "PID tuning",                 &gif_pid},
     {"cleaning", "Nozzle cleaning",            &gif_cleaning},
     {"filament", "Filament load / unload",     &gif_filament},
-    {"paused",   "Paused (plays on the print screen)", &gif_paused},
-    {"heated",   "Heated, print starting",     &gif_heated},
+    {"paused",   "Paused (plays on the print screen)", NULL},
+    {"heated",   "Heated, print starting",     NULL},
     {"print",    "Printing",                   &gif_print},
     {"print_ok", "Print finished",             &gif_print_ok},
-    {"printed",  "After print finished",       &gif_printed},
+    {"printed",  "After print finished",       NULL},
 };
 
 static lv_img_dsc_t * custom[GIF_SLOT_NUM];  // PSRAM copies of uploaded GIFs
@@ -213,7 +214,7 @@ void knomi_gif_apply_tint(void) {
         for (int s = 0; s < GIF_SLOT_NUM; s++) {
             if (!slot_def[s].builtin) continue;
             bool idle = s >= GIF_SLOT_IDLE1 && s <= GIF_SLOT_IDLE4;
-            if (mode == GIF_TINT_IDLE && !idle) continue;
+            (void)idle;   // "idle faces only" is gone (faces are Coaster): any tint setting tints all
             if (s == GIF_SLOT_PRINT_OK) continue; // keep the success check green
             tinted[s] = make_tinted(slot_def[s].builtin, c.ch.red, c.ch.green, c.ch.blue);
         }
@@ -263,6 +264,11 @@ knomi_gif_slot_t knomi_gif_idle_slot(uint8_t n) {
 void knomi_gif_forget(lv_obj_t * obj) {
     for (int i = 0; i < GIF_OBJ_MAX; i++)
         if (shown[i].obj == obj) shown[i].obj = NULL;
+}
+
+bool knomi_gif_is_face(int s) {
+    return (s >= GIF_SLOT_IDLE1 && s <= GIF_SLOT_IDLE4) || s == GIF_SLOT_PAUSED ||
+           s == GIF_SLOT_HEATED || s == GIF_SLOT_PRINTED;
 }
 
 int knomi_gif_shown_slot(lv_obj_t * obj) {

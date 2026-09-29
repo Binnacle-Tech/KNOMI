@@ -113,7 +113,8 @@ String knomi_html_processor(const String& var){
     } else if (var == "pv_0" || var == "pv_1") {
         value = (knomi_config.print_view == (uint8_t)(var[3] - '0')) ? "selected" : "";
     } else if (var.startsWith("tint_")) {
-        value = (knomi_config.gif_tint == (uint8_t)(var[5] - '0')) ? "selected" : "";
+        uint8_t t = knomi_config.gif_tint ? GIF_TINT_ALL : GIF_TINT_OFF;   // "idle faces only" is gone: faces are Coaster
+        value = (t == (uint8_t)(var[5] - '0')) ? "selected" : "";
     } else if (var == "bt_on" || var == "bt_off") {
         value = (knomi_config.bt_enabled == (var == "bt_on" ? 1 : 0)) ? "selected" : "";
     } else if (var == "wo_1" || var == "wo_0") {
@@ -324,7 +325,7 @@ static String gifs_page(void) {
         "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a><a href='/layout'>Print screen</a><a href='/coaster'>Coaster face</a>"
         "<a href='/update'>Firmware</a></nav>" BINNACLE_MODES "</div></header><main class='wrap'>"
         "<section class='mast'><span class='label'>Animations</span><h1>Animations<span class='dot'>.</span></h1>"
-        "<p class='lede'>Upload a GIF to any slot to replace it. It shows on the display right away. "
+        "<p class='lede'>Upload a GIF to any slot to replace it. It shows on the display right away. Faces aren't here: every face is <a href='/coaster'>Coaster</a>, drawn live. "
         "The screen is a 240&times;240 circle, so keep the subject centered.</p>";
     size_t used = LittleFS.usedBytes(), total = LittleFS.totalBytes();
     unsigned pct = total ? (unsigned)(used * 100 / total) : 0;
@@ -334,6 +335,7 @@ static String gifs_page(void) {
             "<div class='meter' style='max-width:320px'><i style='width:" + String(pct) + "%'></i></div>"
             "<div class='rule'></div></section><div class='slots'>";
     for (int i = 0; i < GIF_SLOT_NUM; i++) {
+        if (knomi_gif_is_face(i)) continue;   // faces are Coaster, drawn live
         knomi_gif_info_t info;
         knomi_gif_get_info((knomi_gif_slot_t)i, &info);
         String n = info.name;
@@ -521,8 +523,6 @@ static void screen_routes(void) {
         c.heated_s = int_param(request, "heated_s", 0, 600, c.heated_s);
         c.print_ok_s = int_param(request, "print_ok_s", 0, 600, c.print_ok_s);
         c.printed_s = int_param(request, "printed_s", 0, 3600, c.printed_s);
-        if (request->hasParam("idle_face", true))
-            coaster_set_idle(request->getParam("idle_face", true)->value() == "1");
         knomi_config_sanitize_screen();
         knomi_config_require_change(LOCAL_POST_SETTINGS);
         knomi_display_settings_dirty = true;
@@ -623,6 +623,7 @@ static void layout_routes(void) {
             knomi_gif_info_t info;
             knomi_gif_get_info((knomi_gif_slot_t)i, &info);
             if (!info.has_builtin && !info.has_custom) continue;
+            if (knomi_gif_is_face(i)) continue;
             if (s[s.length() - 1] != '[') s += ",";
             s += "{\"name\":\"" + String(info.name) + "\",\"label\":\"" + html_escape(info.label) + "\"}";
         }

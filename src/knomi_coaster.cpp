@@ -42,7 +42,7 @@ static void load_tuning(void) {
     f.close();
 }
 
-bool coaster_idle_enabled(void) { return T.idle; }
+bool coaster_idle_enabled(void) { return true; }   // every face is Coaster now
 
 // Web task: save tuning from the /coaster page (unknown keys dropped, values clamped on load)
 const char * coaster_save_json(const char * json, size_t len) {
@@ -102,11 +102,11 @@ static float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b :
 
 enum {
     M_CALM, M_RIDING, M_EXCITED, M_SCREAM, M_STARTLED, M_ELEVATOR, M_SLEEPY,
-    M_BORED, M_SHIVER, M_DIZZY, M_GIGGLE, M_CELEBRATE, M_COUNT
+    M_BORED, M_SHIVER, M_DIZZY, M_GIGGLE, M_CELEBRATE, M_READY, M_COUNT
 };
 static const char * MOOD_NAMES[M_COUNT] = {
     "calm", "riding", "excited", "screaming", "startled", "elevator", "sleepy",
-    "bored", "shivering", "dizzy", "giggle", "celebrate",
+    "bored", "shivering", "dizzy", "giggle", "celebrate", "ready",
 };
 
 // sensing
@@ -117,7 +117,7 @@ static bool from_rest = false;
 // mood
 static int mood = M_CALM;
 static float mood_t = 0;
-static float t_startle = 0, t_dizzy = 0, t_giggle = 0, t_celebrate = 0;
+static float t_startle = 0, t_dizzy = 0, t_giggle = 0, t_celebrate = 0, t_ready = 0;
 // body
 static float hx = 0, hy = 0, hvx = 0, hvy = 0, hs = 0, hvs = 0;
 static float px_ = 0, py_ = 0, pvx = 0, pvy = 0;
@@ -136,6 +136,7 @@ static const expr_t MOODS[M_COUNT] = {
     /* dizzy     */ {0.5f,  1.0f,  0, 1, 14, 0.0f, 0.0f, 0.0f, 0, 1},
     /* giggle    */ {1.0f,  1.05f, 1, 0, 12, 0.8f, 0.0f, 0.8f, 0, 0},
     /* celebrate */ {1.0f,  1.1f,  1, 0, 15, 0.9f, 0.0f, 1.0f, 0, 0},
+    /* ready     */ {1.0f,  1.1f,  0, 0, 13, 0.8f, 0.0f, 0.5f, 0, 0},
 };
 static expr_t E = MOODS[M_CALM];
 static float look = 0, wander_x = 0, wander_tx = 0, wander_t = 0;
@@ -182,6 +183,7 @@ static void head_kick(float vx, float vy) { hvx += vx; hvy += vy; }
 static void pick_mood(float dt, const moonraker_data_t & d) {
     t_startle = max(0.0f, t_startle - dt); t_dizzy = max(0.0f, t_dizzy - dt);
     t_giggle = max(0.0f, t_giggle - dt); t_celebrate = max(0.0f, t_celebrate - dt);
+    t_ready = max(0.0f, t_ready - dt);
     if (step > 1.8f && from_rest && vib < 0.35f && t_startle <= 0 && t_celebrate <= 0) {
         t_startle = 0.7f; blink_now(); head_kick(0, -40);
     }
@@ -192,6 +194,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     int m;
     if (t_celebrate > 0) m = M_CELEBRATE;
     else if (t_giggle > 0) m = M_GIGGLE;
+    else if (t_ready > 0) m = M_READY;
     else if (t_dizzy > 0) m = M_DIZZY;
     else if (t_startle > 0) m = M_STARTLED;
     else if (vib > 0.28f) m = M_SHIVER;
@@ -360,6 +363,7 @@ static void draw_face(lv_event_t * e) {
     float cx = 120 + hx + frand(-jit, jit), cy = 118 + hy + frand(-jit, jit);
     float sx = 1 - hs * 0.5f, sy = 1 + hs;
     if (t_giggle > 0) cy -= fabsf(sinf(now_s * 14)) * 6;
+    if (t_ready > 0) cy -= fabsf(sinf(now_s * 6)) * 4;   // bouncing, ready to go
     if (t_celebrate > 0) cy -= fabsf(sinf(now_s * 9)) * 8;
     cy += sinf(now_s * 1.6f) * 1.5f * (1 - clampf(E.open * 4, 0, 1));   // breathing while asleep
     float blinkk = blink_closing > 0 ? sinf(PI * (1 - blink_closing / 0.16f)) : 0;
@@ -482,3 +486,5 @@ String coaster_state_json(void) {
              );
     return String(buf);
 }
+
+void coaster_event_ready(float secs) { t_ready = secs > 0 ? secs : 0; }
