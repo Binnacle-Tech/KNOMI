@@ -49,6 +49,9 @@ jobs:
       - name: Build
         run: pio run -e knomiv2 -e knomiv1
 
+      - name: Pre-release checks (stack, web routes, tables, page scripts, size)
+        run: python tools/check.py
+
       - name: Collect binaries
         run: |
           mkdir dist

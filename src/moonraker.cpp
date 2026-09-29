@@ -5,6 +5,7 @@
 #include "octoprint_ws.h"
 #include "knomi_ble.h"
 #include "knomi_coaster.h"
+#include "knomi_health.h"
 #include "knomi_update.h"
 
 // #define MOONRAKER_DEBUG
@@ -619,7 +620,7 @@ void moonraker_task(void * parameter) {
         8192,  // HTTP + the Coaster sidebar JSON  // Stack size (bytes)
         NULL,  // Parameter to pass
         8,     // Task priority
-        NULL   // Task handle
+        &knomi_tasks[KT_POST]   // Task handle
         );
 
     uint32_t next_poll = 0;

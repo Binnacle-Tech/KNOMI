@@ -30,6 +30,7 @@ Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print
 - **Printing screen with useful info:** time left, nozzle/bed temps, Z height and layer (on OctoPrint the plugin works the layer out from the file, like the G-code viewer), file name.
 - **Coaster, the mascot:** every face on the KNOMI is drawn live from the accelerometer and printer state, with quirks, lasting feelings, its own likes and dislikes, learned habits and seasonal decorations (see above).
 - **One-click updates** from GitHub, straight from the KNOMI's settings page.
+- **Self-rescue:** if new firmware crashes three times right after starting, the KNOMI goes back to the firmware it had before, no USB cable needed.
 - **Log page** at `/log` for troubleshooting without a USB cable.
 - **Display messages:** `M117` / `SET_DISPLAY_TEXT` show as Coaster speech bubbles.
 - **Print screen designer:** a drag-and-drop editor on the KNOMI's web page. Place text with live values, progress rings, gauges, bars and animations, and rotate between up to 4 pages (e.g. a face most of the time, stats every 30 s).
@@ -101,6 +102,13 @@ No. It's a community fork of their open firmware source.
 pio pkg install -e knomiv2
 cp "lv_disp_(bugfix_backup).c" .pio/libdeps/knomiv2/lvgl/src/core/lv_disp.c   # LVGL display fix
 pio run -e knomiv2
+```
+
+Before releasing, run the checks (GitHub Actions runs them too and won't publish a release that fails):
+
+```
+python tools/check.py --build                       # stack per task, web routes, tables, page scripts, size
+python tools/check.py --device <knomi-ip> --soak 180   # after flashing: watches it for 3 minutes
 ```
 
 Output: `.pio/build/knomiv2/firmware.bin`. Flash it from `/update`, or with `pio run -e knomiv2 -t upload` over USB. Use `-e knomiv1` for the KNOMI 1.

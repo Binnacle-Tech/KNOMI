@@ -1,6 +1,8 @@
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include <AsyncElegantOTA.h>
+#include <esp_ota_ops.h>
+#include "knomi_health.h"
 #include <ESPmDNS.h>
 
 #include "knomi.h"
@@ -685,7 +687,7 @@ static void log_routes(void) {
         request->send(200, "text/plain", "ok");
     });
     server.on("/log/info", HTTP_GET, [](AsyncWebServerRequest *request){
-        StaticJsonDocument<768> d;
+        DynamicJsonDocument d(1536);
         d["fw"] = FW_VERSION;
 #ifdef KNOMIV1
         d["board"] = "KNOMI 1";
@@ -703,9 +705,15 @@ static void log_routes(void) {
         d["backend"] = knomi_config.backend;
         d["host"] = String(knomi_config.moonraker_ip) + ":" + knomi_config.moonraker_port;
         String st = coaster_state_json();
-        StaticJsonDocument<256> cs;
+        DynamicJsonDocument cs(3072);
         deserializeJson(cs, st);
         d["mood"] = cs["mood"] | "?";
+        // free stack per task (bytes never used so far): tools/check.py warns when one runs low
+        static const char * tn[KNOMI_TASKS] = {"ui", "accel", "wifi", "printer", "post"};
+        JsonObject stacks = d.createNestedObject("stacks");
+        for (int i = 0; i < KNOMI_TASKS; i++) if (knomi_tasks[i]) stacks[tn[i]] = uxTaskGetStackHighWaterMark(knomi_tasks[i]);
+        const esp_partition_t * run = esp_ota_get_running_partition();
+        d["slot"] = run ? run->label : "?";
         d["fs_used"] = LittleFS.usedBytes();
         d["fs_total"] = LittleFS.totalBytes();
         String out;

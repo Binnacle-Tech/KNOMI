@@ -178,9 +178,15 @@ Printer polling pauses while it downloads. If it fails, the old firmware keeps r
 
 Manual updates still work: upload a .bin at `/update`.
 
+**Self-rescue:** if new firmware crashes three times in a row, each within a minute of starting, the KNOMI switches back
+to the firmware in its other slot (the one it had before the update) and says so in the log. It only does this once, so
+two broken versions can't bounce back and forth; unplugging it resets the count. If both slots are broken, flash over USB:
+hold BOOT while plugging it in, then write `boot_app0.bin` at `0xe000` and the firmware at `0x10000` with
+[esptool-js](https://espressif.github.io/esptool-js/).
+
 ## Log
 `http://<knomi-ip>/log` shows what the KNOMI prints to its serial port (the last 32 KB, with uptime stamps), plus
-firmware, memory, WiFi, printer connection and why it last restarted. **Download** saves it as a text file to send
+firmware, memory, WiFi, printer connection, why it last restarted, which firmware slot it's running from and how much stack each task has left. **Download** saves it as a text file to send
 along with a bug report. Passwords and API keys are never logged.
 
 ## WiFi behaviour
