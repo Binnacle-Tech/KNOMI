@@ -114,7 +114,9 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 
 **Report card:** after a print, the "after the print" screen shows how the ride went: done or where it stopped, how many times Coaster screamed, peak g, dizzy spells and jolts. The last one is also on the /coaster page and in the OctoPrint sidebar.
 
-**Hats:** a party hat at New Year, a Santa hat in December and a witch hat at the end of October (the date comes from the internet once the KNOMI is on WiFi). Pick a hat or turn them off on the /coaster page.
+**Decorations** change with the seasons: holiday lights, snow and a Santa hat in December, fireworks at New Year and on the 4th of July, hearts around Valentine's, petals in spring, sunglasses in summer, falling leaves in autumn, a witch hat and bats for Halloween, and a party hat on Coaster's birthday (September 28, changeable). Holidays last a few days, not just the date. On the /coaster page you can pick one by hand, turn them off, choose the lights' colors and effect, switch to the southern hemisphere, and try any date. The date comes from the internet once the KNOMI is on WiFi.
+
+**Quirks:** every few seconds Coaster does something small on its own, printing or not: glances around, blinks, winks, yawns, hums, sneezes, stretches, rolls its eyes. It nods at each layer change and cheers at 25, 50 and 75 %. Each KNOMI gets its own personality from its chip ID.
 
 **OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood and the last report card. The KNOMI sends its mood to the plugin (over WiFi or Bluetooth).
 

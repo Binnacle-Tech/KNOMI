@@ -23,9 +23,25 @@
 typedef struct {
     float wobble, settle, sense, habit, scare, dizzy, sleep;
     bool idle;
-    uint8_t hat;   // 0 seasonal, 1 off, 2 party, 3 santa, 4 witch
+    uint8_t deco;       // DECO_AUTO, DECO_OFF or one decoration (see DECO_KEYS)
+    uint8_t lights;     // holiday light colors (LIGHT_KEYS)
+    uint8_t anim;       // holiday light effect (ANIM_KEYS)
+    bool south;         // southern hemisphere: weather seasons flip
+    uint8_t bday_m, bday_d;
+    int16_t tz_min;     // offset from UTC, from the browser that saved the settings
 } coaster_tune_t;
-static const coaster_tune_t TUNE_DEF = {2.0f, 0.2f, 1.0f, 20.0f, 0.6f, 5.0f, 20.0f, true, 0}; // Coaster is the mascot: on by default
+// decorations: "auto" follows the date, "off", or one picked by hand
+enum { DECO_AUTO, DECO_OFF, D_HOLIDAYS, D_NEWYEAR, D_WINTER, D_VALENTINE, D_SPRING, D_SUMMER, D_JULY4,
+       D_AUTUMN, D_HALLOWEEN, D_BIRTHDAY, DECO_COUNT };
+static const char * DECO_KEYS[DECO_COUNT] = {"auto", "off", "holidays", "newyear", "winter", "valentine", "spring",
+                                             "summer", "july4", "autumn", "halloween", "birthday"};
+static const char * LIGHT_KEYS[] = {"classic", "warm", "theme", "candy", "rainbow"};
+static const char * ANIM_KEYS[] = {"twinkle", "chase", "breathe", "steady"};
+static int key_index(const char * v, const char * const * keys, int n, int fallback) {
+    if (v) for (int i = 0; i < n; i++) if (strcmp(v, keys[i]) == 0) return i;
+    return fallback;
+}
+static const coaster_tune_t TUNE_DEF = {2.0f, 0.2f, 1.0f, 20.0f, 0.6f, 5.0f, 20.0f, true, DECO_AUTO, 0, 0, false, 9, 28, 0}; // Coaster is the mascot: on by default
 // OP18: sensitivity 1.0 now moves the head as much as 3.0 did before (tuned on recorded prints)
 #define SENSE_K  3.0f
 #define BOUNCE   6.0f    // px per compressed g: the head jiggles along with the toolhead
@@ -36,7 +52,7 @@ static void load_tuning(void) {
     T = TUNE_DEF;
     File f = LittleFS.open(COASTER_PATH, "r");
     if (!f) return;
-    StaticJsonDocument<512> d;
+    StaticJsonDocument<768> d;
     if (deserializeJson(d, f) == DeserializationError::Ok) {
         T.wobble = constrain(d["wobble"] | T.wobble, 0.8f, 6.0f);
         T.settle = constrain(d["settle"] | T.settle, 0.05f, 1.0f);
@@ -48,7 +64,17 @@ static void load_tuning(void) {
         T.dizzy  = constrain(d["dizzy"]  | T.dizzy,  1.0f, 20.0f);
         T.sleep  = constrain(d["sleep"]  | T.sleep,  5.0f, 120.0f);
         T.idle   = d["idle"] | true;
-        T.hat    = constrain((int)(d["hat"] | 0), 0, 4);
+        T.deco   = key_index(d["deco"] | (const char *)NULL, DECO_KEYS, DECO_COUNT, DECO_AUTO);
+        if (!d.containsKey("deco") && d.containsKey("hat")) {   // saved before decorations: 1 off, 2 party, 3 Santa, 4 witch
+            static const uint8_t from_hat[] = {DECO_AUTO, DECO_OFF, D_NEWYEAR, D_HOLIDAYS, D_HALLOWEEN};
+            T.deco = from_hat[constrain((int)(d["hat"] | 0), 0, 4)];
+        }
+        T.lights = key_index(d["lights"] | (const char *)NULL, LIGHT_KEYS, 5, 0);
+        T.anim   = key_index(d["anim"] | (const char *)NULL, ANIM_KEYS, 4, 0);
+        T.south  = strcmp(d["hemi"] | "n", "s") == 0;
+        int bm = 0, bd = 0;
+        if (sscanf(d["bday"] | "", "%d-%d", &bm, &bd) == 2 && bm >= 1 && bm <= 12 && bd >= 1 && bd <= 31) { T.bday_m = bm; T.bday_d = bd; }
+        T.tz_min = constrain((int)(d["tz"] | 0), -840, 840);
     }
     f.close();
 }
@@ -60,10 +86,13 @@ const char * coaster_save_json(const char * json, size_t len) {
     if (len > 1024) return "Too large";
     StaticJsonDocument<512> in;
     if (deserializeJson(in, json, len) != DeserializationError::Ok) return "Not valid JSON";
-    StaticJsonDocument<384> out;
+    StaticJsonDocument<768> out;
     static const char * keys[] = {"wobble", "settle", "sense", "habit", "scare", "dizzy", "sleep"};
     for (const char * k : keys) if (in[k].is<float>()) out[k] = in[k].as<float>();
-    if (in["hat"].is<int>()) out["hat"] = constrain(in["hat"].as<int>(), 0, 4);
+    // decorations (strings are checked against the known keys when loaded)
+    for (const char * k : {"deco", "lights", "anim", "hemi", "bday"})
+        if (in[k].is<const char *>()) out[k] = String(in[k].as<const char *>()).substring(0, 12);
+    if (in["tz"].is<int>()) out["tz"] = constrain(in["tz"].as<int>(), -840, 840);
     out["v"] = 2;
     out["idle"] = in.containsKey("idle") ? (bool)(in["idle"] | false) : T.idle;
     File f = LittleFS.open(COASTER_PATH, "w");
@@ -76,7 +105,7 @@ const char * coaster_save_json(const char * json, size_t len) {
 
 // Web task: the settings page's "Idle screen" choice
 void coaster_set_idle(bool on) {
-    StaticJsonDocument<384> d;
+    StaticJsonDocument<768> d;
     File f = LittleFS.open(COASTER_PATH, "r");
     if (f) { deserializeJson(d, f); f.close(); }
     d["idle"] = on;
@@ -89,10 +118,12 @@ void coaster_set_idle(bool on) {
 }
 
 String coaster_tuning_json(void) {
-    char buf[200];
+    char buf[320];
     snprintf(buf, sizeof(buf),
-             "{\"wobble\":%.2f,\"settle\":%.2f,\"sense\":%.2f,\"habit\":%.0f,\"scare\":%.2f,\"dizzy\":%.1f,\"sleep\":%.0f,\"idle\":%s,\"hat\":%d}",
-             T.wobble, T.settle, T.sense, T.habit, T.scare, T.dizzy, T.sleep, T.idle ? "true" : "false", T.hat);
+             "{\"wobble\":%.2f,\"settle\":%.2f,\"sense\":%.2f,\"habit\":%.0f,\"scare\":%.2f,\"dizzy\":%.1f,\"sleep\":%.0f,\"idle\":%s,"
+             "\"deco\":\"%s\",\"lights\":\"%s\",\"anim\":\"%s\",\"hemi\":\"%s\",\"bday\":\"%02u-%02u\",\"tz\":%d}",
+             T.wobble, T.settle, T.sense, T.habit, T.scare, T.dizzy, T.sleep, T.idle ? "true" : "false",
+             DECO_KEYS[T.deco], LIGHT_KEYS[T.lights], ANIM_KEYS[T.anim], T.south ? "s" : "n", T.bday_m, T.bday_d, T.tz_min);
     return String(buf);
 }
 void coaster_request_reload(void) { reload_pending = true; }
@@ -428,8 +459,17 @@ static int quirk_pick(void) {
         case M_ANTICIPATE:
             w[Q_GLANCE] = 1; w[Q_HUM] = 1.5f * tr_musical; w[Q_WINK] = 1 * tr_silly;
             break;
-        default:
-            return Q_NONE;
+        case M_SCREAM: case M_STARTLED: case M_DIZZY: case M_WHEE: case M_SHIVER:
+            w[Q_DBLINK] = 1; w[Q_GLANCE] = 0.5f * tr_curious;   // busy hanging on: only quick ones
+            break;
+        case M_HEATING:
+            w[Q_GLANCE] = 1.5f * tr_curious; w[Q_DBLINK] = 1; w[Q_LOOKUP] = 1 * tr_curious; w[Q_SNEEZE] = 0.6f * tr_silly;
+            break;
+        default:   // any other mood, printing or not
+            w[Q_GLANCE] = 2 * tr_curious; w[Q_DBLINK] = 1.5f; w[Q_WINK] = 0.8f * tr_silly; w[Q_HUM] = 1.2f * tr_musical;
+            w[Q_LOOKUP] = 0.8f * tr_curious; w[Q_SLOWBLINK] = 0.6f * tr_sleepy;
+            if (printing) w[Q_YAWN] = 0.4f * tr_sleepy;
+            break;
     }
     // heating smells: the odd sneeze while the nozzle is hot
     if (moonraker.data.nozzle_actual > 180) w[Q_SNEEZE] += 0.3f * tr_silly;
@@ -443,9 +483,8 @@ static int quirk_pick(void) {
 
 static void step_quirks(float dt) {
     QF = {0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0};
-    bool free_mood = mood == M_CALM || mood == M_RIDING || mood == M_FOCUS || mood == M_BORED ||
-                     mood == M_COOLING || mood == M_SLEEPY || mood == M_ANTICIPATE;
-    bool busy = act != ACT_NONE || (int32_t)(bubble_until - millis()) > 0;
+    // quirks happen any time, printing or not; only a speech bubble (it's talking) holds them off
+    bool busy = (int32_t)(bubble_until - millis()) > 0;
     // tiny eye darts, like it's actually looking at things
     sacc_t -= dt;
     if (sacc_t <= 0) {
@@ -454,14 +493,14 @@ static void step_quirks(float dt) {
     }
     float ks = 1 - expf(-dt * 30);
     sacc_x += (sacc_tx - sacc_x) * ks; sacc_y += (sacc_ty - sacc_y) * ks;
-    if (free_mood && mood != M_SLEEPY) { QF.look = sacc_x; QF.look_y = sacc_y; }
+    if (mood != M_SLEEPY && mood != M_DIZZY && act != ACT_PROBING) { QF.look = sacc_x; QF.look_y = sacc_y; }
 
-    if (quirk != Q_NONE && ((!free_mood && quirk != Q_CHEER && quirk != Q_NOD) || busy)) quirk = Q_NONE;
+    if (quirk != Q_NONE && busy && quirk != Q_CHEER && quirk != Q_NOD) quirk = Q_NONE;
     if (quirk == Q_NONE) {
-        if (!free_mood || busy) { quirk_next = max(quirk_next, 2.0f); return; }
+        if (busy) { quirk_next = max(quirk_next, 2.0f); return; }
         quirk_next -= dt;
         if (quirk_next > 0) return;
-        quirk_next = frand(4, 13) * (mood == M_RIDING ? 1.6f : 1.0f);
+        quirk_next = frand(4, 13);
         int q = quirk_pick();
         if (q == Q_NONE) return;
         quirk_start(q);
@@ -729,31 +768,298 @@ static void draw_mouth(const pen_t & p, float mx, float my) {
 
 static bool ntp_started = false;
 
-// which hat today: party on New Year, Santa in December, witch at the end of October
-static int hat_today(void) {
-    if (T.hat == 1) return 0;
-    if (T.hat >= 2) return T.hat - 1;
-    time_t now = time(NULL);
-    if (now < 1700000000) return 0;   // clock not set yet
-    struct tm t;
-    gmtime_r(&now, &t);
-    int mon = t.tm_mon + 1, day = t.tm_mday;
-    if ((mon == 12 && day == 31) || (mon == 1 && day == 1)) return 1;
-    if (mon == 12 && day <= 26) return 2;
-    if (mon == 10 && day >= 20) return 3;
-    return 0;
+// ---- decorations: seasons are windows, not single days ----
+// Holidays go by date anywhere; the weather ones (snow, petals, sunglasses, leaves)
+// flip with the hemisphere.
+static bool in_window(int m, int d, int m0, int d0, int m1, int d1) {
+    int v = m * 100 + d, a = m0 * 100 + d0, b = m1 * 100 + d1;
+    return a <= b ? (v >= a && v <= b) : (v >= a || v <= b);
 }
 
-static void fill_poly(const pen_t & p, const float * xy, int n, lv_color_t col) {
-    lv_point_t pts[6];
-    for (int i = 0; i < n && i < 6; i++) pts[i] = {X(p, xy[2 * i]), Y(p, xy[2 * i + 1])};
-    lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d); d.bg_color = col;
+static int deco_for(int m, int d) {
+    if (m == T.bday_m && d == T.bday_d) return D_BIRTHDAY;
+    if (in_window(m, d, 12, 31, 1, 1)) return D_NEWYEAR;
+    if (in_window(m, d, 12, 1, 12, 30)) return D_HOLIDAYS;
+    if (in_window(m, d, 10, 20, 10, 31)) return D_HALLOWEEN;
+    if (in_window(m, d, 2, 10, 2, 14)) return D_VALENTINE;
+    if (in_window(m, d, 7, 1, 7, 5)) return D_JULY4;
+    static const uint8_t north[12] = {D_WINTER, D_WINTER, D_SPRING, D_SPRING, D_SPRING, D_SUMMER,
+                                      D_SUMMER, D_SUMMER, D_AUTUMN, D_AUTUMN, D_AUTUMN, D_WINTER};
+    int k = north[m - 1];
+    if (T.south) k = k == D_WINTER ? D_SUMMER : k == D_SUMMER ? D_WINTER : k == D_SPRING ? D_AUTUMN : D_SPRING;
+    return k;
+}
+
+static int deco_today(void) {
+    if (T.deco == DECO_OFF) return 0;
+    if (T.deco != DECO_AUTO) return T.deco;
+    time_t now = time(NULL);
+    if (now < 1700000000) return 0;   // clock not set yet
+    now += T.tz_min * 60;
+    struct tm t;
+    gmtime_r(&now, &t);
+    return deco_for(t.tm_mon + 1, t.tm_mday);
+}
+
+// southern Christmas is summer: lights, no snow
+static bool deco_snowy(int k) { return k == D_WINTER || (k == D_HOLIDAYS && !(T.deco == DECO_AUTO && T.south)); }
+
+// the old hat numbers, for the OctoPrint sidebar: 1 party, 2 Santa, 3 witch
+static int hat_today(void) {
+    int k = deco_today();
+    return (k == D_NEWYEAR || k == D_BIRTHDAY) ? 1 : k == D_HOLIDAYS ? 2 : k == D_HALLOWEEN ? 3 : 0;
+}
+
+enum { P_SNOW, P_PETAL, P_LEAF, P_HEART };
+typedef struct { float x, y, ph, rot, vr, vy, r; uint8_t kind; uint32_t col; } deco_part_t;
+static deco_part_t dparts[36];
+static uint8_t dparts_n = 0;
+typedef struct { float x, y, vx, vy; } spark_t;
+typedef struct { float x, y, ty, life; uint32_t col; bool burst; spark_t sp[24]; } rocket_t;
+static rocket_t rockets[3];
+static uint8_t rockets_n = 0;
+static int deco_kind = -1;
+static float deco_spawn = 0, rocket_t_next = 1, shades = 0, shades_t = 40, bday_conf_t = 6;
+static bool shades_on = false;
+static uint32_t deco_check_ms = 0;
+static int deco_cached = 0;
+
+static void step_deco(float dt) {
+    if (millis() - deco_check_ms > 5000 || deco_kind < 0) { deco_check_ms = millis(); deco_cached = deco_today(); }
+    int k = deco_cached;
+    if (k != deco_kind) { deco_kind = k; dparts_n = 0; rockets_n = 0; }
+    // falling / floating things
+    bool snow = deco_snowy(k);
+    int want = snow ? (k == D_WINTER ? 30 : 24) : k == D_SPRING ? 14 : k == D_AUTUMN ? 12 : k == D_VALENTINE ? 10 : 0;
+    if (!want) dparts_n = 0;
+    deco_spawn -= dt;
+    if (dparts_n < want && deco_spawn <= 0) {
+        deco_spawn = k == D_VALENTINE ? 0.5f : 0.25f;
+        deco_part_t q = {frand(10, 230), -8, frand(0, 6.28f), frand(0, 6.28f), frand(-2, 2), 0, 0, 0, 0};
+        if (snow) { q.kind = P_SNOW; q.r = frand(1, 2.4f); q.vy = frand(14, 30); q.col = 0xE7EEF4; }
+        else if (k == D_SPRING) { q.kind = P_PETAL; q.vy = frand(10, 18); q.col = (esp_random() & 1) ? 0xF8BBD0 : 0xF48FB1; }
+        else if (k == D_AUTUMN) { static const uint32_t c[] = {0xE65100, 0xF9A825, 0xBF360C, 0xA1887F}; q.kind = P_LEAF; q.vy = frand(16, 26); q.col = c[esp_random() % 4]; }
+        else { q.kind = P_HEART; q.y = 250; q.vy = -frand(10, 18); q.r = frand(3.5f, 6); q.col = (esp_random() & 1) ? 0xE53935 : 0xF48FB1; }
+        dparts[dparts_n++] = q;
+    }
+    for (int i = 0; i < dparts_n; i++) {
+        deco_part_t & q = dparts[i];
+        q.ph += dt; q.y += q.vy * dt; q.rot += q.vr * dt;
+        q.x += sinf(q.ph * (q.kind == P_LEAF ? 2.2f : 1.3f)) * (q.kind == P_SNOW ? 8 : 16) * dt;
+        if (q.y > 250 || q.y < -20 || q.x < -20 || q.x > 260) dparts[i--] = dparts[--dparts_n];
+    }
+    // fireworks
+    if (k == D_NEWYEAR || k == D_JULY4) {
+        rocket_t_next -= dt;
+        if (rocket_t_next <= 0 && rockets_n < 3) {
+            rocket_t_next = frand(0.9f, 2.2f);
+            static const uint32_t ny[] = {0xFFD54F, 0xFFB300, 0xF5F5F5, 0xE53935, 0x4FC3F7}, us[] = {0xE53935, 0xF5F5F5, 0x42A5F5};
+            rocket_t & r = rockets[rockets_n++];
+            r = {frand(50, 190), 250, frand(30, 95), 0, k == D_JULY4 ? us[esp_random() % 3] : ny[esp_random() % 5], false};
+        }
+        for (int i = 0; i < rockets_n; i++) {
+            rocket_t & r = rockets[i];
+            if (!r.burst) {
+                r.y -= 180 * dt;
+                if (r.y <= r.ty) {
+                    r.burst = true; r.life = 1.1f;
+                    for (int j = 0; j < 24; j++) {
+                        float a = j / 24.0f * 2 * PI + frand(-0.05f, 0.05f), v = frand(62, 70);
+                        r.sp[j] = {r.x, r.y, cosf(a) * v, sinf(a) * v};
+                    }
+                }
+            } else {
+                r.life -= dt;
+                float dr = expf(-dt * 2.2f);
+                for (int j = 0; j < 24; j++) {
+                    spark_t & sp = r.sp[j];
+                    sp.vx *= dr; sp.vy = sp.vy * dr + 28 * dt; sp.x += sp.vx * dt; sp.y += sp.vy * dt;
+                }
+                if (r.life <= 0) rockets[i--] = rockets[--rockets_n];
+            }
+        }
+    } else rockets_n = 0;
+    // summer: puts sunglasses on now and then and keeps them on a while
+    if (k == D_SUMMER || k == D_JULY4) {
+        shades_t -= dt;
+        if (shades_t <= 0 && (mood == M_CALM || mood == M_RIDING || shades_on)) {
+            shades_on = !shades_on;
+            shades_t = shades_on ? frand(15, 30) : frand(40, 120);
+        }
+    } else shades_on = false;
+    shades += ((shades_on ? 1.0f : 0.0f) - shades) * (1 - expf(-dt * 5));
+    // birthday: confetti every so often
+    if (k == D_BIRTHDAY) {
+        bday_conf_t -= dt;
+        if (bday_conf_t <= 0) { bday_conf_t = frand(10, 20); spawn_confetti(); }
+    }
+}
+
+static void fill_poly(const pen_t & p, const float * xy, int n, lv_color_t col, lv_opa_t opa = LV_OPA_COVER) {
+    lv_point_t pts[8];
+    n = min(n, 8);
+    for (int i = 0; i < n; i++) pts[i] = {X(p, xy[2 * i]), Y(p, xy[2 * i + 1])};
+    lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d); d.bg_color = col; d.bg_opa = opa;
     lv_draw_polygon(p.ctx, &d, pts, n);
 }
+
+static void dot(const pen_t & p, float cx, float cy, float rx, float ry, lv_color_t col, lv_opa_t opa) {
+    if (rx * p.s < 0.5f) return;
+    lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
+    d.bg_color = col; d.bg_opa = opa; d.radius = LV_RADIUS_CIRCLE;
+    lv_area_t a = {X(p, cx - rx), Y(p, cy - ry), X(p, cx + rx), Y(p, cy + ry)};
+    lv_draw_rect(p.ctx, &d, &a);
+}
+
+static void cline(const pen_t & p, float x0, float y0, float x1, float y1, float w, lv_color_t col, lv_opa_t opa) {
+    lv_draw_line_dsc_t d; lv_draw_line_dsc_init(&d);
+    d.color = col; d.width = max(1, (int)lroundf(w * p.s)); d.round_start = 1; d.round_end = 1; d.opa = opa;
+    lv_point_t a = {X(p, x0), Y(p, y0)}, b = {X(p, x1), Y(p, y1)};
+    lv_draw_line(p.ctx, &d, &a, &b);
+}
+
+// a rotated ellipse as a hexagon (petals, leaves, bulbs)
+static void blob(const pen_t & p, float cx, float cy, float rx, float ry, float rot, lv_color_t col, lv_opa_t opa) {
+    float xy[12], c = cosf(rot), sn = sinf(rot);
+    for (int i = 0; i < 6; i++) {
+        float a = i * PI / 3, ex = cosf(a) * rx, ey = sinf(a) * ry;
+        xy[2 * i] = cx + ex * c - ey * sn; xy[2 * i + 1] = cy + ex * sn + ey * c;
+    }
+    fill_poly(p, xy, 6, col, opa);
+}
+
+/* decorations behind the face */
+static void draw_deco_back(const pen_t & p) {
+    for (int i = 0; i < dparts_n; i++) {
+        const deco_part_t & q = dparts[i];
+        lv_color_t c = lv_color_hex(q.col);
+        switch (q.kind) {
+            case P_SNOW: dot(p, q.x, q.y, q.r, q.r, c, 215); break;
+            case P_PETAL: blob(p, q.x, q.y, 3.6f, 2, q.rot, c, LV_OPA_COVER); break;
+            case P_LEAF:
+                blob(p, q.x, q.y, 5.5f, 2.8f, q.rot, c, LV_OPA_COVER);
+                cline(p, q.x + cosf(q.rot) * 5, q.y + sinf(q.rot) * 5, q.x + cosf(q.rot) * 8, q.y + sinf(q.rot) * 8, 1.2f, c, LV_OPA_COVER);
+                break;
+            case P_HEART: {
+                lv_opa_t op = (lv_opa_t)(230 * clampf((q.y - 10) / 60, 0, 1));
+                float r = q.r;
+                dot(p, q.x - r * 0.5f, q.y, r * 0.55f, r * 0.55f, c, op);
+                dot(p, q.x + r * 0.5f, q.y, r * 0.55f, r * 0.55f, c, op);
+                float tri_[] = {q.x - r * 1.03f, q.y + r * 0.1f, q.x + r * 1.03f, q.y + r * 0.1f, q.x, q.y + r * 1.1f};
+                fill_poly(p, tri_, 3, c, op);
+                break;
+            }
+        }
+    }
+    for (int i = 0; i < rockets_n; i++) {
+        const rocket_t & r = rockets[i];
+        lv_color_t c = lv_color_hex(r.col);
+        if (!r.burst) { dot(p, r.x, r.y, 1.8f, 1.8f, c, LV_OPA_COVER); cline(p, r.x, r.y + 3, r.x, r.y + 10, 1.6f, c, 100); continue; }
+        lv_opa_t op = (lv_opa_t)(255 * clampf(r.life / 0.7f, 0, 1));
+        for (int j = 0; j < 24; j++) {
+            const spark_t & sp = r.sp[j];
+            cline(p, sp.x, sp.y, sp.x - sp.vx * 0.12f, sp.y - sp.vy * 0.12f, 1.4f, c, op / 2);
+            dot(p, sp.x, sp.y, 1.9f, 1.9f, c, op);
+        }
+    }
+}
+
+// the string of holiday lights along the top
+static lv_color_t bulb_color(int i, lv_color_t theme) {
+    static const uint32_t classic[] = {0xE53935, 0x43A047, 0x1E88E5, 0xFDD835, 0xFB8C00}, candy[] = {0xE53935, 0xF5F5F5};
+    switch (T.lights) {
+        case 1: return lv_color_hex(0xFFD27A);
+        case 2: return theme;
+        case 3: return lv_color_hex(candy[i % 2]);
+        case 4: return lv_color_hsv_to_rgb((uint16_t)fmodf(i * 40 + now_s * 40, 360), 75, 100);
+        default: return lv_color_hex(classic[i % 5]);
+    }
+}
+
+static float bulb_level(int i, int n) {
+    switch (T.anim) {
+        case 3: return 1;
+        case 1: { float c = max(0.0f, cosf((float)i / n * 2 * PI * 2 - now_s * 4)); return 0.25f + 0.75f * c * c; }
+        case 2: return 0.35f + 0.65f * (0.5f + 0.5f * sinf(now_s * 1.6f + (i % 2) * PI));
+        default: {
+            float h = sinf(i * 91.7f + floorf(now_s * 3 + i * 0.37f) * 13.1f) * 43758.5f;
+            h -= floorf(h);
+            return h < 0.22f ? 0.25f : 1;
+        }
+    }
+}
+
+static void draw_lights(const pen_t & p) {
+    const int N = 6;
+    float hk[N + 1][2];
+    for (int i = 0; i <= N; i++) { float a = PI * (1.16f + 0.68f * i / N); hk[i][0] = 120 + cosf(a) * 116; hk[i][1] = 122 + sinf(a) * 116; }
+    lv_color_t wire = lv_color_hex(0x2E3B2F);
+    int bi = 0;
+    for (int j = 0; j < N; j++) {
+        float mx = (hk[j][0] + hk[j + 1][0]) / 2, my = (hk[j][1] + hk[j + 1][1]) / 2, dx = 120 - mx, dy = 122 - my, dl = sqrtf(dx * dx + dy * dy);
+        float c0 = mx + dx / dl * 11, c1 = my + dy / dl * 11;
+        float px = hk[j][0], py = hk[j][1];
+        for (int s2 = 1; s2 <= 8; s2++) {   // the sagging wire
+            float t = s2 / 8.0f, u = 1 - t;
+            float x = u * u * hk[j][0] + 2 * u * t * c0 + t * t * hk[j + 1][0], y = u * u * hk[j][1] + 2 * u * t * c1 + t * t * hk[j + 1][1];
+            cline(p, px, py, x, y, 1.6f, wire, LV_OPA_COVER);
+            px = x; py = y;
+        }
+        float rot = atan2f(dy, dx) - PI / 2;
+        for (float t : {0.3f, 0.7f}) {
+            float u = 1 - t;
+            float x = u * u * hk[j][0] + 2 * u * t * c0 + t * t * hk[j + 1][0], y = u * u * hk[j][1] + 2 * u * t * c1 + t * t * hk[j + 1][1];
+            float lv = bulb_level(bi, N * 2);
+            lv_color_t col = bulb_color(bi, p.fc);
+            float bxp = x - sinf(rot) * 6.5f, byp = y + cosf(rot) * 6.5f;   // bulb hangs off the wire
+            cline(p, x, y, x - sinf(rot) * 2, y + cosf(rot) * 2, 3.4f, wire, LV_OPA_COVER);
+            dot(p, bxp, byp, 8.5f, 8.5f, col, (lv_opa_t)(56 * lv));        // glow
+            blob(p, bxp, byp, 4.8f, 3.4f, rot + PI / 2, col, (lv_opa_t)(90 + 165 * lv));
+            bi++;
+        }
+    }
+}
+
+static void draw_bats(const pen_t & p) {
+    for (int i = 0; i < 3; i++) {
+        float t = fmodf(now_s * 0.09f + i / 3.0f, 1), x = -20 + t * 280, y = 46 + i * 16 + sinf(now_s * 1.7f + i * 2) * 10, f = sinf(now_s * 14 + i * 3);
+        dot(p, x, y, 2.4f, 2.4f, p.fc, LV_OPA_COVER);
+        cline(p, x - 2, y, x - 6, y - 3 - f * 4, 1.8f, p.fc, LV_OPA_COVER); cline(p, x - 6, y - 3 - f * 4, x - 11, y - f * 2, 1.8f, p.fc, LV_OPA_COVER);
+        cline(p, x + 2, y, x + 6, y - 3 - f * 4, 1.8f, p.fc, LV_OPA_COVER); cline(p, x + 6, y - 3 - f * 4, x + 11, y - f * 2, 1.8f, p.fc, LV_OPA_COVER);
+    }
+}
+
+static void draw_flower(const pen_t & p, float x, float y) {
+    for (int i = 0; i < 5; i++) { float a = i / 5.0f * 2 * PI + 0.3f; dot(p, x + cosf(a) * 4.6f, y + sinf(a) * 4.6f, 3.4f, 3.4f, lv_color_hex(0xF48FB1), LV_OPA_COVER); }
+    dot(p, x, y, 2.8f, 2.8f, lv_color_hex(0xFDD835), LV_OPA_COVER);
+}
+
+static void draw_shades(const pen_t & p, float cx, float ey, float sx) {
+    if (shades < 0.02f) return;
+    float drop = (1 - shades) * -40;
+    lv_opa_t op = (lv_opa_t)(255 * clampf(shades * 1.5f, 0, 1));
+    for (int s2 = -1; s2 <= 1; s2 += 2) {
+        float x = cx + s2 * 54 * sx, t = ey - 11 + drop;
+        float lens[] = {x - 31, t, x + 31, t, x + 28, t + 14, x + 14, t + 25, x - 14, t + 25, x - 28, t + 14};
+        fill_poly(p, lens, 6, p.fc, op);
+        cline(p, x - 14, ey - 5 + drop, x - 6, ey - 5 + drop, 2, lv_color_black(), op * 7 / 10);   // glint
+    }
+    cline(p, cx - 24 * sx, ey - 8 + drop, cx, ey - 12 + drop, 3, p.fc, op);
+    cline(p, cx, ey - 12 + drop, cx + 24 * sx, ey - 8 + drop, 3, p.fc, op);
+}
+
 
 static void draw_hat(const pen_t & p, float cx, float cy, float sx, float sy) {
     int h = hat_today();
     if (!h) return;
+    if (h == 2) {               // Santa hat: white trim and pompom
+        float top = cy - 50 * sy;
+        float c[] = {cx - 30, top, cx + 30, top, cx + 44, top - 34};
+        fill_poly(p, c, 3, p.fc);
+        fill_rect(p, cx - 34, top - 2, cx + 34, top + 8, lv_color_hex(0xE7EEF4));
+        fill_ellipse(p, cx + 46, top - 34, 7, 7, lv_color_hex(0xE7EEF4));
+        return;
+    }
     lv_color_t black = lv_color_black();
     float top = cy - 50 * sy;   // sits above the eyes
     if (h == 1) {               // party hat with stripes and a pompom
@@ -798,6 +1104,8 @@ static void draw_face(lv_event_t * e) {
     // speech bubble: the face drops a little to make room, and talks for the first two seconds
     bool bubble = p.s > 0.8f && (int32_t)(bubble_until - millis()) > 0 && moonraker.data.msg[0];
     bubble_k += ((bubble ? 1.0f : 0.0f) - bubble_k) * 0.25f;
+    bool big = p.s > 0.8f;                 // decorations only on the full-size face
+    if (big) draw_deco_back(p);
     float jit = min(3.0f, vib * 6) * E.zig;
     if (mood == M_ERROR) jit = 1.5f;                  // trembling
     if (mood == M_HEATING) jit = 0.4f + heat_effort * 1.8f;   // straining, harder as it gets close
@@ -880,6 +1188,12 @@ static void draw_face(lv_event_t * e) {
         lv_area_t a = {X(p, dx - 4 * sz), Y(p, dy - 3 * sz), X(p, dx + 4 * sz), Y(p, dy + 5 * sz)};
         lv_draw_rect(p.ctx, &rd, &a);
         line(p, dx, dy - 8 * sz, dx, dy - 2 * sz, 3 * sz, op);
+    }
+    if (big) {
+        draw_shades(p, cx, cy - 14 * sy, sx);
+        if (deco_kind == D_SPRING) draw_flower(p, cx - 38 * sx, cy - 50 * sy);
+        if (deco_kind == D_HALLOWEEN) draw_bats(p);
+        if (deco_kind == D_HOLIDAYS) draw_lights(p);
     }
     draw_hat(p, cx, cy, sx, sy);
     if (act == ACT_REPORT && p.s > 0.8f) {
@@ -991,7 +1305,7 @@ void coaster_loop(void) {
         float a[3] = {ring[ring_r % RING][0], ring[ring_r % RING][1], ring[ring_r % RING][2]};
         ring_r++;
         now_s += SAMPLE_DT;
-        sense(a, SAMPLE_DT); pick_mood(SAMPLE_DT, d); step_body(SAMPLE_DT); step_expr(SAMPLE_DT);
+        sense(a, SAMPLE_DT); pick_mood(SAMPLE_DT, d); step_body(SAMPLE_DT); step_expr(SAMPLE_DT); step_deco(SAMPLE_DT);
         steps++;
     }
     if (!steps) {
@@ -1001,7 +1315,7 @@ void coaster_loop(void) {
         if (n > 0 && (ms - last_ms) > 30) {   // no sensor (KNOMI 1) or it stalled
             for (int i = 0; i < n; i++) {
                 now_s += SAMPLE_DT;
-                sense(zero, SAMPLE_DT); pick_mood(SAMPLE_DT, d); step_body(SAMPLE_DT); step_expr(SAMPLE_DT);
+                sense(zero, SAMPLE_DT); pick_mood(SAMPLE_DT, d); step_body(SAMPLE_DT); step_expr(SAMPLE_DT); step_deco(SAMPLE_DT);
             }
             last_ms = ms;
         }

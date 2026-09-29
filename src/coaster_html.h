@@ -155,12 +155,37 @@ body{padding-top:0}
             <div class="meter"><span>Dizzy</span><div class="bar"><i id="kDizzy" style="background:var(--violet)"></i></div><b id="kvDizzy">0%</b></div>
           </div>
           <p class="note" id="kNote">Live mood from the KNOMI's own accelerometer.</p>
-          <div class="sl" style="max-width:320px"><div class="sl-top"><label for="kHat">Hat</label></div>
-            <select id="kHat" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px">
-              <option value="0">Seasonal</option>
-              <option value="1">No hat</option><option value="2">Party hat</option><option value="3">Santa hat</option><option value="4">Witch hat</option>
-            </select><small>Seasonal: party hat at New Year, Santa in December, witch at the end of October.</small></div>
           <div id="kReport" class="note"></div>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-h"><h2>Decorations</h2><span class="sp"></span><span class="chip" id="decoNow">…</span></div>
+        <div class="card-b deco">
+          <div class="sl"><div class="sl-top"><label for="dMode">Decorations</label></div>
+            <select id="dMode" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px">
+              <option value="auto">By season (automatic)</option><option value="off">Off</option>
+              <option value="holidays">Holidays: lights, snow, Santa hat</option><option value="newyear">New Year: party hat, fireworks</option>
+              <option value="winter">Winter: snow</option><option value="valentine">Valentine's: hearts</option>
+              <option value="spring">Spring: petals, a flower</option><option value="summer">Summer: sunglasses</option>
+              <option value="july4">4th of July: fireworks</option><option value="autumn">Autumn: falling leaves</option>
+              <option value="halloween">Halloween: witch hat, bats</option><option value="birthday">Coaster's birthday</option>
+            </select><small id="dWhy">Changes with the seasons. Holidays get a few days, not just the one date.</small></div>
+          <div class="sl"><div class="sl-top"><label for="dLights">Holiday lights</label></div>
+            <select id="dLights" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px">
+              <option value="classic">Classic colors</option><option value="warm">Warm white</option><option value="theme">UI color</option>
+              <option value="candy">Candy cane</option><option value="rainbow">Rainbow fade</option>
+            </select></div>
+          <div class="sl"><div class="sl-top"><label for="dAnim">Lights effect</label></div>
+            <select id="dAnim" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px">
+              <option value="twinkle">Twinkle</option><option value="chase">Chase</option><option value="breathe">Slow fade</option><option value="steady">Steady</option>
+            </select></div>
+          <div class="sl"><div class="sl-top"><label for="dHemi">Seasons</label></div>
+            <select id="dHemi" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px"><option value="n">Northern hemisphere</option><option value="s">Southern hemisphere</option></select></div>
+          <div class="sl"><div class="sl-top"><label for="dBday">Coaster's birthday</label></div>
+            <input id="dBday" type="date" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px"><small>Party hat and confetti all day. The year doesn't matter.</small></div>
+          <div class="sl"><div class="sl-top"><label for="dDate">Try a date</label></div>
+            <input id="dDate" type="date" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px"><small>Only for this page: see what Coaster wears on that day.</small></div>
+          <div class="row"><button type="button" id="dShades">Sunglasses on/off</button></div>
         </div>
       </section>
       <section class="card">
@@ -197,7 +222,7 @@ body{padding-top:0}
       <section class="card">
         <div class="card-h"><h2>Quirks</h2></div>
         <div class="card-b">
-          <p class="note">When nothing much is happening, Coaster does little things on its own every few seconds. Tap one to see it now.</p>
+          <p class="note">Every few seconds Coaster does little things on its own, printing or not. Tap one to see it now.</p>
           <div class="toggles" id="quirkBtns"></div>
         </div>
       </section>
@@ -260,15 +285,15 @@ fetch("/status.json").then(function(r){return r.json()}).then(function(j){if(j.t
 function say(msg,bad){var e=$("saved");e.textContent=msg;e.className="saved"+(bad?" bad":"");clearTimeout(say.t);say.t=setTimeout(function(){e.textContent=""},3000)}
 function knomiLoad(){
   return fetch("/coaster.json").then(function(r){return r.json()}).then(function(j){
-    Object.keys(TUNE_DEF).forEach(function(k){if(typeof j[k]=="number")T[k]=j[k]});if(typeof j.hat=="number")$("kHat").value=j.hat;buildSliders();
+    Object.keys(TUNE_DEF).forEach(function(k){if(typeof j[k]=="number")T[k]=j[k]});decoLoad(j);buildSliders();
   }).catch(function(){say("Couldn't read the KNOMI's tuning",true)});
 }
 function knomiSave(msg){
-  var body=Object.assign({},T,{hat:+$("kHat").value});
+  var body=Object.assign({},T,decoSettings());
   fetch("/coaster.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
     .then(function(r){if(!r.ok)throw 0;say(msg)}).catch(function(){say("Not saved, try again",true)});
 }
-$("kHat").addEventListener("change",function(){knomiSave("Hat saved")});
+["dMode","dLights","dAnim","dHemi","dBday"].forEach(function(id){$(id).addEventListener("change",function(){knomiSave("Decorations saved")})});
 function knomiCard(){fetch("/coaster/card").then(function(r){return r.json()}).then(function(j){var r=j.report;if(!r){$("kReport").textContent="";return}
   var h=Math.floor(r.secs/3600),m=Math.floor(r.secs%3600/60);
   $("kReport").textContent="Last print: "+(r.done?"done":"stopped at "+r.progress+"%")+" after "+(h?h+"h ":"")+m+"m · "+r.screams+" screams · peak "+r.peak.toFixed(1)+" g · dizzy "+r.dizzies+"x · "+r.jolts+" jolts"}).catch(function(){})}
@@ -545,22 +570,23 @@ function qPick(){
   else if(mood=="riding"){w.glance=2;w["double blink"]=1.5;w.wink=0.8;w.hum=1;w["look up"]=0.8;w["slow blink"]=0.6}
   else if(mood=="bored"){w["eye roll"]=2;w.yawn=2;w.glance=1;w.hum=1}
   else if(mood=="sleepy"){w.yawn=1}
-  else return "";
+  else if(mood=="screaming"||mood=="startled"||mood=="dizzy"||mood=="whee"||mood=="shivering"){w["double blink"]=1;w.glance=0.5}
+  else{w.glance=2;w["double blink"]=1.5;w.wink=0.8;w.hum=1.2;w["look up"]=0.8;w["slow blink"]=0.6}
   if(printer.hot)w.sneeze=(w.sneeze||0)+0.3;
   var sum=0,k;for(k in w)sum+=w[k];var r=Math.random()*sum;
   for(k in w){r-=w[k];if(r<=0)return k}return "";
 }
 function stepQuirks(dt){
   qReset();
-  var free=mood=="calm"||mood=="riding"||mood=="bored"||mood=="sleepy";
+  var free=true;   // quirks happen any time, printing or not
   sacc.t-=dt;if(sacc.t<=0){sacc.t=rnd(0.4,2.2);sacc.tx=rnd(-4,4);sacc.ty=rnd(-2,2)}
   var ks=1-Math.exp(-dt*30);sacc.x+=(sacc.tx-sacc.x)*ks;sacc.y+=(sacc.ty-sacc.y)*ks;
-  if(free&&mood!="sleepy"){QF.look=sacc.x;QF.lookY=sacc.y}
+  if(mood!="sleepy"&&mood!="dizzy"){QF.look=sacc.x;QF.lookY=sacc.y}
   if(Q.name&&!free&&Q.name!="cheer"&&Q.name!="nod"&&!Q.forced)Q.name="";
   if(!Q.name){
     if(!free){Q.next=Math.max(Q.next,2);return}
     Q.next-=dt;if(Q.next>0)return;
-    Q.next=rnd(4,13)*(mood=="riding"?1.6:1);
+    Q.next=rnd(4,13);
     var n=qPick();if(!n)return;qStart(n);Q.forced=false;
   }
   Q.t+=dt;var t=Q.t,D=QUIRKS[Q.name],e;
@@ -636,6 +662,7 @@ function draw(){
   var fc=faceColor;
   ctx.setTransform(2,0,0,2,0,0);
   ctx.fillStyle="#000";ctx.fillRect(0,0,240,240);
+  drawDecoBack();
   ctx.strokeStyle=fc;ctx.fillStyle=fc;ctx.lineWidth=SW;ctx.lineCap="round";ctx.lineJoin="round";
   var jit=Math.min(3,S.vib*6)*E.zig;
   var bs=BOUNCE*T.sense*SENSE_K, cx=120+clamp(head.x-bs*S.bx[0],-34,34)+rnd(-jit,jit), cy=118+clamp(head.y+bs*S.bx[2],-30,30)+rnd(-jit,jit);
@@ -654,6 +681,7 @@ function draw(){
   drawEye(cx+54*sx,cy-14*sy,1,sx,clamp(open*QF.openR,0,1.1),QF.lookY);
   drawMouth(cx,cy+22*sy);
   for(var k in keep)E[k]=keep[k];E.omega=keepO;
+  drawDecoFront(cx,cy,sx,sy);ctx.strokeStyle=fc;ctx.fillStyle=fc;ctx.lineWidth=SW;
   notes.forEach(function(n){ctx.globalAlpha=clamp(n.life/0.6,0,1);ctx.beginPath();ctx.ellipse(n.x,n.y,4,3,0,0,7);ctx.fill();
     ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(n.x+3,n.y);ctx.lineTo(n.x+3,n.y-13);ctx.lineTo(n.x+8,n.y-9);ctx.stroke();ctx.lineWidth=SW});ctx.globalAlpha=1;
 
@@ -663,6 +691,179 @@ function draw(){
   if(mood=="sleepy"){for(var i=0;i<3;i++){var z=(now*0.45+i/3)%1;ctx.globalAlpha=Math.sin(z*Math.PI)*clamp(moodT/1.5,0,1);ctx.font="700 "+(9+z*9)+"px Space Grotesk, sans-serif";ctx.fillText("z",160+z*26,92-z*36)}ctx.globalAlpha=1}
   confetti.forEach(function(p){ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.r);ctx.globalAlpha=Math.min(1,p.life);ctx.fillRect(-3,-1.5,6,3);ctx.restore()});
   ctx.globalAlpha=1;
+}
+
+/* ---------------- decorations (same rules as the firmware) ---------------- */
+// Seasons are windows, not single days. Holidays go by date anywhere; the weather
+// ones (snow, petals, sunglasses, leaves) flip with the hemisphere.
+var DECO={mode:"auto",lights:"classic",anim:"twinkle",hemi:"n",bday:"09-28"}, decoTry=null;
+function decoLoad(j){
+  if(j.deco)DECO.mode=j.deco;if(j.lights)DECO.lights=j.lights;if(j.anim)DECO.anim=j.anim;if(j.hemi)DECO.hemi=j.hemi;if(j.bday)DECO.bday=j.bday;
+  decoUi();
+}
+function decoSettings(){return{deco:$("dMode").value,lights:$("dLights").value,anim:$("dAnim").value,hemi:$("dHemi").value,bday:($("dBday").value||"2026-09-28").slice(5),tz:-new Date().getTimezoneOffset()}}
+function decoUi(){$("dMode").value=DECO.mode;$("dLights").value=DECO.lights;$("dAnim").value=DECO.anim;$("dHemi").value=DECO.hemi;$("dBday").value="2026-"+DECO.bday}
+function inWin(m,d,m0,d0,m1,d1){var v=m*100+d,a=m0*100+d0,b=m1*100+d1;return a<=b?(v>=a&&v<=b):(v>=a||v<=b)}
+function weather(m,south){var s=["winter","winter","spring","spring","spring","summer","summer","summer","autumn","autumn","autumn","winter"][m-1];
+  if(south)s={winter:"summer",summer:"winter",spring:"autumn",autumn:"spring"}[s];return s}
+function decoFor(date){
+  var m=date.getMonth()+1,d=date.getDate(),south=$("dHemi").value=="s",b=($("dBday").value||"2026-09-28").slice(5).split("-");
+  if(m==+b[0]&&d==+b[1])return"birthday";
+  if(inWin(m,d,12,31,1,1))return"newyear";
+  if(inWin(m,d,12,1,12,30))return"holidays";
+  if(inWin(m,d,10,20,10,31))return"halloween";
+  if(inWin(m,d,2,10,2,14))return"valentine";
+  if(inWin(m,d,7,1,7,5))return"july4";
+  return weather(m,south);
+}
+var deco={kind:"",parts:[],spawn:0,fw:[],fwT:1,shades:0,shadesOn:false,shadesT:40,confT:6};
+function decoKind(){
+  var mode=$("dMode").value;
+  if(mode=="off")return"";
+  if(mode!="auto")return mode;
+  var dt=$("dDate").value?new Date($("dDate").value+"T12:00"):new Date();
+  return decoFor(dt);
+}
+var DNAME={holidays:"Holiday lights",newyear:"New Year",winter:"Snow",valentine:"Valentine's",spring:"Spring",summer:"Summer",july4:"4th of July",autumn:"Autumn leaves",halloween:"Halloween",birthday:"Birthday!","":"None"};
+// southern summer holidays: lights but no snow
+function snowy(k){return k=="winter"||(k=="holidays"&&!($("dMode").value=="auto"&&$("dHemi").value=="s"))}
+function stepDeco(dt){
+  var k=decoKind();
+  if(k!==deco.kind){deco.kind=k;deco.parts=[];deco.fw=[];$("decoNow").textContent=DNAME[k]}
+  // falling / floating things
+  var want=snowy(k)?(k=="winter"?34:26):k=="spring"?14:k=="autumn"?12:k=="valentine"?10:0;
+  deco.spawn-=dt;
+  if(deco.parts.length<want&&deco.spawn<=0){
+    deco.spawn=k=="valentine"?0.5:0.25;
+    var p={x:rnd(10,230),y:-8,ph:rnd(0,6.28),rot:rnd(0,6.28),vr:rnd(-2,2),life:99};
+    if(snowy(k)){p.kind="snow";p.r=rnd(1,2.4);p.vy=rnd(14,30)}
+    else if(k=="spring"){p.kind="petal";p.vy=rnd(10,18);p.col=Math.random()<0.5?"#F8BBD0":"#F48FB1"}
+    else if(k=="autumn"){p.kind="leaf";p.vy=rnd(16,26);p.col=["#E65100","#F9A825","#BF360C","#A1887F"][Math.floor(rnd(0,4))]}
+    else if(k=="valentine"){p.kind="heart";p.y=250;p.vy=-rnd(10,18);p.col=Math.random()<0.5?"#E53935":"#F48FB1";p.r=rnd(3.5,6)}
+    deco.parts.push(p);
+  }
+  deco.parts.forEach(function(p){p.ph+=dt;p.y+=p.vy*dt;p.x+=Math.sin(p.ph*(p.kind=="leaf"?2.2:1.3))*(p.kind=="snow"?8:16)*dt;p.rot+=p.vr*dt});
+  deco.parts=deco.parts.filter(function(p){return p.y<250&&p.y>-20&&p.x>-20&&p.x<260});
+  if(!want)deco.parts=[];
+  // fireworks
+  if(k=="newyear"||k=="july4"){
+    deco.fwT-=dt;
+    if(deco.fwT<=0){deco.fwT=rnd(0.9,2.2);
+      var cols=k=="july4"?["#E53935","#F5F5F5","#42A5F5"]:["#FFD54F","#FFB300","#F5F5F5","#E53935","#4FC3F7"];
+      deco.fw.push({x:rnd(50,190),y:250,ty:rnd(30,95),col:cols[Math.floor(rnd(0,cols.length))],sparks:null})}
+    deco.fw.forEach(function(f){
+      if(!f.sparks){f.y-=180*dt;if(f.y<=f.ty){f.sparks=[];var n=28;for(var i=0;i<n;i++){var a=i/n*6.283+rnd(-0.05,0.05),v=rnd(62,70);f.sparks.push({x:f.x,y:f.y,vx:Math.cos(a)*v,vy:Math.sin(a)*v})}f.life=1.1}}
+      else{f.life-=dt;var dr=Math.exp(-dt*2.2);f.sparks.forEach(function(s){s.vx*=dr;s.vy=s.vy*dr+28*dt;s.x+=s.vx*dt;s.y+=s.vy*dt})}
+    });
+    deco.fw=deco.fw.filter(function(f){return !f.sparks||f.life>0});
+  } else deco.fw=[];
+  // summer: puts on sunglasses now and then, keeps them on a while
+  if(k=="summer"||k=="july4"){
+    deco.shadesT-=dt;
+    if(deco.shadesT<=0&&(mood=="calm"||mood=="riding"||deco.shadesOn)){deco.shadesOn=!deco.shadesOn;deco.shadesT=deco.shadesOn?rnd(15,30):rnd(40,120)}
+  } else if(!deco.forced) deco.shadesOn=false;
+  deco.shades+=((deco.shadesOn?1:0)-deco.shades)*(1-Math.exp(-dt*5));
+  // birthday: confetti every so often
+  if(k=="birthday"){deco.confT-=dt;if(deco.confT<=0){deco.confT=rnd(10,20);spawnConfetti()}}
+}
+$("dShades").addEventListener("click",function(){deco.shadesOn=!deco.shadesOn;deco.forced=deco.shadesOn;deco.shadesT=deco.shadesOn?30:60});
+["dDate","dHemi","dBday","dMode"].forEach(function(id){$(id).addEventListener("change",function(){deco.kind="?"})});
+decoUi();
+
+function heart(x,y,r){ctx.beginPath();ctx.arc(x-r*0.5,y,r*0.55,Math.PI,0);ctx.arc(x+r*0.5,y,r*0.55,Math.PI,0);ctx.lineTo(x,y+r*1.1);ctx.closePath();ctx.fill()}
+// behind the face
+function drawDecoBack(){
+  deco.parts.forEach(function(p){
+    ctx.save();ctx.translate(p.x,p.y);
+    if(p.kind=="snow"){ctx.fillStyle="#E7EEF4";ctx.globalAlpha=0.85;ctx.beginPath();ctx.arc(0,0,p.r,0,7);ctx.fill()}
+    else if(p.kind=="petal"){ctx.rotate(p.rot);ctx.fillStyle=p.col;ctx.beginPath();ctx.ellipse(0,0,3.6,2,0,0,7);ctx.fill()}
+    else if(p.kind=="leaf"){ctx.rotate(p.rot);ctx.fillStyle=p.col;ctx.strokeStyle=p.col;ctx.beginPath();ctx.ellipse(0,0,5.5,2.8,0,0,7);ctx.fill();ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(5,0);ctx.lineTo(8,0);ctx.stroke()}
+    else if(p.kind=="heart"){ctx.fillStyle=p.col;ctx.globalAlpha=clamp((p.y-10)/60,0,0.9);heart(0,0,p.r)}
+    ctx.restore();
+  });
+  deco.fw.forEach(function(f){
+    ctx.fillStyle=f.col;ctx.strokeStyle=f.col;
+    if(!f.sparks){ctx.beginPath();ctx.arc(f.x,f.y,1.8,0,7);ctx.fill();ctx.globalAlpha=0.4;ctx.fillRect(f.x-0.8,f.y+2,1.6,8);ctx.globalAlpha=1;return}
+    var al=clamp(f.life/0.7,0,1);ctx.lineWidth=1.4;
+    f.sparks.forEach(function(s){ctx.globalAlpha=al*0.45;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(s.x-s.vx*0.12,s.y-s.vy*0.12);ctx.stroke();
+      ctx.globalAlpha=al;ctx.beginPath();ctx.arc(s.x,s.y,1.9,0,7);ctx.fill()});
+    ctx.globalAlpha=1;
+  });
+}
+// the string of lights along the top of the screen
+function bulbColor(i,n){
+  var pal={classic:["#E53935","#43A047","#1E88E5","#FDD835","#FB8C00"],warm:["#FFD27A"],theme:[faceColor],candy:["#E53935","#F5F5F5"]}[DECO.lights];
+  if(DECO.lights=="rainbow")return"hsl("+Math.round((i*40+now*40)%360)+",85%,60%)";
+  return pal[i%pal.length];
+}
+function bulbLevel(i,n){
+  if(DECO.anim=="steady")return 1;
+  if(DECO.anim=="chase")return 0.25+0.75*Math.pow(Math.max(0,Math.cos((i/n)*6.283*2-now*4)),2);
+  if(DECO.anim=="breathe")return 0.35+0.65*(0.5+0.5*Math.sin(now*1.6+(i%2)*Math.PI));
+  var h=Math.sin(i*91.7+Math.floor(now*3+i*0.37)*13.1)*43758.5;h-=Math.floor(h);return h<0.22?0.25:1;   // twinkle
+}
+function drawLights(){
+  var hooks=[],N=6;
+  for(var i=0;i<=N;i++){var a=Math.PI*(1.16+0.68*i/N);hooks.push([120+Math.cos(a)*116,122+Math.sin(a)*116])}
+  var bulbs=[];
+  ctx.strokeStyle="#2E3B2F";ctx.lineWidth=1.6;ctx.beginPath();
+  for(var j=0;j<N;j++){
+    var p0=hooks[j],p1=hooks[j+1],mx=(p0[0]+p1[0])/2,my=(p0[1]+p1[1])/2,dx=120-mx,dy=122-my,dl=Math.hypot(dx,dy);
+    var c=[mx+dx/dl*11,my+dy/dl*11];
+    if(j==0)ctx.moveTo(p0[0],p0[1]);ctx.quadraticCurveTo(c[0],c[1],p1[0],p1[1]);
+    [0.3,0.7].forEach(function(t){var u=1-t;bulbs.push([u*u*p0[0]+2*u*t*c[0]+t*t*p1[0],u*u*p0[1]+2*u*t*c[1]+t*t*p1[1],Math.atan2(dy,dx)])});
+  }
+  ctx.stroke();
+  bulbs.forEach(function(b,i){
+    var lv=bulbLevel(i,bulbs.length),col=bulbColor(i,bulbs.length);
+    ctx.save();ctx.translate(b[0],b[1]);ctx.rotate(b[2]-Math.PI/2);
+    ctx.fillStyle="#2E3B2F";ctx.fillRect(-1.8,-1,3.6,3);
+    ctx.fillStyle=col;
+    ctx.globalAlpha=0.22*lv;ctx.beginPath();ctx.arc(0,7,8.5,0,7);ctx.fill();
+    ctx.globalAlpha=0.35+0.65*lv;ctx.beginPath();ctx.ellipse(0,6.5,3.4,4.8,0,0,7);ctx.fill();
+    ctx.restore();
+  });
+  ctx.globalAlpha=1;
+}
+function drawBats(){
+  for(var i=0;i<3;i++){
+    var t=(now*0.09+i/3)%1,x=-20+t*280,y=46+i*16+Math.sin(now*1.7+i*2)*10,f=Math.sin(now*14+i*3);
+    ctx.fillStyle=faceColor;ctx.strokeStyle=faceColor;ctx.lineWidth=1.8;
+    ctx.beginPath();ctx.arc(x,y,2.4,0,7);ctx.fill();
+    ctx.beginPath();ctx.moveTo(x-2,y);ctx.lineTo(x-6,y-3-f*4);ctx.lineTo(x-11,y-f*2);ctx.moveTo(x+2,y);ctx.lineTo(x+6,y-3-f*4);ctx.lineTo(x+11,y-f*2);ctx.stroke();
+  }
+}
+function drawHat(kind,cx,top){
+  ctx.fillStyle=faceColor;
+  if(kind=="party"){ctx.beginPath();ctx.moveTo(cx-22,top);ctx.lineTo(cx+22,top);ctx.lineTo(cx+6,top-46);ctx.fill();ctx.strokeStyle="#000";ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(cx-14,top-14);ctx.lineTo(cx+15,top-14);ctx.moveTo(cx-6,top-30);ctx.lineTo(cx+11,top-30);ctx.stroke();ctx.beginPath();ctx.arc(cx+6,top-48,5,0,7);ctx.fill()}
+  else if(kind=="santa"){ctx.beginPath();ctx.moveTo(cx-30,top);ctx.lineTo(cx+30,top);ctx.lineTo(cx+44,top-34);ctx.fill();ctx.fillStyle="#E7EEF4";ctx.fillRect(cx-34,top-2,68,10);ctx.beginPath();ctx.arc(cx+46,top-34,7,0,7);ctx.fill()}
+  else if(kind=="witch"){ctx.beginPath();ctx.moveTo(cx-16,top-2);ctx.lineTo(cx+16,top-2);ctx.lineTo(cx+12,top-58);ctx.fill();ctx.beginPath();ctx.ellipse(cx,top,42,6,0,0,7);ctx.fill();
+    ctx.strokeStyle="#000";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(cx-15,top-10);ctx.lineTo(cx+15,top-10);ctx.stroke()}
+}
+function drawFlower(x,y){
+  ctx.fillStyle="#F48FB1";for(var i=0;i<5;i++){var a=i/5*6.283+0.3;ctx.beginPath();ctx.arc(x+Math.cos(a)*4.6,y+Math.sin(a)*4.6,3.4,0,7);ctx.fill()}
+  ctx.fillStyle="#FDD835";ctx.beginPath();ctx.arc(x,y,2.8,0,7);ctx.fill();
+}
+function drawShades(cx,ey,sx){
+  var k=deco.shades;if(k<0.02)return;
+  var drop=(1-k)*-40;ctx.globalAlpha=Math.min(1,k*1.5);
+  ctx.fillStyle=faceColor;ctx.strokeStyle=faceColor;ctx.lineWidth=3;
+  [-1,1].forEach(function(s){var x=cx+s*54*sx;ctx.beginPath();ctx.moveTo(x-31,ey-11+drop);ctx.lineTo(x+31,ey-11+drop);ctx.quadraticCurveTo(x+30,ey+15+drop,x,ey+15+drop);ctx.quadraticCurveTo(x-30,ey+15+drop,x-31,ey-11+drop);ctx.fill()});
+  ctx.beginPath();ctx.moveTo(cx-24*sx,ey-8+drop);ctx.quadraticCurveTo(cx,ey-14+drop,cx+24*sx,ey-8+drop);ctx.stroke();
+  ctx.strokeStyle="#000";ctx.lineWidth=2;ctx.globalAlpha=Math.min(1,k*1.5)*0.7;
+  [-1,1].forEach(function(s){var x=cx+s*54*sx;ctx.beginPath();ctx.moveTo(x-14,ey-5+drop);ctx.lineTo(x-6,ey-5+drop);ctx.stroke()});
+  ctx.globalAlpha=1;
+}
+// in front of the face
+function drawDecoFront(cx,cy,sx,sy){
+  var k=deco.kind;
+  if(k=="holidays")drawHat("santa",cx,cy-50*sy);
+  if(k=="newyear"||k=="birthday")drawHat("party",cx,cy-50*sy);
+  if(k=="halloween"){drawHat("witch",cx,cy-50*sy);drawBats()}
+  if(k=="spring")drawFlower(cx-38*sx,cy-50*sy);
+  drawShades(cx,cy-14*sy,sx);
+  if(k=="holidays")drawLights();
 }
 
 /* ---------------- scope ---------------- */
@@ -694,7 +895,7 @@ function frame(t){
     impulses.forEach(function(p){if(p.t>0){a[0]+=p.v[0];a[1]+=p.v[1];a[2]+=p.v[2];p.t-=DT}});impulses=impulses.filter(function(p){return p.t>0});
     // a little printer noise so it never looks dead-still while printing
     if(scenKey!="idle"&&scenKey!="hand"&&!csv){a[0]+=rnd(-0.015,0.015);a[1]+=rnd(-0.015,0.015)}
-    sense(a,DT);pickMood(DT);stepBody(S.lp,DT);stepExpr(DT);stepQuirks(DT);stepNotes(DT);stepParticles(DT);
+    sense(a,DT);pickMood(DT);stepBody(S.lp,DT);stepExpr(DT);stepQuirks(DT);stepNotes(DT);stepDeco(DT);stepParticles(DT);
   }
   device.style.transform="translate("+dev.x.toFixed(1)+"px,"+dev.y.toFixed(1)+"px) scale("+(1+dev.d/400).toFixed(3)+")";
   draw();
