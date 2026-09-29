@@ -194,6 +194,13 @@ body{padding-top:0}
           </div>
         </div>
       </section>
+      <section class="card">
+        <div class="card-h"><h2>Quirks</h2></div>
+        <div class="card-b">
+          <p class="note">When nothing much is happening, Coaster does little things on its own every few seconds. Tap one to see it now.</p>
+          <div class="toggles" id="quirkBtns"></div>
+        </div>
+      </section>
 
       <section class="card">
         <div class="card-h"><h2>Tuning</h2><span class="sp"></span><span class="saved" id="saved"></span></div>
@@ -525,6 +532,61 @@ function stepExpr(dt){
   else{blink.t-=dt;if(blink.t<=0&&mood!="sleepy"&&mood!="dizzy"){blinkNow();blink.t=rnd(2.2,6)}}
 }
 
+/* ---------------- quirks (same as the firmware) ---------------- */
+var QUIRKS={glance:1.6,"double blink":0.5,"slow blink":1.3,wink:0.8,yawn:2.4,hum:3.6,sneeze:1.7,"look up":1.9,stretch:1.8,"eye roll":1.3,nod:0.7,cheer:1.3};
+var Q={name:"",t:0,side:1,fired:{},next:5}, QF={}, notes=[], sacc={x:0,y:0,tx:0,ty:0,t:1};
+function qReset(){QF={look:0,lookY:0,openL:1,openR:1,gape:0,curve:0,w:0,cheek:0,dx:0,dy:0,sq:0}}qReset();
+function bump(t,d,e){return clamp(Math.min(t/e,(d-t)/e),0,1)}
+function qOnce(n){if(Q.fired[n])return false;Q.fired[n]=1;return true}
+function qStart(n){Q.name=n;Q.t=0;Q.fired={};Q.side=Math.random()<0.5?-1:1}
+function qPick(){
+  var w={};
+  if(mood=="calm"){w.glance=3;w["look up"]=1.5;w["double blink"]=1.5;w["slow blink"]=1.5;w.yawn=S.stillT>60?2.5:0.8;w.hum=1.5;w.wink=0.8;w.sneeze=0.35;w.stretch=0.8}
+  else if(mood=="riding"){w.glance=2;w["double blink"]=1.5;w.wink=0.8;w.hum=1;w["look up"]=0.8;w["slow blink"]=0.6}
+  else if(mood=="bored"){w["eye roll"]=2;w.yawn=2;w.glance=1;w.hum=1}
+  else if(mood=="sleepy"){w.yawn=1}
+  else return "";
+  if(printer.hot)w.sneeze=(w.sneeze||0)+0.3;
+  var sum=0,k;for(k in w)sum+=w[k];var r=Math.random()*sum;
+  for(k in w){r-=w[k];if(r<=0)return k}return "";
+}
+function stepQuirks(dt){
+  qReset();
+  var free=mood=="calm"||mood=="riding"||mood=="bored"||mood=="sleepy";
+  sacc.t-=dt;if(sacc.t<=0){sacc.t=rnd(0.4,2.2);sacc.tx=rnd(-4,4);sacc.ty=rnd(-2,2)}
+  var ks=1-Math.exp(-dt*30);sacc.x+=(sacc.tx-sacc.x)*ks;sacc.y+=(sacc.ty-sacc.y)*ks;
+  if(free&&mood!="sleepy"){QF.look=sacc.x;QF.lookY=sacc.y}
+  if(Q.name&&!free&&Q.name!="cheer"&&Q.name!="nod"&&!Q.forced)Q.name="";
+  if(!Q.name){
+    if(!free){Q.next=Math.max(Q.next,2);return}
+    Q.next-=dt;if(Q.next>0)return;
+    Q.next=rnd(4,13)*(mood=="riding"?1.6:1);
+    var n=qPick();if(!n)return;qStart(n);Q.forced=false;
+  }
+  Q.t+=dt;var t=Q.t,D=QUIRKS[Q.name],e;
+  if(t>=D){if(Q.name=="yawn"||Q.name=="sneeze")blinkNow();Q.name="";return}
+  switch(Q.name){
+    case "glance":e=bump(t,D,0.15);QF.look+=Q.side*18*e;QF.lookY-=2*e;if(t>0.9&&qOnce(0)&&Math.random()<0.5)blinkNow();break;
+    case "double blink":if(qOnce(0))blinkNow();if(t>0.26&&qOnce(1))blinkNow();break;
+    case "slow blink":e=bump(t,D,0.45);QF.openL=QF.openR=1-0.97*e;QF.curve=0.5*e;break;
+    case "wink":e=bump(t,D,0.12);if(Q.side>0)QF.openR=1-e;else QF.openL=1-e;QF.curve=0.7*e;QF.dx=Q.side*2*e;break;
+    case "yawn":e=bump(t,D,0.8);QF.gape=1.6*e;QF.w=-5*e;QF.openL=QF.openR=1-0.85*e;QF.dy=-6*e;QF.sq=0.08*e;break;
+    case "hum":e=bump(t,D,0.3);QF.w=-8*e;QF.gape=0.45*e;QF.dx=Math.sin(t*4.2)*4*e;QF.dy=-Math.abs(Math.sin(t*4.2))*2*e;QF.openL=QF.openR=1-0.4*e;
+      for(var n2=0;n2<3;n2++)if(t>0.3+n2&&qOnce(n2))notes.push({x:150+rnd(-6,10),y:128,life:1.6});break;
+    case "sneeze":
+      if(t<1.1){e=clamp(t/1.1,0,1);QF.openL=QF.openR=1-0.75*e;QF.dy=-7*e;QF.gape=0.7*e;QF.w=-4*e;QF.dx=Math.sin(t*30)*e}
+      else{if(qOnce(0)){headKick(rnd(-30,30),170);blinkNow()}e=1-clamp((t-1.1)/0.6,0,1);QF.openL=QF.openR=1-e;QF.gape=0.2*e}break;
+    case "look up":e=bump(t,D,0.3);QF.lookY-=7*e;QF.look+=Q.side*7*e;QF.openL=QF.openR=1+0.2*e;break;
+    case "stretch":e=bump(t,D,0.6);QF.sq=0.16*e;QF.cheek=0.9*e;QF.curve=0.5*e;QF.dy=-4*e;QF.openL=QF.openR=1+e;break;
+    case "eye roll":var a=clamp(t/D,0,1)*2*Math.PI;e=bump(t,D,0.15);QF.look+=Math.sin(a)*16*e;QF.lookY-=(1-Math.cos(a))*4*e;QF.openL=QF.openR=1-0.25*e;break;
+    case "nod":QF.dy=Math.sin(Math.PI*clamp(t/D,0,1))*6;break;
+    case "cheer":e=bump(t,D,0.2);QF.cheek=e;QF.curve=0.8*e;QF.gape=0.6*e;QF.dy=-Math.abs(Math.sin(t*10))*6*e;QF.openL=QF.openR=1+e;break;
+  }
+}
+function stepNotes(dt){notes.forEach(function(n){n.life-=dt;n.y-=22*dt;n.x+=Math.sin(n.life*5)*12*dt});notes=notes.filter(function(n){return n.life>0})}
+$("quirkBtns").innerHTML=Object.keys(QUIRKS).map(function(k){return'<button type="button" data-q="'+k+'">'+k+'</button>'}).join("");
+$("quirkBtns").addEventListener("click",function(ev){var b=ev.target.closest("[data-q]");if(b){qStart(b.getAttribute("data-q"));Q.forced=true}});
+
 /* ---------------- particles ---------------- */
 var confetti=[];
 function spawnConfetti(){for(var i=0;i<40;i++)confetti.push({x:120+rnd(-20,20),y:120,vx:rnd(-160,160),vy:rnd(-260,-80),r:rnd(0,6.28),vr:rnd(-8,8),life:rnd(1.8,3.2)})}
@@ -534,12 +596,12 @@ function stepParticles(dt){confetti.forEach(function(p){p.vy+=420*dt;p.x+=p.vx*d
 var cv=$("face"),ctx=cv.getContext("2d"),now=0;
 var LINE=26, R=11, SW=5; // half lid length, pupil radius, stroke
 function lerp(a,b,t){return a+(b-a)*t}
-function drawEye(ex,ey,side,sx,open){
+function drawEye(ex,ey,side,sx,open,lookY){
   var r=R*E.size, L=LINE*sx;
-  var slide=clamp(pup.x*1.6+E.look,-(L-r),L-r);
+  var slide=clamp(pup.x*1.6+E.look+QF.look,-(L-r),L-r);
   var squash=clamp(1+pup.y/22,0.55,1.5);
   var ox=Math.cos(now*6*side)*9*E.orbit, oy=Math.sin(now*6*side)*4*E.orbit;
-  var px=ex+slide+ox, py=ey+oy, ry=r*squash;
+  var px=ex+slide+ox, py=ey+oy+(lookY||0), ry=r*squash;
   // lid height: open 0 -> below the pupil, .5 -> through its middle, 1 -> above it
   var lidY=py+ry-open*2*ry;
   ctx.save();
@@ -577,16 +639,23 @@ function draw(){
   ctx.strokeStyle=fc;ctx.fillStyle=fc;ctx.lineWidth=SW;ctx.lineCap="round";ctx.lineJoin="round";
   var jit=Math.min(3,S.vib*6)*E.zig;
   var bs=BOUNCE*T.sense*SENSE_K, cx=120+clamp(head.x-bs*S.bx[0],-34,34)+rnd(-jit,jit), cy=118+clamp(head.y+bs*S.bx[2],-30,30)+rnd(-jit,jit);
-  var sx=1-head.s*0.5, sy=1+head.s;
+  var hsq=head.s+QF.sq, sx=1-hsq*0.5, sy=1+hsq;
+  cx+=QF.dx;cy+=QF.dy;
   if(timers.giggle>0)cy-=Math.abs(Math.sin(now*14))*6;
   if(timers.celebrate>0)cy-=Math.abs(Math.sin(now*9))*8;
   cy+=Math.sin(now*1.6)*1.5*(1-clamp(E.open*4,0,1)); // breathing while asleep
   var blinkK=blink.closing>0?Math.sin(Math.PI*(1-blink.closing/0.16)):0;
   var open=E.open*(1-blinkK);
   ctx.lineWidth=SW;
-  drawEye(cx-54*sx,cy-14*sy,-1,sx,open);
-  drawEye(cx+54*sx,cy-14*sy,1,sx,open);
+  var keep={curve:E.curve,w:E.w,cheek:E.cheek,gape:E.gape};
+  E.curve+=QF.curve;E.w=Math.max(4,E.w+QF.w);E.cheek=Math.max(E.cheek,QF.cheek);E.gape=Math.max(E.gape,QF.gape);
+  var keepO=E.omega;E.omega*=1-clamp(QF.gape/0.4,0,1);
+  drawEye(cx-54*sx,cy-14*sy,-1,sx,clamp(open*QF.openL,0,1.1),QF.lookY);
+  drawEye(cx+54*sx,cy-14*sy,1,sx,clamp(open*QF.openR,0,1.1),QF.lookY);
   drawMouth(cx,cy+22*sy);
+  for(var k in keep)E[k]=keep[k];E.omega=keepO;
+  notes.forEach(function(n){ctx.globalAlpha=clamp(n.life/0.6,0,1);ctx.beginPath();ctx.ellipse(n.x,n.y,4,3,0,0,7);ctx.fill();
+    ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(n.x+3,n.y);ctx.lineTo(n.x+3,n.y-13);ctx.lineTo(n.x+8,n.y-9);ctx.stroke();ctx.lineWidth=SW});ctx.globalAlpha=1;
 
   // extras, same flat color
   if(printer.hot&&mood!="sleepy"){var q=(now*0.5)%1,dx=cx+86*sx,dy=cy-40+q*26;ctx.globalAlpha=1-q*0.8;
@@ -625,7 +694,7 @@ function frame(t){
     impulses.forEach(function(p){if(p.t>0){a[0]+=p.v[0];a[1]+=p.v[1];a[2]+=p.v[2];p.t-=DT}});impulses=impulses.filter(function(p){return p.t>0});
     // a little printer noise so it never looks dead-still while printing
     if(scenKey!="idle"&&scenKey!="hand"&&!csv){a[0]+=rnd(-0.015,0.015);a[1]+=rnd(-0.015,0.015)}
-    sense(a,DT);pickMood(DT);stepBody(S.lp,DT);stepExpr(DT);stepParticles(DT);
+    sense(a,DT);pickMood(DT);stepBody(S.lp,DT);stepExpr(DT);stepQuirks(DT);stepNotes(DT);stepParticles(DT);
   }
   device.style.transform="translate("+dev.x.toFixed(1)+"px,"+dev.y.toFixed(1)+"px) scale("+(1+dev.d/400).toFixed(3)+")";
   draw();

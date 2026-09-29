@@ -347,6 +347,212 @@ static void step_body(float dt) {
     if (r > 13) { px_ *= 13 / r; py_ *= 13 / r; pvx *= 0.4f; pvy *= 0.4f; }
 }
 
+/* ---------------- quirks: little things it does just because ---------------- */
+// Every few seconds, when nothing else is going on, Coaster does something small: glances
+// around, winks, yawns, hums, sneezes, stretches. Each KNOMI gets its own personality
+// (from its chip ID), so one is curious, another sleepy, another hums a lot.
+
+enum { Q_NONE, Q_GLANCE, Q_DBLINK, Q_SLOWBLINK, Q_WINK, Q_YAWN, Q_HUM, Q_SNEEZE, Q_LOOKUP,
+       Q_STRETCH, Q_ROLL, Q_NOD, Q_CHEER, Q_COUNT };
+static const char * QUIRK_NAMES[Q_COUNT] = {"", "glance", "double blink", "slow blink", "wink", "yawn", "hum",
+                                            "sneeze", "look up", "stretch", "eye roll", "nod", "cheer"};
+static const float QUIRK_DUR[Q_COUNT] = {0, 1.6f, 0.5f, 1.3f, 0.8f, 2.4f, 3.6f, 1.7f, 1.9f, 1.8f, 1.3f, 0.7f, 1.3f};
+static int quirk = Q_NONE, quirk_side = 1;
+static float quirk_t = 0, quirk_next = 6;
+static uint8_t quirk_fired = 0;                 // one-shot steps inside a quirk (bit per step)
+// personality 0.5..1.5: curious (glances, looking up), sleepy (yawns, slow blinks),
+// musical (humming), silly (winks, sneezes, eye rolls)
+static float tr_curious = 1, tr_sleepy = 1, tr_musical = 1, tr_silly = 1;
+// what the quirk does to the face this instant
+typedef struct { float look, look_y, open_l, open_r, gape, curve, w, cheek, dx, dy, sq; } quirk_fx_t;
+static quirk_fx_t QF = {0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0};
+static float sacc_x = 0, sacc_y = 0, sacc_tx = 0, sacc_ty = 0, sacc_t = 1;   // tiny eye darts
+typedef struct { float x, y, life; } hum_note_t;
+static hum_note_t notes[3];
+
+static void personality_init(void) {
+    uint64_t id = ESP.getEfuseMac();
+    uint32_t h = (uint32_t)(id ^ (id >> 32)) * 2654435761u;
+    float * tr[4] = {&tr_curious, &tr_sleepy, &tr_musical, &tr_silly};
+    for (int i = 0; i < 4; i++) { *tr[i] = 0.5f + ((h >> (i * 8)) & 0xFF) / 255.0f; }
+    Serial.printf("coaster: curious %.1f, sleepy %.1f, musical %.1f, silly %.1f\r\n", tr_curious, tr_sleepy, tr_musical, tr_silly);
+}
+
+// 0 -> 1 -> 0 over the quirk, with soft edges of `edge` seconds
+static float bump(float t, float dur, float edge) {
+    return clampf(min(t / edge, (dur - t) / edge), 0, 1);
+}
+
+static bool quirk_step(int n) {   // true once, the first time the quirk reaches step n
+    if (quirk_fired & (1 << n)) return false;
+    quirk_fired |= 1 << n;
+    return true;
+}
+
+static void quirk_start(int q) {
+    quirk = q; quirk_t = 0; quirk_fired = 0; quirk_side = esp_random() & 1 ? 1 : -1;
+}
+
+// a layer change or a progress milestone: small reactions that can interrupt idling
+void coaster_quirk_nod(void) { if (quirk == Q_NONE || quirk == Q_GLANCE) quirk_start(Q_NOD); }
+static void quirk_cheer(void) { if (quirk != Q_YAWN && quirk != Q_SNEEZE) quirk_start(Q_CHEER); }
+
+static int quirk_pick(void) {
+    // weights per mood; the personality scales them
+    float w[Q_COUNT] = {0};
+    bool printing = moonraker.data.printing;
+    switch (mood) {
+        case M_CALM:
+            w[Q_GLANCE] = 3 * tr_curious; w[Q_LOOKUP] = 1.5f * tr_curious; w[Q_DBLINK] = 1.5f;
+            w[Q_SLOWBLINK] = 1.5f * tr_sleepy; w[Q_YAWN] = (still_t > 60 ? 2.5f : 0.8f) * tr_sleepy;
+            w[Q_HUM] = 1.5f * tr_musical; w[Q_WINK] = 0.8f * tr_silly; w[Q_SNEEZE] = 0.35f * tr_silly;
+            w[Q_STRETCH] = 0.8f * tr_sleepy;
+            break;
+        case M_RIDING:
+            w[Q_GLANCE] = 2 * tr_curious; w[Q_DBLINK] = 1.5f; w[Q_WINK] = 0.8f * tr_silly;
+            w[Q_HUM] = (printing ? 2.0f : 1.0f) * tr_musical; w[Q_LOOKUP] = 0.8f * tr_curious;
+            w[Q_SLOWBLINK] = 0.6f * tr_sleepy;
+            break;
+        case M_FOCUS:
+            w[Q_DBLINK] = 1; w[Q_SLOWBLINK] = 0.3f * tr_sleepy;
+            break;
+        case M_BORED:
+            w[Q_ROLL] = 2 * tr_silly; w[Q_YAWN] = 2 * tr_sleepy; w[Q_GLANCE] = 1 * tr_curious; w[Q_HUM] = 1 * tr_musical;
+            break;
+        case M_COOLING:
+            w[Q_STRETCH] = 2 * tr_sleepy; w[Q_YAWN] = 1.5f * tr_sleepy; w[Q_SLOWBLINK] = 1.5f; w[Q_HUM] = 1.5f * tr_musical;
+            break;
+        case M_SLEEPY:
+            w[Q_YAWN] = 1 * tr_sleepy;
+            break;
+        case M_ANTICIPATE:
+            w[Q_GLANCE] = 1; w[Q_HUM] = 1.5f * tr_musical; w[Q_WINK] = 1 * tr_silly;
+            break;
+        default:
+            return Q_NONE;
+    }
+    // heating smells: the odd sneeze while the nozzle is hot
+    if (moonraker.data.nozzle_actual > 180) w[Q_SNEEZE] += 0.3f * tr_silly;
+    float sum = 0;
+    for (int i = 0; i < Q_COUNT; i++) sum += w[i];
+    if (sum <= 0) return Q_NONE;
+    float r = frand(0, sum);
+    for (int i = 0; i < Q_COUNT; i++) { r -= w[i]; if (r <= 0 && w[i] > 0) return i; }
+    return Q_NONE;
+}
+
+static void step_quirks(float dt) {
+    QF = {0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0};
+    bool free_mood = mood == M_CALM || mood == M_RIDING || mood == M_FOCUS || mood == M_BORED ||
+                     mood == M_COOLING || mood == M_SLEEPY || mood == M_ANTICIPATE;
+    bool busy = act != ACT_NONE || (int32_t)(bubble_until - millis()) > 0;
+    // tiny eye darts, like it's actually looking at things
+    sacc_t -= dt;
+    if (sacc_t <= 0) {
+        sacc_t = frand(0.4f, 2.2f);
+        sacc_tx = frand(-4, 4) * tr_curious; sacc_ty = frand(-2, 2);
+    }
+    float ks = 1 - expf(-dt * 30);
+    sacc_x += (sacc_tx - sacc_x) * ks; sacc_y += (sacc_ty - sacc_y) * ks;
+    if (free_mood && mood != M_SLEEPY) { QF.look = sacc_x; QF.look_y = sacc_y; }
+
+    if (quirk != Q_NONE && ((!free_mood && quirk != Q_CHEER && quirk != Q_NOD) || busy)) quirk = Q_NONE;
+    if (quirk == Q_NONE) {
+        if (!free_mood || busy) { quirk_next = max(quirk_next, 2.0f); return; }
+        quirk_next -= dt;
+        if (quirk_next > 0) return;
+        quirk_next = frand(4, 13) * (mood == M_RIDING ? 1.6f : 1.0f);
+        int q = quirk_pick();
+        if (q == Q_NONE) return;
+        quirk_start(q);
+    }
+    quirk_t += dt;
+    float t = quirk_t, D = QUIRK_DUR[quirk];
+    if (t >= D) {
+        if (quirk == Q_YAWN || quirk == Q_SNEEZE) blink_now();
+        quirk = Q_NONE;
+        return;
+    }
+    float e;
+    switch (quirk) {
+        case Q_GLANCE:      // a look to one side, then back
+            e = bump(t, D, 0.15f);
+            QF.look += quirk_side * 18 * e; QF.look_y -= 2 * e;
+            if (t > 0.9f && quirk_step(0) && (esp_random() & 1)) blink_now();
+            break;
+        case Q_DBLINK:
+            if (quirk_step(0)) blink_now();
+            if (t > 0.26f && quirk_step(1)) blink_now();
+            break;
+        case Q_SLOWBLINK:   // content: eyes close slowly, a small smile
+            e = bump(t, D, 0.45f);
+            QF.open_l = QF.open_r = 1 - 0.97f * e; QF.curve = 0.5f * e;
+            break;
+        case Q_WINK:
+            e = bump(t, D, 0.12f);
+            (quirk_side > 0 ? QF.open_r : QF.open_l) = 1 - e;
+            QF.curve = 0.7f * e; QF.dx = quirk_side * 2 * e;
+            break;
+        case Q_YAWN:        // mouth opens wide, eyes squeeze, head tips back
+            e = bump(t, D, 0.8f);
+            QF.gape = 1.6f * e; QF.w = -5 * e; QF.open_l = QF.open_r = 1 - 0.85f * e; QF.dy = -6 * e;
+            QF.sq = 0.08f * e;
+            break;
+        case Q_HUM: {       // little "o" mouth, swaying, notes drifting up
+            e = bump(t, D, 0.3f);
+            QF.w = -8 * e; QF.gape = 0.45f * e; QF.dx = sinf(t * 4.2f) * 4 * e; QF.dy = -fabsf(sinf(t * 4.2f)) * 2 * e;
+            QF.open_l = QF.open_r = 1 - 0.4f * e;
+            for (int n = 0; n < 3; n++) {
+                if (t > 0.3f + n * 1.0f && quirk_step(n)) notes[n] = {150 + frand(-6, 10), 128, 1.6f};
+            }
+            break;
+        }
+        case Q_SNEEZE:      // ah... ah... CHOO
+            if (t < 1.1f) {
+                e = clampf(t / 1.1f, 0, 1);
+                QF.open_l = QF.open_r = 1 - 0.75f * e; QF.dy = -7 * e; QF.gape = 0.7f * e; QF.w = -4 * e;
+                QF.dx = sinf(t * 30) * e;    // twitching nose
+            } else {
+                if (quirk_step(0)) { head_kick(frand(-30, 30), 170); blink_now(); }
+                e = 1 - clampf((t - 1.1f) / 0.6f, 0, 1);
+                QF.open_l = QF.open_r = 1 - e; QF.gape = 0.2f * e;
+            }
+            break;
+        case Q_LOOKUP:      // something up there?
+            e = bump(t, D, 0.3f);
+            QF.look_y -= 7 * e; QF.look += quirk_side * 7 * e; QF.open_l = QF.open_r = 1 + 0.2f * e;
+            break;
+        case Q_STRETCH:     // grows tall, eyes happy-shut, then settles
+            e = bump(t, D, 0.6f);
+            QF.sq = 0.16f * e; QF.cheek = 0.9f * e; QF.curve = 0.5f * e; QF.dy = -4 * e;
+            QF.open_l = QF.open_r = 1 + e;      // eyes up into happy "^"
+            break;
+        case Q_ROLL: {      // eyes go up and around
+            float a = clampf(t / D, 0, 1) * 2 * PI;
+            e = bump(t, D, 0.15f);
+            QF.look += sinf(a) * 16 * e; QF.look_y -= (1 - cosf(a)) * 4 * e; QF.open_l = QF.open_r = 1 - 0.25f * e;
+            break;
+        }
+        case Q_NOD:         // one little nod: another layer done
+            QF.dy = sinf(PI * clampf(t / D, 0, 1)) * 6;
+            break;
+        case Q_CHEER:       // a milestone: happy bounce
+            e = bump(t, D, 0.2f);
+            QF.cheek = e; QF.curve = 0.8f * e; QF.gape = 0.6f * e; QF.dy = -fabsf(sinf(t * 10)) * 6 * e;
+            QF.open_l = QF.open_r = 1 + e;
+            break;
+    }
+}
+
+static void step_notes(float dt) {
+    for (int i = 0; i < 3; i++) {
+        if (notes[i].life <= 0) continue;
+        notes[i].life -= dt;
+        notes[i].y -= 22 * dt;
+        notes[i].x += sinf(notes[i].life * 5) * 12 * dt;
+    }
+}
+
 static void step_expr(float dt) {
     wander_t -= dt;
     if (wander_t <= 0) { wander_tx = frand(-12, 12); wander_t = frand(1.2f, 3.5f); }
@@ -373,6 +579,8 @@ static void step_expr(float dt) {
         p.vy += 420 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.r += p.vr * dt; p.life -= dt;
     }
     while (confetti_n && confetti[confetti_n - 1].life <= 0) confetti_n--;
+    step_quirks(dt);
+    step_notes(dt);
 }
 
 static void spawn_confetti(void) {
@@ -392,6 +600,12 @@ static void watch_printer(const moonraker_data_t & d) {
             bubble_until = millis();
         }
     }
+    // small reactions to the print going well: a nod per layer, a cheer at 25/50/75 %
+    static int16_t seen_layer = 0;
+    if (d.printing && d.layer > 1 && seen_layer && d.layer != seen_layer) coaster_quirk_nod();
+    seen_layer = d.printing ? d.layer : 0;
+    if (d.printing && was_printing && d.progress != last_progress &&
+        (d.progress / 25) > (last_progress / 25) && d.progress < 100) quirk_cheer();
     if (d.printing) last_progress = d.progress;
     if (!was_printing && d.printing) stats = {};
     if (was_printing && !d.printing) {
@@ -460,13 +674,13 @@ static void line(const pen_t & p, float x0, float y0, float x1, float y1, float 
     lv_draw_line(p.ctx, &d, &a, &b);
 }
 
-static void draw_eye(const pen_t & p, float ex, float ey, int side, float sx, float open) {
+static void draw_eye(const pen_t & p, float ex, float ey, int side, float sx, float open, float look_y) {
     const float LINE = 26, R = 11;
     float r = R * E.size, L = LINE * sx;
-    float slide = clampf(px_ * 1.6f + look, -(L - r), L - r);
+    float slide = clampf(px_ * 1.6f + look + QF.look, -(L - r), L - r);
     float squash = clampf(1 + py_ / 22, 0.55f, 1.5f);
     float ox = cosf(now_s * 6 * side) * 9 * E.orbit, oy = sinf(now_s * 6 * side) * 4 * E.orbit;
-    float cx = ex + slide + ox, cy = ey + oy, ry = r * squash;
+    float cx = ex + slide + ox, cy = ey + oy + look_y, ry = r * squash;
     float lid = cy + ry - open * 2 * ry;       // lid height: below, through or above the pupil
     lv_color_t black = lv_color_black();
     // brow tilt: + inner ends down (angry, straining), - inner ends up (worried)
@@ -591,7 +805,9 @@ static void draw_face(lv_event_t * e) {
     if (mood == M_WINDY) jit = max(jit, 0.6f);
     float bs = BOUNCE * T.sense * SENSE_K;
     float cx = 120 + clampf(hx - bs * bx[0], -34, 34) + frand(-jit, jit), cy = 118 + clampf(hy + bs * bx[2], -30, 30) + frand(-jit, jit);
-    float sx = 1 - hs * 0.5f, sy = 1 + hs;
+    float hsq = hs + QF.sq;
+    float sx = 1 - hsq * 0.5f, sy = 1 + hsq;
+    cx += QF.dx; cy += QF.dy;
     cy += 14 * bubble_k;
     if (act == ACT_REPORT && p.s > 0.8f) cy -= 34;
     if (t_giggle > 0) cy -= fabsf(sinf(now_s * 14)) * 6;
@@ -611,14 +827,28 @@ static void draw_face(lv_event_t * e) {
     if (act == ACT_QGL) { float t = sinf(now_s * 1.4f) * 7; tiltL = t; tiltR = -t; }   // corners leveling out
     if (act == ACT_PROBING) cy += fabsf(sinf(now_s * PI * 1.6f)) * 5;                  // tap, tap, tap
     if (act == ACT_CLEANING) cx += sinf(now_s * 14) * 6;                                // scrub scrub
-    draw_eye(p, cx - 54 * sx, cy - 14 * sy + tiltL, -1, sx, open);
-    draw_eye(p, cx + 54 * sx, cy - 14 * sy + tiltR, 1, sx, open);
+    // quirks layer on top of the mood (the mood's own expression stays underneath)
+    expr_t keep = E;
+    E.curve += QF.curve; E.w = max(4.0f, E.w + QF.w); E.cheek = max(E.cheek, QF.cheek);
+    E.gape = max(E.gape, QF.gape);
+    E.omega *= 1 - clampf(QF.gape / 0.4f, 0, 1);   // an open "o" mouth, not the cat "w"
+    draw_eye(p, cx - 54 * sx, cy - 14 * sy + tiltL, -1, sx, clampf(open * QF.open_l, 0, 1.1f), QF.look_y);
+    draw_eye(p, cx + 54 * sx, cy - 14 * sy + tiltR, 1, sx, clampf(open * QF.open_r, 0, 1.1f), QF.look_y);
     float talk = 0;
     if (bubble && millis() - bubble_since < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
-    float gape0 = E.gape;
     E.gape = max(E.gape, talk);
     draw_mouth(p, cx, cy + 22 * sy);
-    E.gape = gape0;
+    E = keep;
+    for (int i = 0; i < 3; i++) {       // humming: little notes floating up
+        if (notes[i].life <= 0) continue;
+        lv_opa_t op = (lv_opa_t)(255 * clampf(notes[i].life / 0.6f, 0, 1));
+        float nx = notes[i].x, ny = notes[i].y;
+        lv_draw_rect_dsc_t nd; lv_draw_rect_dsc_init(&nd); nd.bg_color = p.fc; nd.bg_opa = op; nd.radius = LV_RADIUS_CIRCLE;
+        lv_area_t na = {X(p, nx - 4), Y(p, ny - 3), X(p, nx + 4), Y(p, ny + 3)};
+        lv_draw_rect(p.ctx, &nd, &na);
+        line(p, nx + 3, ny, nx + 3, ny - 13, 2, op);
+        line(p, nx + 3, ny - 13, nx + 8, ny - 9, 2, op);
+    }
     if (bubble_k > 0.05f) {
         lv_opa_t op = (lv_opa_t)(255 * clampf(bubble_k, 0, 1));
         float top = 26 - (1 - bubble_k) * 10;
@@ -739,6 +969,7 @@ void coaster_forget(lv_obj_t * obj) {
 void coaster_init(void) {
     load_tuning();
     blink_t = frand(2, 5);
+    personality_init();
 }
 
 void coaster_loop(void) {
@@ -789,10 +1020,10 @@ void coaster_loop(void) {
 }
 
 String coaster_state_json(void) {
-    char buf[200];
+    char buf[260];
     snprintf(buf, sizeof(buf),
-             "{\"mood\":\"%s\",\"thrill\":%.2f,\"buzz\":%.2f,\"dizzy\":%.2f,\"used_to\":%.2f,\"motion\":%.2f,\"idle\":%s,\"sensor\":%s}",
-             MOOD_NAMES[mood], thrill, vib, t_dizzy > 0 ? 1.0f : dizzy_meter / T.dizzy, base, env,
+             "{\"mood\":\"%s\",\"quirk\":\"%s\",\"thrill\":%.2f,\"buzz\":%.2f,\"dizzy\":%.2f,\"used_to\":%.2f,\"motion\":%.2f,\"idle\":%s,\"sensor\":%s}",
+             MOOD_NAMES[mood], QUIRK_NAMES[quirk], thrill, vib, t_dizzy > 0 ? 1.0f : dizzy_meter / T.dizzy, base, env,
              T.idle ? "true" : "false",
 #ifdef LIS2DW_SUPPORT
              "true"
