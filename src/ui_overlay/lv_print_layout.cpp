@@ -551,7 +551,11 @@ static bool condition_holds(const layout_page_t & pg, const moonraker_data_t & d
     if (pg.left_min && d.time_left >= 0 && d.time_left < (int32_t)pg.left_min * 60) return true;
     if (pg.first_layer) {
         if (d.layer_total > 0 && d.layer > 0) return d.layer <= 1;
-        return layer_changes == 0 && d.print_time > 0;
+        // without a layer number we go by Z. No Z either (e.g. printing from Klipper's
+        // virtual SD card, OctoPrint then reports no currentZ): can't tell, so don't hold
+        // the page for the whole print. A first layer longer than 20 minutes is a guess gone wrong.
+        if (d.z_um == INT32_MIN && stable_z == INT32_MIN) return false;
+        return layer_changes == 0 && d.print_time > 0 && d.print_time < 20 * 60;
     }
     return false;
 }
