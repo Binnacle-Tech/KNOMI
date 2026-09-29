@@ -99,7 +99,7 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 | Printer not operational / Klipper shutdown | shocked and trembling (on the error popup) |
 | WiFi or OctoPrint lost | lonely, looking around (WiFi-lost screen and connection popup) |
 | API key rejected | confused |
-| Heating up | impatient, glancing at the heater |
+| Heating up | straining: angry squint, gritted teeth, steam puffs, trembling harder as the temperature closes in, with the temperature underneath. "Phew" when it gets there. This replaces the old nozzle/bed heating screens |
 | After a print, while the nozzle cools | cooling off, content |
 | First layer | focused squint |
 | Last 10 % | almost there |

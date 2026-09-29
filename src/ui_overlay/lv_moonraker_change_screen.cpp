@@ -147,13 +147,13 @@ void lv_loop_moonraker_change_screen(void) {
     bool nozzle_heating = moonraker_nozzle_is_heating();
     bool bed_heating = moonraker_bed_is_heating();
     if (nozzle_heating && (knomi_config.heat_screens & 0x01)) {
-        lv_goto_busy_screen(ui_ScreenHeatingNozzle, LV_MOONRAKER_STATE_NOZZLE_HEATING, GIF_NONE);
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_NOZZLE_HEATING, GIF_SLOT_IDLE2);  // Coaster straining
         if (moonraker.data.printing)
             screen_state = LV_SCREEN_HEATED;
         return;
     }
     if (bed_heating && (knomi_config.heat_screens & 0x02)) {
-        lv_goto_busy_screen(ui_ScreenHeatingBed, LV_MOONRAKER_STATE_BED_HEATING, GIF_NONE);
+        lv_goto_busy_screen(ui_ScreenMainGif, LV_MOONRAKER_STATE_BED_HEATING, GIF_SLOT_IDLE2);
         if (moonraker.data.printing)
             screen_state = LV_SCREEN_HEATED;
         return;

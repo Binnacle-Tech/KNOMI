@@ -111,7 +111,7 @@ enum {
 static const char * MOOD_NAMES[M_COUNT] = {
     "calm", "riding", "excited", "screaming", "startled", "elevator", "sleepy",
     "bored", "shivering", "dizzy", "giggle", "celebrate", "ready",
-    "sad", "shocked", "lonely", "confused", "impatient", "cooling off", "focused", "almost there",
+    "sad", "shocked", "lonely", "confused", "heating up", "cooling off", "focused", "almost there",
     "hungry", "windy", "hanging on",
 };
 
@@ -129,32 +129,32 @@ static uint32_t cool_until = 0;   // "cooling off" after a print, up to 10 minut
 static float hx = 0, hy = 0, hvx = 0, hvy = 0, hs = 0, hvs = 0;
 static float px_ = 0, py_ = 0, pvx = 0, pvy = 0;
 // expression
-typedef struct { float open, size, cheek, orbit, w, curve, omega, gape, zig, wave; } expr_t;
+typedef struct { float open, size, cheek, orbit, w, curve, omega, gape, zig, wave, tilt; } expr_t;
 static const expr_t MOODS[M_COUNT] = {
-    /* calm      */ {0.5f,  1.0f,  0, 0, 14, 0.0f, 1.0f, 0.0f, 0, 0},
-    /* riding    */ {0.56f, 1.0f,  0, 0, 14, 0.3f, 0.7f, 0.0f, 0, 0},
-    /* excited   */ {0.85f, 1.05f, 0, 0, 12, 0.7f, 0.0f, 0.9f, 0, 0},
-    /* screaming */ {1.0f,  1.3f,  0, 0,  8, 0.0f, 0.0f, 1.7f, 0, 0},
-    /* startled  */ {1.0f,  1.2f,  0, 0,  6, 0.0f, 0.0f, 1.1f, 0, 0},
-    /* elevator  */ {0.75f, 1.05f, 0, 0,  7, 0.0f, 0.0f, 0.6f, 0, 0},
-    /* sleepy    */ {0.02f, 1.0f,  0, 0, 11, 0.0f, 1.0f, 0.0f, 0, 0},
-    /* bored     */ {0.32f, 1.0f,  0, 0,  9, 0.0f, 0.0f, 0.0f, 0, 0},
-    /* shivering */ {0.42f, 1.0f,  0, 0, 14, 0.0f, 0.0f, 0.0f, 1, 0},
-    /* dizzy     */ {0.5f,  1.0f,  0, 1, 14, 0.0f, 0.0f, 0.0f, 0, 1},
-    /* giggle    */ {1.0f,  1.05f, 1, 0, 12, 0.8f, 0.0f, 0.8f, 0, 0},
-    /* celebrate */ {1.0f,  1.1f,  1, 0, 15, 0.9f, 0.0f, 1.0f, 0, 0},
-    /* ready     */ {1.0f,  1.1f,  0, 0, 13, 0.8f, 0.0f, 0.5f, 0, 0},
-    /* sad       */ {0.35f, 1.0f,  0, 0, 12, -0.9f, 0.0f, 0.0f, 0, 0},
-    /* shocked   */ {1.0f,  0.75f, 0, 0, 10, 0.0f, 0.0f, 0.35f, 0, 0.8f},
-    /* lonely    */ {0.45f, 1.0f,  0, 0,  9, -0.6f, 0.0f, 0.0f, 0, 0},
-    /* confused  */ {0.55f, 1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.5f},
-    /* impatient */ {0.5f,  1.0f,  0, 0,  9, 0.0f, 0.0f, 0.0f, 0, 0},
-    /* cooling   */ {0.3f,  1.0f,  0, 0, 12, 0.5f, 0.4f, 0.0f, 0, 0},
-    /* focused   */ {0.28f, 0.9f,  0, 0,  7, 0.0f, 0.0f, 0.0f, 0, 0},
-    /* almost    */ {0.8f,  1.05f, 0, 0, 12, 0.5f, 0.0f, 0.2f, 0, 0},
-    /* hungry    */ {0.7f,  1.0f,  0, 0,  8, 0.0f, 0.0f, 0.9f, 0, 0},
-    /* windy     */ {0.3f,  1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.6f},
-    /* nervous   */ {0.9f,  0.9f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.6f, 0},
+    /* calm      */ {0.5f,  1.0f,  0, 0, 14, 0.0f, 1.0f, 0.0f, 0, 0, 0},
+    /* riding    */ {0.56f, 1.0f,  0, 0, 14, 0.3f, 0.7f, 0.0f, 0, 0, 0},
+    /* excited   */ {0.85f, 1.05f, 0, 0, 12, 0.7f, 0.0f, 0.9f, 0, 0, 0},
+    /* screaming */ {1.0f,  1.3f,  0, 0,  8, 0.0f, 0.0f, 1.7f, 0, 0, 0},
+    /* startled  */ {1.0f,  1.2f,  0, 0,  6, 0.0f, 0.0f, 1.1f, 0, 0, 0},
+    /* elevator  */ {0.75f, 1.05f, 0, 0,  7, 0.0f, 0.0f, 0.6f, 0, 0, 0},
+    /* sleepy    */ {0.02f, 1.0f,  0, 0, 11, 0.0f, 1.0f, 0.0f, 0, 0, 0},
+    /* bored     */ {0.32f, 1.0f,  0, 0,  9, 0.0f, 0.0f, 0.0f, 0, 0, 0},
+    /* shivering */ {0.42f, 1.0f,  0, 0, 14, 0.0f, 0.0f, 0.0f, 1, 0, 0},
+    /* dizzy     */ {0.5f,  1.0f,  0, 1, 14, 0.0f, 0.0f, 0.0f, 0, 1, 0},
+    /* giggle    */ {1.0f,  1.05f, 1, 0, 12, 0.8f, 0.0f, 0.8f, 0, 0, 0},
+    /* celebrate */ {1.0f,  1.1f,  1, 0, 15, 0.9f, 0.0f, 1.0f, 0, 0, 0},
+    /* ready     */ {1.0f,  1.1f,  0, 0, 13, 0.8f, 0.0f, 0.5f, 0, 0, 0},
+    /* sad       */ {0.35f, 1.0f,  0, 0, 12, -0.9f, 0.0f, 0.0f, 0, 0, -0.7f},
+    /* shocked   */ {1.0f,  0.75f, 0, 0, 10, 0.0f, 0.0f, 0.35f, 0, 0.8f, -0.4f},
+    /* lonely    */ {0.45f, 1.0f,  0, 0,  9, -0.6f, 0.0f, 0.0f, 0, 0, -0.5f},
+    /* confused  */ {0.55f, 1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.5f, 0.3f},
+    /* impatient */ {0.42f, 0.95f, 0, 0, 13, 0.0f, 0.0f, 0.0f, 0.8f, 0, 1.0f},  // straining to heat the hotend
+    /* cooling   */ {0.3f,  1.0f,  0, 0, 12, 0.5f, 0.4f, 0.0f, 0, 0, 0},
+    /* focused   */ {0.28f, 0.9f,  0, 0,  7, 0.0f, 0.0f, 0.0f, 0, 0, 0},
+    /* almost    */ {0.8f,  1.05f, 0, 0, 12, 0.5f, 0.0f, 0.2f, 0, 0, 0},
+    /* hungry    */ {0.7f,  1.0f,  0, 0,  8, 0.0f, 0.0f, 0.9f, 0, 0, 0},
+    /* windy     */ {0.3f,  1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.6f, 0},
+    /* nervous   */ {0.9f,  0.9f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.6f, 0, -0.3f},
 };
 static expr_t E = MOODS[M_CALM];
 static float look = 0, wander_x = 0, wander_tx = 0, wander_t = 0;
@@ -173,6 +173,9 @@ static bit_t confetti[40];
 static uint8_t confetti_n = 0;
 
 static void blink_now(void) { blink_closing = 0.16f; }
+static float heat_effort = 0;     // 0..1 how hard it's working (nozzle heating counts double)
+static float t_phew = 0;          // relief when the heater reaches temperature
+static bool was_heating = false;
 
 /* ---------------- simulation ---------------- */
 
@@ -201,7 +204,7 @@ static void head_kick(float vx, float vy) { hvx += vx; hvy += vy; }
 static void pick_mood(float dt, const moonraker_data_t & d) {
     t_startle = max(0.0f, t_startle - dt); t_dizzy = max(0.0f, t_dizzy - dt);
     t_giggle = max(0.0f, t_giggle - dt); t_celebrate = max(0.0f, t_celebrate - dt);
-    t_ready = max(0.0f, t_ready - dt); t_sad = max(0.0f, t_sad - dt);
+    t_ready = max(0.0f, t_ready - dt); t_sad = max(0.0f, t_sad - dt); t_phew = max(0.0f, t_phew - dt);
     if (step > 1.8f && from_rest && vib < 0.35f && t_startle <= 0 && t_celebrate <= 0) {
         t_startle = 0.7f; blink_now(); head_kick(0, -40);
     }
@@ -214,8 +217,15 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     bool lonely = !link || moonraker.unconnected;
     bool confused = !lonely && moonraker.auth_failed;
     bool error = !lonely && !confused && moonraker.unready;
-    bool heating = (d.nozzle_target > 0 && d.nozzle_actual < d.nozzle_target - 3) ||
-                   (d.bed_target > 0 && d.bed_actual < d.bed_target - 2);
+    bool noz_heat = d.nozzle_target > 0 && d.nozzle_actual < d.nozzle_target - 3;
+    bool bed_heat = d.bed_target > 0 && d.bed_actual < d.bed_target - 2;
+    bool heating = noz_heat || bed_heat;
+    // effort grows as the temperature climbs: pushing hardest right before it gets there
+    float e_noz = noz_heat ? 0.4f + 0.6f * clampf((float)d.nozzle_actual / d.nozzle_target, 0, 1) : 0;
+    float e_bed = bed_heat ? 0.2f + 0.3f * clampf((float)d.bed_actual / d.bed_target, 0, 1) : 0;
+    heat_effort = max(e_noz, e_bed);
+    if (was_heating && !heating && (d.nozzle_target > 0 || d.bed_target > 0)) t_phew = 1.8f;
+    was_heating = heating;
     bool first_layer = d.printing && !paused && d.print_time > 0 &&
                        (d.layer_total > 0 ? d.layer <= 1 : (d.z_um != INT32_MIN && d.z_um <= 400));
     bool cooling = !d.printing && d.nozzle_target == 0 && d.nozzle_actual >= 60 &&
@@ -237,6 +247,7 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     else if (fabsf(vz) > 2.0f) m = M_ELEVATOR;
     else if (paused) m = M_BORED;
     else if (heating) m = M_HEATING;
+    else if (t_phew > 0) m = M_COOLING;                   // phew, made it
     else if (knomi_power_dozing()) m = M_SLEEPY;          // the screen dims: Coaster dozes off with it
     else if (first_layer) m = M_FOCUS;
     else if (d.printing && d.progress >= 90) m = M_ANTICIPATE;
@@ -275,7 +286,7 @@ static void step_expr(float dt) {
     float want = mood == M_BORED ? sinf(now_s * 1.3f) * 12
                : mood == M_LONELY ? sinf(now_s * 0.7f) * 14                        // looking around for OctoPrint
                : mood == M_CONFUSED ? (fmodf(now_s, 2.4f) < 1.2f ? -10 : 10)       // glancing left, right
-               : mood == M_HEATING ? (fmodf(now_s, 3.0f) < 0.8f ? 12 : 0)         // checking the heater
+               : mood == M_HEATING ? 0
                : (mood == M_CALM || mood == M_RIDING || mood == M_SLEEPY || mood == M_COOLING) ? wander_x : 0;
     look += (want - look) * kk;
     if (mood == M_HUNGRY) E.gape = 0.9f * fabsf(sinf(now_s * 5));   // chomp chomp
@@ -368,8 +379,18 @@ static void draw_eye(const pen_t & p, float ex, float ey, int side, float sx, fl
     float cx = ex + slide + ox, cy = ey + oy, ry = r * squash;
     float lid = cy + ry - open * 2 * ry;       // lid height: below, through or above the pupil
     lv_color_t black = lv_color_black();
+    // brow tilt: + inner ends down (angry, straining), - inner ends up (worried)
+    float slope = -side * 0.28f * E.tilt;
     fill_ellipse(p, cx, cy, r, ry, p.fc);
-    fill_rect(p, cx - r - 2, cy - ry - 2, cx + r + 2, lid, black);        // lid covers the top
+    if (fabsf(E.tilt) < 0.02f) {
+        fill_rect(p, cx - r - 2, cy - ry - 2, cx + r + 2, lid, black);    // lid covers the top
+    } else {
+        float x0 = cx - r - 3, x1 = cx + r + 3, top = min(cy - ry - 4, lid - 12);
+        lv_point_t q[4] = {{X(p, x0), Y(p, top)}, {X(p, x1), Y(p, top)},
+                           {X(p, x1), Y(p, lid + slope * (x1 - ex))}, {X(p, x0), Y(p, lid + slope * (x0 - ex))}};
+        lv_draw_rect_dsc_t bd; lv_draw_rect_dsc_init(&bd); bd.bg_color = black;
+        lv_draw_polygon(p.ctx, &bd, q, 4);
+    }
     if (E.cheek > 0.01f) {                                                // cheek pushes up: "^" eyes
         float cyc = cy + r * 2.4f - E.cheek * 1.55f * r;
         fill_ellipse(p, cx, cyc, r * 1.5f, r * 1.5f, black);
@@ -377,7 +398,7 @@ static void draw_eye(const pen_t & p, float ex, float ey, int side, float sx, fl
     float k = clampf((open - 0.5f) / 0.3f, 0, 1);   // lid line shrinks into the pupil as it opens
     if (k < 0.98f) {
         float x0 = ex - L + (cx - (ex - L)) * k, x1 = ex + L + (cx - (ex + L)) * k;
-        line(p, x0, lid, x1, lid, 5, (lv_opa_t)(255 * (1 - k * 0.6f)));
+        line(p, x0, lid + slope * (x0 - ex), x1, lid + slope * (x1 - ex), 5, (lv_opa_t)(255 * (1 - k * 0.6f)));
     }
 }
 
@@ -386,7 +407,7 @@ static float tri(float u) { return 2 * fabsf(2 * (u - floorf(u + 0.5f))) - 1; }
 static void draw_mouth(const pen_t & p, float mx, float my) {
     const int N = 20;
     float w = E.w, prevx = 0, prevy = 0;
-    float zsign = sinf(now_s * 38) > 0 ? 0.5f : 0;
+    float zsign = (mood == M_SHIVER && sinf(now_s * 38) > 0) ? 0.5f : 0;   // chattering only when shivering
     for (int i = 0; i <= N; i++) {
         float t = -1 + 2.0f * i / N, x = mx + t * w, envl = 1 - t * t;
         float y = my + E.curve * 7 * envl + E.omega * 5 * fabsf(sinf(PI * t))
@@ -410,6 +431,7 @@ static void draw_face(lv_event_t * e) {
 
     float jit = min(3.0f, vib * 6) * E.zig;
     if (mood == M_ERROR) jit = 1.5f;                  // trembling
+    if (mood == M_HEATING) jit = 0.4f + heat_effort * 1.8f;   // straining, harder as it gets close
     if (mood == M_NERVOUS) jit = max(jit, 0.8f);
     if (mood == M_WINDY) jit = max(jit, 0.6f);
     float cx = 120 + hx + frand(-jit, jit), cy = 118 + hy + frand(-jit, jit);
@@ -442,6 +464,26 @@ static void draw_face(lv_event_t * e) {
         lv_area_t a = {X(p, dx - 4 * sz), Y(p, dy - 3 * sz), X(p, dx + 4 * sz), Y(p, dy + 5 * sz)};
         lv_draw_rect(p.ctx, &rd, &a);
         line(p, dx, dy - 8 * sz, dx, dy - 2 * sz, 3 * sz, op);
+    }
+    if (mood == M_HEATING) {
+        // steam puffing off the top, faster and bigger the harder it works
+        for (int i = 0; i < 3; i++) {
+            float q = fmodf(now_s * (0.8f + heat_effort) + i / 3.0f, 1);
+            float px = cx + (i - 1) * 26 * sx + sinf(now_s * 3 + i) * 3, py = cy - 52 - q * 26;
+            float len = 4 + 6 * heat_effort * (1 - q);
+            line(p, px, py, px, py - len, 3, (lv_opa_t)(255 * sinf(q * PI) * (0.4f + 0.6f * heat_effort)));
+        }
+        // what it's heating, on the full-size face
+        if (p.s > 0.8f) {
+            char t[24];
+            bool noz = d.nozzle_target > 0 && d.nozzle_actual < d.nozzle_target - 3;
+            if (noz) snprintf(t, sizeof(t), "%d / %d\xe2\x84\x83", d.nozzle_actual, d.nozzle_target);
+            else snprintf(t, sizeof(t), "Bed %d / %d\xe2\x84\x83", d.bed_actual, d.bed_target);
+            lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);
+            ld.color = p.fc; ld.font = &ui_font_InterSemiBold18; ld.align = LV_TEXT_ALIGN_CENTER;
+            lv_area_t a = {X(p, 40), Y(p, 180), X(p, 200), Y(p, 204)};
+            lv_draw_label(p.ctx, &ld, &a, t, NULL);
+        }
     }
     if (mood == M_SLEEPY) {
         lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);

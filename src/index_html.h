@@ -261,12 +261,12 @@ async function discoverOcto(){
           <div class="hint">When you leave a menu open. 0 = stay on the menu.</div>
         </div>
         <div class="row" style="grid-column:1/-1">
-          <span class="field-label">Heating screens</span>
+          <span class="field-label">Heat-up screen: Coaster straining, with the temperature</span>
           <div class="checks">
             <label><input type="checkbox" name="hs_n" value="1" $hs_n$>Nozzle heating</label>
             <label><input type="checkbox" name="hs_b" value="1" $hs_b$>Bed heating</label>
           </div>
-          <div class="hint">Unticked: while a print heats up, the KNOMI goes straight to the printing screen.</div>
+          <div class="hint">Unticked: while a print heats up, the KNOMI stays on the printing screen (Coaster there still strains if it's on your layout).</div>
         </div>
       </div>
       <div class="sub">How long each animation plays (seconds, 0 = skip)</div>
