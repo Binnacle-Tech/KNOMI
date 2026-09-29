@@ -567,14 +567,17 @@ void moonraker_set_msg(const char * text, long ext_id) {
     if (text[0]) Serial.printf("message: %s\r\n", text);
 }
 
-// Tell the OctoPrint plugin how Coaster is doing (sidebar mirror): on change, and every 15 s.
-// Quiet POST: an older plugin without the "coaster" command just answers 400, no popup.
+// Tell the OctoPrint plugin how Coaster is doing (sidebar mirror): right away when its mood,
+// quirk or feeling changes, every 15 s otherwise, and ~3x a second with head motion while
+// someone has the sidebar open. Quiet POST: an older plugin just answers 400, no popup.
 static void coaster_sync_plugin(void) {
     static String last;
     static uint32_t last_ms = 0, backoff_until = 0;
     if ((int32_t)(millis() - backoff_until) < 0) return;
-    String s = coaster_plugin_json();
-    if (s == last && millis() - last_ms < 15000) return;
+    String key = coaster_plugin_json(false);
+    bool live = coaster_plugin_watched && millis() - last_ms >= 300;
+    if (key == last && millis() - last_ms < 15000 && !live) return;
+    String s = coaster_plugin_json(coaster_plugin_watched);
     bool ok = false;
     if (knomi_ble_link_active()) {
         ok = knomi_ble_send_command("/coaster?" + s);
@@ -585,8 +588,9 @@ static void coaster_sync_plugin(void) {
         client.addHeader("Content-Type", "application/json");
         client.setTimeout(3000);
         int code = client.POST("{\"command\":\"coaster\"," + s.substring(1));
-        client.end();
         ok = code == 200 || code == 204;
+        if (code == 200) coaster_plugin_watched = client.getString().indexOf("\"watch\":true") >= 0;   // plugin 0.8+
+        client.end();
         static int said = 0;
         if (code != said) {   // log changes only
             if (ok) Serial.println("octoprint: Coaster shows in the OctoPrint sidebar");
@@ -596,14 +600,14 @@ static void coaster_sync_plugin(void) {
         }
         if (!ok) backoff_until = millis() + 60000;   // plugin missing or too old
     }
-    if (ok) { last = s; last_ms = millis(); }
+    if (ok) { last = key; last_ms = millis(); }
 }
 
 void moonraker_post_task(void * parameter) {
     for(;;) {
         moonraker.http_post_loop();
         coaster_sync_plugin();
-        delay(500);
+        delay(coaster_plugin_watched ? 100 : 500);
     }
 }
 

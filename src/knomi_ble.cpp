@@ -4,6 +4,7 @@
 #include "knomi.h"
 #include "moonraker.h"
 #include "knomi_ble.h"
+extern bool coaster_plugin_watched;   // knomi_coaster.cpp
 
 #define LINK_TIMEOUT_MS 5000   // plugin sends status at least every 2 s
 
@@ -71,6 +72,7 @@ bool knomi_ble_apply_status(const char *json, size_t len) {
     d.speed = doc["sp"] | 0;
     if (doc.containsKey("mi")) moonraker_set_msg(doc["m"] | "", doc["mi"] | 0L);
     if (doc["w"] | 0) wifi_request = true;
+    coaster_plugin_watched = doc["cw"] | 0;   // someone has the OctoPrint sidebar open
     moonraker.data_unlock = true;
     return true;
 }

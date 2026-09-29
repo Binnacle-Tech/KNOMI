@@ -1741,9 +1741,24 @@ void coaster_set_act(int slot) {
 }
 
 // compact state for the OctoPrint plugin's sidebar Coaster
-String coaster_plugin_json(void) {
-    char buf[240];
-    int n = snprintf(buf, sizeof(buf), "{\"mood\":\"%s\",\"feel\":\"%s\",\"hat\":%d", MOOD_NAMES[mood], feel_name(), hat_today());
+// For the OctoPrint sidebar. The first part changes rarely (mood, quirk, feeling, decorations);
+// with motion it also carries where the head and pupils are, so the sidebar can follow along.
+bool coaster_plugin_watched = false;   // someone has the sidebar open (the plugin says so)
+String coaster_plugin_json(bool motion) {
+    char buf[520];
+    lv_color32_t c32; c32.full = lv_color_to32(lv_theme_color());
+    int n = snprintf(buf, sizeof(buf),
+                     "{\"mood\":\"%s\",\"feel\":\"%s\",\"h\":%.2f,\"hat\":%d,\"q\":\"%s\",\"qs\":%d,\"deco\":\"%s\",\"lights\":\"%s\",\"anim\":\"%s\","
+                     "\"shades\":%d,\"act\":%d,\"c\":\"#%02X%02X%02X\",\"south\":%d,\"pr\":%d,\"heat\":%.2f",
+                     MOOD_NAMES[mood], feel_name(), H, hat_today(), QUIRK_NAMES[quirk], quirk_side,
+                     DECO_KEYS[deco_kind > 0 ? deco_kind : 0], LIGHT_KEYS[T.lights], ANIM_KEYS[T.anim],
+                     shades_on ? 1 : 0, act, c32.ch.red, c32.ch.green, c32.ch.blue, T.south ? 1 : 0,
+                     moonraker.data.printing ? 1 : 0, heat_effort);
+    if (motion) {
+        float bs = BOUNCE * T.sense * SENSE_K;
+        n += snprintf(buf + n, sizeof(buf) - n, ",\"hx\":%.1f,\"hy\":%.1f,\"hs\":%.3f,\"px\":%.1f,\"py\":%.1f,\"look\":%.1f",
+                      clampf(hx - bs * bx[0], -34, 34), clampf(hy + bs * bx[2], -30, 30), hs, px_, py_, look);
+    }
     if (report.valid)
         n += snprintf(buf + n, sizeof(buf) - n, ",\"report\":{\"done\":%s,\"progress\":%u,\"screams\":%u,\"dizzies\":%u,\"jolts\":%u,\"peak\":%.2f,\"secs\":%u}",
                       report.done ? "true" : "false", report.progress, report.screams, report.dizzies, report.jolts, report.peak, (unsigned)report.secs);
