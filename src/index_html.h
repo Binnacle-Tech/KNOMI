@@ -63,6 +63,19 @@ function fwParse(v){
   return m ? [+m[1], +m[2], +m[3], +(m[4] || 0)] : null;
 }
 function fwNewer(a, b){ for (var i = 0; i < 4; i++){ if (a[i] !== b[i]) return a[i] > b[i]; } return false; }
+function installUpdate(bid, pid){
+  var b = document.getElementById(bid || "update-go"), p = document.getElementById(pid || "update-prog");
+  b.disabled = true;
+  fetch("/update/github", {method:"POST"}).then(function(){ poll(); }).catch(function(){ p.textContent = "Couldn't start the update"; b.disabled = false; });
+  function poll(){
+    fetch("/update/progress").then(function(r){ return r.json(); }).then(function(s){
+      p.textContent = s.msg + (s.state == "downloading" ? " · " + s.pct + "%" : "");
+      if (s.state == "checking" || s.state == "downloading") { setTimeout(poll, 800); return; }
+      if (s.state == "done") { setTimeout(function(){ location.reload(); }, 20000); return; }
+      b.disabled = false;
+    }).catch(function(){ p.textContent = "Restarting…"; setTimeout(function(){ location.reload(); }, 15000); });
+  }
+}
 function checkUpdate(){
   var cur = fwParse("$fw$");
   if (!cur || !window.fetch) return;
@@ -123,7 +136,7 @@ async function discoverOcto(){
 <header class="rail"><div class="wrap rail-in">
   <div class="brand"><a class="n" href="/"><svg class="mark" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="126" fill="#000" stroke="#334353" stroke-width="6"/><g stroke="#C02F30" stroke-width="16" stroke-linecap="round" fill="none"><path d="M32 112h80M144 112h80"/><path stroke-width="14" d="M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0"/></g><g fill="#C02F30"><path d="M42 112a30 30 0 0 0 60 0z"/><path d="M154 112a30 30 0 0 0 60 0z"/></g></svg><span>KNOMI<span class="dot">.</span></span></a><span class="f">Printer display</span></div>
   <span class="rail-sp"></span>
-  <nav><a class="on" href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a></nav>
+  <nav><a class="on" href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a><a href="/log">Log</a></nav>
   )rawliteral" BINNACLE_MODES R"rawliteral(
 </div></header>
 
@@ -136,9 +149,9 @@ async function discoverOcto(){
     <div id="update-note" class="card" style="display:none;margin:14px 0 0">
       <div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
         <span class="pill now" id="update-ver"></span>
-        <span style="flex:1;min-width:200px">A newer firmware is available.</span>
+        <span style="flex:1;min-width:200px" id="update-prog">A newer firmware is available. The KNOMI can download and install it itself; your settings stay.</span>
         <a class="btn-ghost" id="update-dl" href="#">Download .bin</a>
-        <a class="btn-primary" href="/update">Install</a>
+        <button type="button" class="btn-primary" id="update-go" onclick="installUpdate()">Install now</button>
       </div>
     </div>
     <div class="rule"></div>
@@ -397,9 +410,12 @@ async function discoverOcto(){
     <div class="card-h"><span class="idx">08</span><span class="k">System</span></div>
     <div class="card-f" style="border-top:0">
       <a class="btn-ghost" href="/gifs">Custom animations</a>
-      <a class="btn-ghost" href="/update">Update firmware</a>
+      <button type="button" class="btn-ghost" id="sys-update" onclick="installUpdate('sys-update','sys-update-prog')">Update from GitHub</button>
+      <a class="btn-ghost" href="/update">Upload a .bin</a>
+      <a class="btn-ghost" href="/log">Log</a>
       <form id="restart-form" name="restart-form" action="/" method="POST" style="margin:0"><input type="hidden" name="restart"></form>
       <button type="button" class="btn-ghost btn-danger" onclick="showPopupRestart()">Restart</button>
+      <div class="hint" id="sys-update-prog" style="width:100%">Update from GitHub checks for a newer release and installs it; settings stay.</div>
     </div>
     <div class="card-f">
       <a class="btn-ghost" href="/backup">Download backup</a>

@@ -71,7 +71,7 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
 <header class="rail"><div class="wrap wide rail-in">
   <div class="brand"><a class="n" href="/"><svg class="mark" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="126" fill="#000" stroke="#334353" stroke-width="6"/><g stroke="#C02F30" stroke-width="16" stroke-linecap="round" fill="none"><path d="M32 112h80M144 112h80"/><path stroke-width="14" d="M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0"/></g><g fill="#C02F30"><path d="M42 112a30 30 0 0 0 60 0z"/><path d="M154 112a30 30 0 0 0 60 0z"/></g></svg><span>KNOMI<span class="dot">.</span></span></a><span class="f">Printer display</span></div>
   <span class="rail-sp"></span>
-  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a class="on" href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a></nav>
+  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a class="on" href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a><a href="/log">Log</a></nav>
   )rawliteral" BINNACLE_MODES R"rawliteral(
 </div></header>
 <main class="wrap wide">
@@ -139,9 +139,8 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
           <select id="starter">
             <option value="">Choose…</option>
             <option value="default">Info (the default)</option>
-            <option value="face">Face, stats every 30 s</option>
-            <option value="facepct">Face, stats every 10 % and at the end</option>
-            <option value="coaster">Coaster face, stats every 10 % and at the end</option>
+            <option value="face">Coaster, stats every 30 s</option>
+            <option value="facepct">Coaster, stats every 10 % and at the end</option>
             <option value="big">Big percent</option>
             <option value="gauge">Gauge</option>
             <option value="blank">Blank</option>
@@ -181,9 +180,9 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
 (function(){
 var TOKENS=[["pct","percent done"],["time","“1h 20m left”"],["left","time left"],["elapsed","elapsed"],["total","total time"],
   ["file","file name"],["noz","nozzle °"],["noz_t","nozzle target"],["bed","bed °"],["bed_t","bed target"],["deg","℃"],
-  ["z","Z height"],["layer","layer"],["layers","layer count"],["pos","Layer x/y or Z"],["state","Printing / Paused"]];
+  ["z","Z height"],["layer","layer"],["layers","layer count"],["pos","Layer x/y or Z"],["state","Printing / Paused"],["msg","last M117 message"]];
 var SAMPLE={pct:"42",time:"58m left",left:"58m",elapsed:"42m",total:"1h 40m",file:"benchy_0.2mm_PLA.gcode",noz:"215",noz_t:"215",
-  bed:"60",bed_t:"60",deg:"℃",z:"8.40",layer:"42",layers:"240",pos:"Layer 42/240",state:"Printing"};
+  bed:"60",bed_t:"60",deg:"℃",z:"8.40",layer:"42",layers:"240",pos:"Layer 42/240",state:"Printing",msg:"Heat soaking 5 min"};
 var FONTS=[14,16,18,20,24,32,48];
 var NAMED={t:"UI color",x:"Text",m:"Muted",a:"Amber"};
 var NAMEDHEX={x:"#E7EEF4",m:"#93A4B2",a:"#FFD164"};
@@ -206,12 +205,10 @@ function starters(k){
   var info=DEF?clone(DEF.pages[0]):{s:8,el:[]};
   if(k=="default")return clone(DEF);
   if(k=="blank")return{v:1,pages:[{s:10,el:[]}]};
-  if(k=="face"){info.s=8;return{v:1,pages:[{s:30,el:[{t:"gif",x:120,y:112,g:"print"},
+  if(k=="face"){info.s=8;return{v:1,pages:[{s:30,el:[{t:"face",x:120,y:120,d:240},
     {t:"arc",x:120,y:120,d:236,w:4,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
-    {t:"text",x:120,y:200,f:16,c:"m",w:0,a:"c",txt:"{pct}%  ·  {left}"}]},info]}}
+    {t:"text",x:120,y:212,f:14,c:"m",w:0,a:"c",txt:"{pct}%  ·  {left}"}]},info]}}
   if(k=="facepct"){var f=starters("face");f.pages[0].s=60;f.pages[1].m="e";f.pages[1].s=10;f.pages[1].tr={pe:10,lm:10,fl:1};return f}
-  if(k=="coaster"){var c=starters("facepct");c.pages[0].el=[{t:"face",x:120,y:120,d:240},
-    {t:"arc",x:120,y:120,d:236,w:4,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1}];return c}
   if(k=="big")return{v:1,pages:[{s:10,el:[{t:"arc",x:120,y:120,d:232,w:14,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
     {t:"text",x:120,y:76,f:14,c:"m",w:140,a:"c",sc:1,txt:"{file}"},
     {t:"text",x:120,y:118,f:48,c:"x",w:0,a:"c",txt:"{pct}%"},
@@ -406,7 +403,9 @@ function addEl(e,offset){
   pg.el.push(e);sel=pg.el.length-1;render();renderProps();
 }
 $("adds").innerHTML=ADDS.map(function(a,i){return'<button type="button" class="btn-ghost" data-add="'+i+'">+ '+a[0]+'</button>'}).join("");
-$("adds").addEventListener("click",function(ev){var i=ev.target.dataset.add;if(i!==undefined)addEl(clone(ADDS[i][1]))});
+$("adds").addEventListener("click",function(ev){var i=ev.target.dataset.add;if(i===undefined)return;var e=clone(ADDS[i][1]);
+  if(e.t=="gif"){if(!state.gifs.length){status("No animations left: Coaster acts everything out. Upload a GIF on the Animations page first.","bad");return}e.g=state.gifs[0].name}
+  addEl(e)});
 $("layers").addEventListener("click",function(ev){
   var t=ev.target,i=parseInt(t.dataset.i,10),pg=L.pages[page];
   if(t.dataset.act=="del"){pg.el.splice(i,1);sel=-1;render();renderProps();return}
@@ -450,7 +449,7 @@ var sim=null;
 function simTokens(s){var left=Math.max(0,Math.round(s.leftMin*60));
   var fmt=function(x){return x<60?"<1m":x<3600?Math.floor(x/60)+"m":Math.floor(x/3600)+"h "+String(Math.floor(x%3600/60)).padStart(2,"0")+"m"};
   return{pct:String(Math.floor(s.pct)),left:fmt(left),time:fmt(left)+" left",elapsed:fmt(s.el),total:fmt(s.el+left),file:SAMPLE.file,
-    noz:"215",noz_t:"215",bed:"60",bed_t:"60",deg:"℃",z:(s.layer*0.2).toFixed(2),layer:String(s.layer),layers:"200",pos:"Layer "+s.layer+"/200",state:"Printing"}}
+    noz:"215",noz_t:"215",bed:"60",bed_t:"60",deg:"℃",z:(s.layer*0.2).toFixed(2),layer:String(s.layer),layers:"200",pos:"Layer "+s.layer+"/200",state:"Printing",msg:SAMPLE.msg}}
 function simCond(p,s){var t=p.tr||{};return(t.lm&&s.leftMin<t.lm)||(t.fl&&s.layer<=1)}
 function simStep(){
   var s=sim,now=performance.now(),dt=(now-s.last)/1000;s.last=now;

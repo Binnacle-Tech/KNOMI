@@ -8,6 +8,8 @@
 #include "moonraker.h"
 #include "knomi_power.h"
 #include "knomi_ble.h"
+#include "knomi_gif.h"
+#include <time.h>
 #include "knomi_coaster.h"
 #include "ui_overlay/lv_overlay.h"
 #include "ui/ui.h"
@@ -21,8 +23,9 @@
 typedef struct {
     float wobble, settle, sense, habit, scare, dizzy, sleep;
     bool idle;
+    uint8_t hat;   // 0 seasonal, 1 off, 2 party, 3 santa, 4 witch
 } coaster_tune_t;
-static const coaster_tune_t TUNE_DEF = {2.4f, 0.28f, 1.0f, 12.0f, 0.9f, 5.0f, 20.0f, true};  // Coaster is the mascot: on by default
+static const coaster_tune_t TUNE_DEF = {2.4f, 0.28f, 1.0f, 12.0f, 0.9f, 5.0f, 20.0f, true, 0};  // Coaster is the mascot: on by default
 static coaster_tune_t T = TUNE_DEF;
 static volatile bool reload_pending = false;
 
@@ -40,6 +43,7 @@ static void load_tuning(void) {
         T.dizzy  = constrain(d["dizzy"]  | T.dizzy,  1.0f, 20.0f);
         T.sleep  = constrain(d["sleep"]  | T.sleep,  5.0f, 120.0f);
         T.idle   = d["idle"] | true;
+        T.hat    = constrain((int)(d["hat"] | 0), 0, 4);
     }
     f.close();
 }
@@ -54,6 +58,7 @@ const char * coaster_save_json(const char * json, size_t len) {
     StaticJsonDocument<384> out;
     static const char * keys[] = {"wobble", "settle", "sense", "habit", "scare", "dizzy", "sleep"};
     for (const char * k : keys) if (in[k].is<float>()) out[k] = in[k].as<float>();
+    if (in["hat"].is<int>()) out["hat"] = constrain(in["hat"].as<int>(), 0, 4);
     out["idle"] = in.containsKey("idle") ? (bool)(in["idle"] | false) : T.idle;
     File f = LittleFS.open(COASTER_PATH, "w");
     if (!f) return "Couldn't write to flash";
@@ -78,8 +83,8 @@ void coaster_set_idle(bool on) {
 String coaster_tuning_json(void) {
     char buf[200];
     snprintf(buf, sizeof(buf),
-             "{\"wobble\":%.2f,\"settle\":%.2f,\"sense\":%.2f,\"habit\":%.0f,\"scare\":%.2f,\"dizzy\":%.1f,\"sleep\":%.0f,\"idle\":%s}",
-             T.wobble, T.settle, T.sense, T.habit, T.scare, T.dizzy, T.sleep, T.idle ? "true" : "false");
+             "{\"wobble\":%.2f,\"settle\":%.2f,\"sense\":%.2f,\"habit\":%.0f,\"scare\":%.2f,\"dizzy\":%.1f,\"sleep\":%.0f,\"idle\":%s,\"hat\":%d}",
+             T.wobble, T.settle, T.sense, T.habit, T.scare, T.dizzy, T.sleep, T.idle ? "true" : "false", T.hat);
     return String(buf);
 }
 void coaster_request_reload(void) { reload_pending = true; }
@@ -106,13 +111,13 @@ enum {
     M_CALM, M_RIDING, M_EXCITED, M_SCREAM, M_STARTLED, M_ELEVATOR, M_SLEEPY,
     M_BORED, M_SHIVER, M_DIZZY, M_GIGGLE, M_CELEBRATE, M_READY,
     M_SAD, M_ERROR, M_LONELY, M_CONFUSED, M_HEATING, M_COOLING, M_FOCUS, M_ANTICIPATE,
-    M_HUNGRY, M_WINDY, M_NERVOUS, M_COUNT
+    M_HUNGRY, M_WINDY, M_NERVOUS, M_BRACE, M_LEVEL, M_SCRUB, M_COUNT
 };
 static const char * MOOD_NAMES[M_COUNT] = {
     "calm", "riding", "excited", "screaming", "startled", "elevator", "sleepy",
     "bored", "shivering", "dizzy", "giggle", "celebrate", "ready",
     "sad", "shocked", "lonely", "confused", "heating up", "cooling off", "focused", "almost there",
-    "hungry", "windy", "hanging on",
+    "hungry", "windy", "hanging on", "bracing", "leveling", "scrubbing",
 };
 
 // sensing
@@ -154,6 +159,9 @@ static const expr_t MOODS[M_COUNT] = {
     /* almost    */ {0.8f,  1.05f, 0, 0, 12, 0.5f, 0.0f, 0.2f, 0, 0, 0},
     /* hungry    */ {0.7f,  1.0f,  0, 0,  8, 0.0f, 0.0f, 0.9f, 0, 0, 0},
     /* windy     */ {0.3f,  1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0, 0.6f, 0},
+    /* bracing   */ {0.08f, 1.0f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.5f, 0, -0.3f},
+    /* leveling  */ {0.5f,  1.0f,  0, 0, 12, 0.0f, 0.0f, 0.0f, 0, 0, 0},
+    /* scrubbing */ {0.8f,  1.0f,  0.6f, 0, 12, 0.5f, 0.0f, 0.0f, 0, 0.6f, 0},
     /* nervous   */ {0.9f,  0.9f,  0, 0, 10, 0.0f, 0.0f, 0.0f, 0.6f, 0, -0.3f},
 };
 static expr_t E = MOODS[M_CALM];
@@ -176,6 +184,18 @@ static void blink_now(void) { blink_closing = 0.16f; }
 static float heat_effort = 0;     // 0..1 how hard it's working (nozzle heating counts double)
 static float t_phew = 0;          // relief when the heater reaches temperature
 static bool was_heating = false;
+// this print's thrills, for the report card after it
+typedef struct { bool valid, done; uint8_t progress; uint16_t screams, dizzies, jolts; float peak; uint32_t secs; } report_t;
+static report_t stats = {}, report = {};
+// busy state Coaster is acting out (set from the screen logic)
+enum { ACT_NONE, ACT_HOMING, ACT_PROBING, ACT_QGL, ACT_SHAPING, ACT_PID, ACT_CLEANING, ACT_FILAMENT, ACT_START, ACT_DONE, ACT_REPORT };
+static int act = ACT_NONE;
+static const char * ACT_LABEL[] = {"", "Homing", "Probing", "Leveling gantry", "Input shaping", "PID tuning",
+                                   "Cleaning nozzle", "Filament", "Starting print", "Done!", ""};
+// speech bubble for display messages (M117 and friends)
+static uint16_t bubble_msg_id = 0;
+static uint32_t bubble_since = 0, bubble_until = 0;
+static float bubble_k = 0;        // 0 hidden .. 1 shown (eased)
 
 /* ---------------- simulation ---------------- */
 
@@ -231,11 +251,19 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     bool cooling = !d.printing && d.nozzle_target == 0 && d.nozzle_actual >= 60 &&
                    (int32_t)(cool_until - millis()) > 0;
     int m;
-    if (t_celebrate > 0) m = M_CELEBRATE;
+    if (t_celebrate > 0 || act == ACT_DONE) m = M_CELEBRATE;
     else if (t_giggle > 0) m = M_GIGGLE;
     else if (lonely) m = M_LONELY;
     else if (confused) m = M_CONFUSED;
     else if (error) m = M_ERROR;
+    else if (t_startle > 0 && act == ACT_HOMING) m = M_STARTLED;   // the endstop hit
+    else if (act == ACT_HOMING) m = M_BRACE;
+    else if (act == ACT_PROBING || act == ACT_START) m = M_FOCUS;
+    else if (act == ACT_QGL) m = M_LEVEL;
+    else if (act == ACT_SHAPING) m = M_SHIVER;
+    else if (act == ACT_PID) m = M_HEATING;
+    else if (act == ACT_CLEANING) m = M_SCRUB;
+    else if (act == ACT_FILAMENT) m = M_HUNGRY;
     else if (t_ready > 0) m = M_READY;
     else if (t_dizzy > 0) m = M_DIZZY;
     else if (t_startle > 0) m = M_STARTLED;
@@ -257,7 +285,15 @@ static void pick_mood(float dt, const moonraker_data_t & d) {
     else if (cooling) m = M_COOLING;
     else if (env > 0.05f || vib > 0.05f) m = M_RIDING;
     else m = M_CALM;
-    if (m != mood) { mood = m; mood_t = 0; } else mood_t += dt;
+    if (m != mood) {
+        if (d.printing) {
+            if (m == M_SCREAM) stats.screams++;
+            if (m == M_DIZZY) stats.dizzies++;
+            if (m == M_STARTLED) stats.jolts++;
+        }
+        mood = m; mood_t = 0;
+    } else mood_t += dt;
+    if (d.printing && env > stats.peak) stats.peak = env;
 }
 
 static void step_body(float dt) {
@@ -290,6 +326,7 @@ static void step_expr(float dt) {
                : (mood == M_CALM || mood == M_RIDING || mood == M_SLEEPY || mood == M_COOLING) ? wander_x : 0;
     look += (want - look) * kk;
     if (mood == M_HUNGRY) E.gape = 0.9f * fabsf(sinf(now_s * 5));   // chomp chomp
+    if (act == ACT_PROBING) look = 0;
     if (blink_closing > 0) blink_closing -= dt;
     else {
         blink_t -= dt;
@@ -310,8 +347,25 @@ static void spawn_confetti(void) {
 
 // printer events: print finished, Z moving (elevator)
 static void watch_printer(const moonraker_data_t & d) {
+    if (d.msg_id != bubble_msg_id) {
+        bubble_msg_id = d.msg_id;
+        if (d.msg[0]) {
+            bubble_since = millis();
+            bubble_until = millis() + 5000 + strlen(d.msg) * 80;   // longer messages stay longer
+        } else {
+            bubble_until = millis();
+        }
+    }
     if (d.printing) last_progress = d.progress;
+    if (!was_printing && d.printing) stats = {};
     if (was_printing && !d.printing) {
+        report = stats;
+        report.valid = true;
+        report.done = last_progress >= 98;
+        report.progress = last_progress;
+        report.secs = d.print_time;
+        Serial.printf("coaster: print over, %u screams, %u dizzy, %u jolts, peak %.2f g\r\n",
+                      report.screams, report.dizzies, report.jolts, report.peak);
         if (last_progress >= 98) { t_celebrate = 4.5f; spawn_confetti(); }
         else t_sad = 8;                                   // cancelled or failed
         cool_until = millis() + 10 * 60000UL;
@@ -421,6 +475,68 @@ static void draw_mouth(const pen_t & p, float mx, float my) {
     }
 }
 
+/* ---------------- hats ---------------- */
+
+static bool ntp_started = false;
+
+// which hat today: party on New Year, Santa in December, witch at the end of October
+static int hat_today(void) {
+    if (T.hat == 1) return 0;
+    if (T.hat >= 2) return T.hat - 1;
+    time_t now = time(NULL);
+    if (now < 1700000000) return 0;   // clock not set yet
+    struct tm t;
+    gmtime_r(&now, &t);
+    int mon = t.tm_mon + 1, day = t.tm_mday;
+    if ((mon == 12 && day == 31) || (mon == 1 && day == 1)) return 1;
+    if (mon == 12 && day <= 26) return 2;
+    if (mon == 10 && day >= 20) return 3;
+    return 0;
+}
+
+static void fill_poly(const pen_t & p, const float * xy, int n, lv_color_t col) {
+    lv_point_t pts[6];
+    for (int i = 0; i < n && i < 6; i++) pts[i] = {X(p, xy[2 * i]), Y(p, xy[2 * i + 1])};
+    lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d); d.bg_color = col;
+    lv_draw_polygon(p.ctx, &d, pts, n);
+}
+
+static void draw_hat(const pen_t & p, float cx, float cy, float sx, float sy) {
+    int h = hat_today();
+    if (!h) return;
+    lv_color_t black = lv_color_black();
+    float top = cy - 50 * sy;   // sits above the eyes
+    if (h == 1) {               // party hat with stripes and a pompom
+        float c[] = {cx - 22, top, cx + 22, top, cx + 6, top - 46};
+        fill_poly(p, c, 3, p.fc);
+        {
+            lv_draw_line_dsc_t d; lv_draw_line_dsc_init(&d); d.color = black; d.width = max(1, (int)lroundf(3 * p.s));
+            lv_point_t a = {X(p, cx - 14), Y(p, top - 14)}, b = {X(p, cx + 15), Y(p, top - 14)};
+            lv_draw_line(p.ctx, &d, &a, &b);
+            lv_point_t e2 = {X(p, cx - 6), Y(p, top - 30)}, f2 = {X(p, cx + 11), Y(p, top - 30)};
+            lv_draw_line(p.ctx, &d, &e2, &f2);
+        }
+        fill_ellipse(p, cx + 6, top - 48, 5, 5, p.fc);
+    } else if (h == 2) {        // Santa hat flopping to the side
+        float c[] = {cx - 30, top, cx + 30, top, cx + 44, top - 34};
+        fill_poly(p, c, 3, p.fc);
+        fill_rect(p, cx - 34, top - 2, cx + 34, top + 8, p.fc);
+        {
+            lv_draw_line_dsc_t d; lv_draw_line_dsc_init(&d); d.color = black; d.width = max(1, (int)lroundf(2 * p.s));
+            lv_point_t a = {X(p, cx - 34), Y(p, top - 3)}, b = {X(p, cx + 34), Y(p, top - 3)};
+            lv_draw_line(p.ctx, &d, &a, &b);
+        }
+        fill_ellipse(p, cx + 46, top - 34, 7, 7, p.fc);
+    } else if (h == 3) {        // witch hat
+        float c[] = {cx - 16, top - 2, cx + 16, top - 2, cx + 12, top - 58};
+        fill_poly(p, c, 3, p.fc);
+        fill_ellipse(p, cx, top, 42, 6, p.fc);
+        lv_draw_line_dsc_t d; lv_draw_line_dsc_init(&d); d.color = black; d.width = max(1, (int)lroundf(3 * p.s));
+        lv_point_t a = {X(p, cx - 15), Y(p, top - 10)}, b = {X(p, cx + 15), Y(p, top - 10)};
+        lv_draw_line(p.ctx, &d, &a, &b);
+    }
+}
+
 static void draw_face(lv_event_t * e) {
     lv_obj_t * obj = lv_event_get_target(e);
     pen_t p;
@@ -429,6 +545,9 @@ static void draw_face(lv_event_t * e) {
     p.s = lv_obj_get_width(obj) / 240.0f;
     p.fc = lv_theme_color();
 
+    // speech bubble: the face drops a little to make room, and talks for the first two seconds
+    bool bubble = p.s > 0.8f && (int32_t)(bubble_until - millis()) > 0 && moonraker.data.msg[0];
+    bubble_k += ((bubble ? 1.0f : 0.0f) - bubble_k) * 0.25f;
     float jit = min(3.0f, vib * 6) * E.zig;
     if (mood == M_ERROR) jit = 1.5f;                  // trembling
     if (mood == M_HEATING) jit = 0.4f + heat_effort * 1.8f;   // straining, harder as it gets close
@@ -436,6 +555,8 @@ static void draw_face(lv_event_t * e) {
     if (mood == M_WINDY) jit = max(jit, 0.6f);
     float cx = 120 + hx + frand(-jit, jit), cy = 118 + hy + frand(-jit, jit);
     float sx = 1 - hs * 0.5f, sy = 1 + hs;
+    cy += 14 * bubble_k;
+    if (act == ACT_REPORT && p.s > 0.8f) cy -= 34;
     if (t_giggle > 0) cy -= fabsf(sinf(now_s * 14)) * 6;
     if (t_ready > 0) cy -= fabsf(sinf(now_s * 6)) * 4;   // bouncing, ready to go
     if (t_celebrate > 0) cy -= fabsf(sinf(now_s * 9)) * 8;
@@ -448,9 +569,37 @@ static void draw_face(lv_event_t * e) {
         float tired = clampf((dd.print_time / 3600.0f - 2) / 6, 0, 0.35f);
         open *= 1 - tired;
     }
-    draw_eye(p, cx - 54 * sx, cy - 14 * sy, -1, sx, open);
-    draw_eye(p, cx + 54 * sx, cy - 14 * sy, 1, sx, open);
+    // acting out busy states
+    float tiltL = 0, tiltR = 0;
+    if (act == ACT_QGL) { float t = sinf(now_s * 1.4f) * 7; tiltL = t; tiltR = -t; }   // corners leveling out
+    if (act == ACT_PROBING) cy += fabsf(sinf(now_s * PI * 1.6f)) * 5;                  // tap, tap, tap
+    if (act == ACT_CLEANING) cx += sinf(now_s * 14) * 6;                                // scrub scrub
+    draw_eye(p, cx - 54 * sx, cy - 14 * sy + tiltL, -1, sx, open);
+    draw_eye(p, cx + 54 * sx, cy - 14 * sy + tiltR, 1, sx, open);
+    float talk = 0;
+    if (bubble && millis() - bubble_since < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
+    float gape0 = E.gape;
+    E.gape = max(E.gape, talk);
     draw_mouth(p, cx, cy + 22 * sy);
+    E.gape = gape0;
+    if (bubble_k > 0.05f) {
+        lv_opa_t op = (lv_opa_t)(255 * clampf(bubble_k, 0, 1));
+        float top = 26 - (1 - bubble_k) * 10;
+        lv_draw_rect_dsc_t bd; lv_draw_rect_dsc_init(&bd);
+        bd.bg_color = lv_color_black(); bd.bg_opa = op;
+        bd.border_color = p.fc; bd.border_width = max(1, (int)lroundf(2 * p.s)); bd.border_opa = op;
+        bd.radius = (lv_coord_t)(12 * p.s);
+        lv_area_t a = {X(p, 44), Y(p, top), X(p, 196), Y(p, top + 48)};
+        lv_draw_rect(p.ctx, &bd, &a);
+        // tail toward Coaster
+        line(p, 128, top + 48, 122, top + 58, 2, op);
+        line(p, 122, top + 58, 118, top + 48, 2, op);
+        lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);
+        ld.color = lv_color_hex(0xE7EEF4); ld.opa = op; ld.font = &ui_font_InterSemiBold14; ld.align = LV_TEXT_ALIGN_CENTER;
+        ld.line_space = -1;
+        lv_area_t ta = {X(p, 52), Y(p, top + 6), X(p, 188), Y(p, top + 43)};
+        lv_draw_label(p.ctx, &ld, &ta, moonraker.data.msg, NULL);
+    }
 
     // sweat drop while the nozzle is hot
     const moonraker_data_t & d = moonraker.data;
@@ -464,6 +613,30 @@ static void draw_face(lv_event_t * e) {
         lv_area_t a = {X(p, dx - 4 * sz), Y(p, dy - 3 * sz), X(p, dx + 4 * sz), Y(p, dy + 5 * sz)};
         lv_draw_rect(p.ctx, &rd, &a);
         line(p, dx, dy - 8 * sz, dx, dy - 2 * sz, 3 * sz, op);
+    }
+    draw_hat(p, cx, cy, sx, sy);
+    if (act == ACT_REPORT && p.s > 0.8f) {
+        char l1[40], l2[48], l3[40];
+        if (report.done) snprintf(l1, sizeof(l1), "Print done!");
+        else snprintf(l1, sizeof(l1), "Stopped at %u%%", report.progress);
+        snprintf(l2, sizeof(l2), "%u scream%s \xc2\xb7 peak %.1f g", report.screams, report.screams == 1 ? "" : "s", report.peak);
+        snprintf(l3, sizeof(l3), "dizzy %ux \xc2\xb7 %u jolt%s", report.dizzies, report.jolts, report.jolts == 1 ? "" : "s");
+        lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);
+        ld.color = p.fc; ld.align = LV_TEXT_ALIGN_CENTER;
+        ld.font = &ui_font_InterSemiBold18;
+        lv_area_t a1 = {X(p, 30), Y(p, 160), X(p, 210), Y(p, 182)};
+        lv_draw_label(p.ctx, &ld, &a1, l1, NULL);
+        ld.font = &ui_font_InterSemiBold14; ld.color = lv_color_hex(0xE7EEF4);
+        lv_area_t a2 = {X(p, 30), Y(p, 184), X(p, 210), Y(p, 202)};
+        lv_draw_label(p.ctx, &ld, &a2, l2, NULL);
+        lv_area_t a3 = {X(p, 40), Y(p, 202), X(p, 200), Y(p, 220)};
+        lv_draw_label(p.ctx, &ld, &a3, l3, NULL);
+    }
+    if (act != ACT_NONE && act != ACT_PID && p.s > 0.8f && bubble_k < 0.5f) {
+        lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);
+        ld.color = p.fc; ld.font = &ui_font_InterSemiBold18; ld.align = LV_TEXT_ALIGN_CENTER;
+        lv_area_t a = {X(p, 30), Y(p, 184), X(p, 210), Y(p, 208)};
+        lv_draw_label(p.ctx, &ld, &a, ACT_LABEL[act], NULL);
     }
     if (mood == M_HEATING) {
         // steam puffing off the top, faster and bigger the harder it works
@@ -533,6 +706,10 @@ void coaster_init(void) {
 
 void coaster_loop(void) {
     if (reload_pending) { reload_pending = false; load_tuning(); }
+    if (!ntp_started && WiFi.status() == WL_CONNECTED) {   // the date, for seasonal hats
+        configTime(0, 0, "pool.ntp.org", "time.google.com");
+        ntp_started = true;
+    }
     static uint32_t last_ms = 0, frame_ms = 0;
     uint32_t ms = millis();
     const moonraker_data_t & d = moonraker.data;
@@ -595,4 +772,34 @@ void coaster_event_ready(float secs) { t_ready = secs > 0 ? secs : 0; }
 void coaster_poke(void) {
     t_giggle = max(t_giggle, 1.6f);
     head_kick(frand(-50, 50), -45);
+}
+
+// the screen logic tells Coaster which state it's standing in for (GIF slot shown on the main screen)
+void coaster_set_act(int slot) {
+    int a = ACT_NONE;
+    switch (slot) {
+        case GIF_SLOT_HOMING:   a = ACT_HOMING; break;
+        case GIF_SLOT_PROBING:  a = ACT_PROBING; break;
+        case GIF_SLOT_QGLING:   a = ACT_QGL; break;
+        case GIF_SLOT_SHAPING:  a = ACT_SHAPING; break;
+        case GIF_SLOT_PID:      a = ACT_PID; break;
+        case GIF_SLOT_CLEANING: a = ACT_CLEANING; break;
+        case GIF_SLOT_FILAMENT: a = ACT_FILAMENT; break;
+        case GIF_SLOT_PRINT:    a = ACT_START; break;
+        case GIF_SLOT_PRINT_OK: a = ACT_DONE; break;
+        case GIF_SLOT_PRINTED:  a = report.valid ? ACT_REPORT : ACT_NONE; break;
+    }
+    if (a != act) Serial.printf("coaster: %s\r\n", a ? ACT_LABEL[a] : "idle");
+    act = a;
+}
+
+// compact state for the OctoPrint plugin's sidebar Coaster
+String coaster_plugin_json(void) {
+    char buf[240];
+    int n = snprintf(buf, sizeof(buf), "{\"mood\":\"%s\",\"hat\":%d", MOOD_NAMES[mood], hat_today());
+    if (report.valid)
+        n += snprintf(buf + n, sizeof(buf) - n, ",\"report\":{\"done\":%s,\"progress\":%u,\"screams\":%u,\"dizzies\":%u,\"jolts\":%u,\"peak\":%.2f,\"secs\":%u}",
+                      report.done ? "true" : "false", report.progress, report.screams, report.dizzies, report.jolts, report.peak, (unsigned)report.secs);
+    snprintf(buf + n, sizeof(buf) - n, "}");
+    return String(buf);
 }

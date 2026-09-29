@@ -39,6 +39,7 @@ static void ws_authenticate(void) {
 }
 
 static void apply_plugin(JsonVariantConst d) {
+    if (!d.containsKey("homing")) return;   // other plugin messages (e.g. the sidebar mirror)
     moonraker.data.homing = d["homing"] | false;
     moonraker.data.probing = d["probing"] | false;
     moonraker.data.qgling = d["qgling"] | false;
@@ -52,6 +53,7 @@ static void apply_plugin(JsonVariantConst d) {
     moonraker.data.runout = d["runout"] | false;
     moonraker.data.fan = d["fan"] | 0;
     moonraker.data.speed = d["speed"] | 0;
+    if (d.containsKey("msg_id")) moonraker_set_msg(d["msg"] | "", d["msg_id"] | 0L);
     JsonVariantConst tp = d["time_progress"];
     if (!tp.isNull()) moonraker.data.progress_mode = tp.as<bool>() ? 2 : 1;
 }

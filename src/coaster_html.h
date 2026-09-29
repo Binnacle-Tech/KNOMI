@@ -118,7 +118,7 @@ body{padding-top:0}
 </style></head><body>
 <header class="rail"><div class="rail-in">
   <div class="brand"><a href="/" style="display:inline-flex;align-items:center;gap:8px"><svg class="mark" style="width:24px;height:24px" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="126" fill="#000" stroke="#334353" stroke-width="6"/><g stroke="#C02F30" stroke-width="16" stroke-linecap="round" fill="none"><path d="M32 112h80M144 112h80"/><path stroke-width="14" d="M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0"/></g><g fill="#C02F30"><path d="M42 112a30 30 0 0 0 60 0z"/><path d="M154 112a30 30 0 0 0 60 0z"/></g></svg><span>KNOMI<span class="dot">.</span></span></a></div><span class="rail-sp"></span>
-  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a class="on" href="/coaster">Coaster face</a><a href="/update">Firmware</a></nav>
+  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a class="on" href="/coaster">Coaster face</a><a href="/update">Firmware</a><a href="/log">Log</a></nav>
 </div></header>
 
 <div class="wrap">
@@ -155,6 +155,12 @@ body{padding-top:0}
             <div class="meter"><span>Dizzy</span><div class="bar"><i id="kDizzy" style="background:var(--violet)"></i></div><b id="kvDizzy">0%</b></div>
           </div>
           <p class="note" id="kNote">Live mood from the KNOMI's own accelerometer.</p>
+          <div class="sl" style="max-width:320px"><div class="sl-top"><label for="kHat">Hat</label></div>
+            <select id="kHat" style="font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 10px">
+              <option value="0">Seasonal</option>
+              <option value="1">No hat</option><option value="2">Party hat</option><option value="3">Santa hat</option><option value="4">Witch hat</option>
+            </select><small>Seasonal: party hat at New Year, Santa in December, witch at the end of October.</small></div>
+          <div id="kReport" class="note"></div>
         </div>
       </section>
       <section class="card">
@@ -246,14 +252,19 @@ fetch("/status.json").then(function(r){return r.json()}).then(function(j){if(j.t
 function say(msg,bad){var e=$("saved");e.textContent=msg;e.className="saved"+(bad?" bad":"");clearTimeout(say.t);say.t=setTimeout(function(){e.textContent=""},3000)}
 function knomiLoad(){
   return fetch("/coaster.json").then(function(r){return r.json()}).then(function(j){
-    Object.keys(TUNE_DEF).forEach(function(k){if(typeof j[k]=="number")T[k]=j[k]});buildSliders();
+    Object.keys(TUNE_DEF).forEach(function(k){if(typeof j[k]=="number")T[k]=j[k]});if(typeof j.hat=="number")$("kHat").value=j.hat;buildSliders();
   }).catch(function(){say("Couldn't read the KNOMI's tuning",true)});
 }
 function knomiSave(msg){
-  var body=Object.assign({},T);
+  var body=Object.assign({},T,{hat:+$("kHat").value});
   fetch("/coaster.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
     .then(function(r){if(!r.ok)throw 0;say(msg)}).catch(function(){say("Not saved, try again",true)});
 }
+$("kHat").addEventListener("change",function(){knomiSave("Hat saved")});
+function knomiCard(){fetch("/coaster/card").then(function(r){return r.json()}).then(function(j){var r=j.report;if(!r){$("kReport").textContent="";return}
+  var h=Math.floor(r.secs/3600),m=Math.floor(r.secs%3600/60);
+  $("kReport").textContent="Last print: "+(r.done?"done":"stopped at "+r.progress+"%")+" after "+(h?h+"h ":"")+m+"m · "+r.screams+" screams · peak "+r.peak.toFixed(1)+" g · dizzy "+r.dizzies+"x · "+r.jolts+" jolts"}).catch(function(){})}
+knomiCard();setInterval(knomiCard,10000);
 $("saveK").addEventListener("click",function(){knomiSave("Saved. The KNOMI uses it now.")});
 $("loadK").addEventListener("click",function(){knomiLoad().then(function(){say("Back to the KNOMI's tuning")})});
 var KCOL={sad:"#9AA7F0",shocked:"#E06C5A",lonely:"#7E8F9F",confused:"#F0C079",impatient:"#E8A33D","cooling off":"#4FD1C5",focused:"#4FD1C5","almost there":"#E8A33D",hungry:"#F0C079",windy:"#4FD1C5","hanging on":"#E06C5A",ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D"};

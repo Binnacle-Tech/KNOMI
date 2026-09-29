@@ -11,7 +11,8 @@ typedef struct {
     const lv_img_dsc_t * builtin;
 } gif_slot_def_t;
 
-// Fallbacks for the new states reuse stock animations until you upload your own
+// Only WiFi setup (and the idle1 fallback) keep a built-in GIF: Coaster acts out everything else.
+// A GIF you upload to a busy slot (homing, QGL...) plays instead of Coaster.
 static const gif_slot_def_t slot_def[GIF_SLOT_NUM] = {
     {"idle1",    "Idle 1",                     &gif_voron},
     // face slots: drawn live as Coaster (knomi_coaster.cpp), no GIFs
@@ -19,17 +20,17 @@ static const gif_slot_def_t slot_def[GIF_SLOT_NUM] = {
     {"idle3",    "Idle 3",                     NULL},
     {"idle4",    "Idle 4",                     NULL},
     {"welcome",  "WiFi setup / connecting (small, about 100x66)", &gif_setup},
-    {"homing",   "Homing",                     &gif_homing},
-    {"probing",  "Probing / bed mesh",         &gif_probing},
-    {"qgling",   "Gantry leveling (QGL)",      &gif_qgling},
-    {"shaping",  "Input shaper calibration",   &gif_shaping},
-    {"pid",      "PID tuning",                 &gif_pid},
-    {"cleaning", "Nozzle cleaning",            &gif_cleaning},
-    {"filament", "Filament load / unload",     &gif_filament},
+    {"homing",   "Homing",                     NULL},
+    {"probing",  "Probing / bed mesh",         NULL},
+    {"qgling",   "Gantry leveling (QGL)",      NULL},
+    {"shaping",  "Input shaper calibration",   NULL},
+    {"pid",      "PID tuning",                 NULL},
+    {"cleaning", "Nozzle cleaning",            NULL},
+    {"filament", "Filament load / unload",     NULL},
     {"paused",   "Paused (plays on the print screen)", NULL},
     {"heated",   "Heated, print starting",     NULL},
-    {"print",    "Printing",                   &gif_print},
-    {"print_ok", "Print finished",             &gif_print_ok},
+    {"print",    "Printing",                   NULL},
+    {"print_ok", "Print finished",             NULL},
     {"printed",  "After print finished",       NULL},
 };
 
@@ -266,9 +267,17 @@ void knomi_gif_forget(lv_obj_t * obj) {
         if (shown[i].obj == obj) shown[i].obj = NULL;
 }
 
+// always Coaster (not on the Animations page)
 bool knomi_gif_is_face(int s) {
     return (s >= GIF_SLOT_IDLE1 && s <= GIF_SLOT_IDLE4) || s == GIF_SLOT_PAUSED ||
            s == GIF_SLOT_HEATED || s == GIF_SLOT_PRINTED;
+}
+
+// Coaster shows instead of a GIF: face slots, and busy slots without an uploaded GIF
+bool knomi_gif_coaster_shows(int s) {
+    if (knomi_gif_is_face(s)) return true;
+    if (s < 0 || s >= GIF_SLOT_NUM || s == GIF_SLOT_WELCOME) return false;
+    return custom[s] == NULL;
 }
 
 int knomi_gif_shown_slot(lv_obj_t * obj) {

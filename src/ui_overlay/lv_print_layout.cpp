@@ -134,7 +134,7 @@ static moonraker_data_t shown_data(void) {
 
 static const char * token_names[] = {
     "pct", "left", "elapsed", "total", "time", "file", "noz", "noz_t", "bed", "bed_t",
-    "z", "layer", "layers", "pos", "state", "deg",
+    "z", "layer", "layers", "pos", "state", "deg", "msg",
 };
 
 // value of one token, false if the name is unknown
@@ -172,6 +172,7 @@ static bool token_value(const moonraker_data_t &d, const char * name, size_t len
     } else if (IS("state")) {
         snprintf(out, n, "%s", !d.printing ? "Idle" : (d.pause || d.paused_ext) ? "Paused" : "Printing");
     } else if (IS("deg")) strlcpy(out, "\xe2\x84\x83", n);
+    else if (IS("msg")) strlcpy(out, d.msg, n);
     else return false;
     #undef IS
     return true;
@@ -335,6 +336,15 @@ static void build_el(layout_page_t & pg, JsonObjectConst e) {
     } else if (strcmp(t, "gif") == 0) {
         int slot = knomi_gif_slot_by_name(e["g"] | "print");
         if (slot < 0) slot = GIF_SLOT_PRINT;
+        if (!knomi_gif((knomi_gif_slot_t)slot)) {
+            // no GIF in that slot any more (Coaster acts it out): put Coaster there instead
+            lv_obj_t * f = coaster_create(pg.cont, 150);
+            place(f, e);
+            el.type = EL_FACE;
+            el.obj = f;
+            pg.n++;
+            return;
+        }
         lv_obj_t * g = lv_gif_create(pg.cont);
         no_click(g);
         knomi_gif_show(g, (knomi_gif_slot_t)slot);

@@ -147,6 +147,7 @@ td.num{font-family:var(--font-mono);font-size:var(--t-small);color:var(--muted)}
   box-shadow:0 0 0 1px var(--line-2);display:flex;align-items:center;justify-content:center;overflow:hidden}
 .screen img{max-width:100%;max-height:100%}
 .screen.empty{background:var(--well);color:var(--muted-2);font-size:var(--t-small)}
+.screen .mark{width:72px;height:72px;display:block}
 .slot-actions{display:flex;flex-direction:column;gap:10px;margin-top:auto}
 .slot-actions form{display:flex;flex-direction:column;gap:8px;margin:0}
 .meter{height:7px;background:var(--well);border-radius:5px;overflow:hidden;margin-top:8px}

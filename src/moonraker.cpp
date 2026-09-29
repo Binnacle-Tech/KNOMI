@@ -4,6 +4,8 @@
 #include "knomi.h"
 #include "octoprint_ws.h"
 #include "knomi_ble.h"
+#include "knomi_coaster.h"
+#include "knomi_update.h"
 
 // #define MOONRAKER_DEBUG
 
@@ -211,7 +213,7 @@ const char * path_only_gcode(const char * path)
 }
 
 void MOONRAKER::get_progress(void) {
-    String display_status = send_request("GET", "/printer/objects/query?virtual_sdcard&print_stats&gcode_move=gcode_position");
+    String display_status = send_request("GET", "/printer/objects/query?virtual_sdcard&print_stats&gcode_move=gcode_position&display_status=message");
     if (!display_status.isEmpty()) {
         DynamicJsonDocument json_parse(display_status.length() * 2);
         deserializeJson(json_parse, display_status);
@@ -227,6 +229,7 @@ void MOONRAKER::get_progress(void) {
         data.time_left = (p > 0.02 && duration > 60) ? (int32_t)(duration * (1.0 - p) / p) : -1;
         data.layer = ps["info"]["current_layer"] | 0;
         data.layer_total = ps["info"]["total_layer"] | 0;
+        moonraker_set_msg(json_parse["result"]["status"]["display_status"]["message"] | "", -1);
         JsonVariant pos = json_parse["result"]["status"]["gcode_move"]["gcode_position"];
         data.z_um = pos.isNull() ? INT32_MIN : (int32_t)((pos[2] | 0.0) * 1000);
 #ifdef MOONRAKER_DEBUG
@@ -389,6 +392,7 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
             data.runout = json_parse["runout"] | false;
             data.fan = json_parse["fan"] | 0;
             data.speed = json_parse["speed"] | 0;
+            if (json_parse.containsKey("msg_id")) moonraker_set_msg(json_parse["msg"] | "", json_parse["msg_id"] | 0L);
             JsonVariant tp = json_parse["time_progress"];
             data.progress_mode = tp.isNull() ? 0 : (tp.as<bool>() ? 2 : 1);
         }
@@ -528,9 +532,46 @@ bool MOONRAKER::get_file_list(String &out) {
 
 MOONRAKER moonraker;
 
+void moonraker_set_msg(const char * text, long ext_id) {
+    static long last_ext = -1;
+    if (!text) text = "";
+    bool changed = ext_id >= 0 ? ext_id != last_ext : strcmp(text, moonraker.data.msg) != 0;
+    if (ext_id >= 0) last_ext = ext_id;
+    if (!changed) return;
+    strlcpy(moonraker.data.msg, text, sizeof(moonraker.data.msg));
+    moonraker.data.msg_id++;
+    if (text[0]) Serial.printf("message: %s\r\n", text);
+}
+
+// Tell the OctoPrint plugin how Coaster is doing (sidebar mirror): on change, and every 15 s.
+// Quiet POST: an older plugin without the "coaster" command just answers 400, no popup.
+static void coaster_sync_plugin(void) {
+    static String last;
+    static uint32_t last_ms = 0, backoff_until = 0;
+    if ((int32_t)(millis() - backoff_until) < 0) return;
+    String s = coaster_plugin_json();
+    if (s == last && millis() - last_ms < 15000) return;
+    bool ok = false;
+    if (knomi_ble_link_active()) {
+        ok = knomi_ble_send_command("/coaster?" + s);
+    } else if (knomi_backend_is_octoprint() && !moonraker.unconnected && WiFi.status() == WL_CONNECTED) {
+        HTTPClient client;
+        client.begin("http://" + String(knomi_config.moonraker_ip) + ":" + knomi_config.moonraker_port + "/api/plugin/knomi");
+        if (knomi_config.api_key[0]) client.addHeader("X-Api-Key", knomi_config.api_key);
+        client.addHeader("Content-Type", "application/json");
+        client.setTimeout(3000);
+        int code = client.POST("{\"command\":\"coaster\"," + s.substring(1));
+        client.end();
+        ok = code == 200 || code == 204;
+        if (!ok) backoff_until = millis() + 60000;   // plugin missing or too old
+    }
+    if (ok) { last = s; last_ms = millis(); }
+}
+
 void moonraker_post_task(void * parameter) {
     for(;;) {
         moonraker.http_post_loop();
+        coaster_sync_plugin();
         delay(500);
     }
 }
@@ -548,6 +589,7 @@ void moonraker_task(void * parameter) {
 
     uint32_t next_poll = 0;
     for(;;) {
+        if (knomi_update_busy()) { delay(200); continue; }   // one-click update running
         // Bluetooth link: the plugin pushes status, nothing to poll
         knomi_ble_process();
         if (knomi_ble_link_active()) {

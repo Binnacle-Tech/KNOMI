@@ -51,12 +51,14 @@ static lv_obj_t * coaster_main = NULL;
 static void idle_face_sync(void) {
     if (!coaster_main || !ui_img_main_gif) return;
     int slot = knomi_gif_shown_slot(ui_img_main_gif);
-    bool face = knomi_gif_is_face(slot);
+    bool face = knomi_gif_coaster_shows(slot);
     static int last_slot = -1;
     if (slot != last_slot) {
         last_slot = slot;
         if (slot == GIF_SLOT_HEATED) coaster_event_ready(knomi_config.heated_s);   // gets ready for the print
     }
+    // what Coaster acts out, only while the main screen is showing it
+    coaster_set_act(face && lv_scr_act() == ui_ScreenMainGif ? slot : -1);
     bool shown = !lv_obj_has_flag(coaster_main, LV_OBJ_FLAG_HIDDEN);
     if (face != shown) {
         if (face) {

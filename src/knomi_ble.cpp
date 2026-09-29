@@ -68,6 +68,7 @@ bool knomi_ble_apply_status(const char *json, size_t len) {
     d.runout = k & (1 << K_RUNOUT);
     d.fan = doc["f"] | 0;
     d.speed = doc["sp"] | 0;
+    if (doc.containsKey("mi")) moonraker_set_msg(doc["m"] | "", doc["mi"] | 0L);
     if (doc["w"] | 0) wifi_request = true;
     moonraker.data_unlock = true;
     return true;

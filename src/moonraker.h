@@ -36,6 +36,8 @@ typedef struct {
     bool runout;      // out of filament (plugin: M600 or a runout message), until resumed
     uint8_t fan;      // part cooling fan %, from the plugin (0 = off or unknown)
     uint16_t speed;   // speed factor % (M220), from the plugin; 0 = unknown
+    char msg[65];     // last display message (M117 / SET_DISPLAY_TEXT / action:notification)
+    uint16_t msg_id;  // bumps on every new message (Coaster says it)
 
     // printing screen extras
     uint32_t print_time;   // seconds elapsed
@@ -87,5 +89,7 @@ class MOONRAKER {
 };
 
 extern MOONRAKER moonraker;
+// new display message: ext_id is the sender's counter (plugin), or -1 to compare the text
+void moonraker_set_msg(const char * text, long ext_id);
 
 #endif

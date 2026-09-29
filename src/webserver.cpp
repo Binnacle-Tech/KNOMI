@@ -1,4 +1,5 @@
 #include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
 #include <AsyncElegantOTA.h>
 #include <ESPmDNS.h>
 
@@ -10,6 +11,8 @@
 #include "backup.h"
 #include "layout_html.h"
 #include "coaster_html.h"
+#include "log_html.h"
+#include "knomi_update.h"
 #include "knomi_coaster.h"
 #include "ui_overlay/lv_overlay.h"
 #include <LittleFS.h>
@@ -323,9 +326,9 @@ static String gifs_page(void) {
         "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
         "<a class='n' href='/'>" KNOMI_MARK "<span>KNOMI<span class='dot'>.</span></span></a><span class='f'>Printer display</span></div>"
         "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a><a href='/layout'>Print screen</a><a href='/coaster'>Coaster face</a>"
-        "<a href='/update'>Firmware</a></nav>" BINNACLE_MODES "</div></header><main class='wrap'>"
+        "<a href='/update'>Firmware</a><a href='/log'>Log</a></nav>" BINNACLE_MODES "</div></header><main class='wrap'>"
         "<section class='mast'><span class='label'>Animations</span><h1>Animations<span class='dot'>.</span></h1>"
-        "<p class='lede'>Upload a GIF to any slot to replace it. It shows on the display right away. Faces aren't here: every face is <a href='/coaster'>Coaster</a>, drawn live. "
+        "<p class='lede'>Coaster acts out every state live. Upload a GIF to a slot to play your own animation there instead; it shows on the display right away. "
         "The screen is a 240&times;240 circle, so keep the subject centered.</p>";
     size_t used = LittleFS.usedBytes(), total = LittleFS.totalBytes();
     unsigned pct = total ? (unsigned)(used * 100 / total) : 0;
@@ -346,7 +349,7 @@ static String gifs_page(void) {
         if (info.has_custom || info.has_builtin) {
             page += "<div class='screen'><img loading='lazy' alt='' src='/gif/file?slot=" + n + "&t=" + String(millis()) + "'></div>";
         } else {
-            page += "<div class='screen empty'>empty</div>";
+            page += "<div class='screen empty' style='flex-direction:column;gap:8px'><span style='display:block;width:72px;height:72px'>" KNOMI_MARK "</span>Coaster</div>";
         }
         page += "<div style='text-align:center;margin-bottom:12px'>";
         if (info.has_custom && info.loaded) {
@@ -356,7 +359,7 @@ static String gifs_page(void) {
         } else if (info.has_builtin) {
             page += "<span class='pill held'>built-in</span>";
         } else {
-            page += "<span class='pill held'>not set</span>";
+            page += "<span class='pill held'>Coaster acts this out</span>";
         }
         page += "</div><div class='slot-actions'>"
                 "<form method='POST' action='/gif/upload?slot=" + n + "' enctype='multipart/form-data'>"
@@ -364,7 +367,7 @@ static String gifs_page(void) {
                 "<button type='submit' class='btn-ghost' style='justify-content:center'>Upload</button></form>";
         if (info.has_custom) {
             page += "<form method='POST' action='/gif/delete?slot=" + n + "'><button type='submit' class='btn-ghost' style='justify-content:center'>" +
-                    String(info.has_builtin ? "Restore built-in" : "Remove") + "</button></form>";
+                    String(info.has_builtin ? "Restore built-in" : "Back to Coaster") + "</button></form>";
         }
         page += "</div></div></section>";
     }
@@ -634,6 +637,79 @@ static void layout_routes(void) {
     });
 }
 
+static const char * reset_reason_text(void) {
+    switch (esp_reset_reason()) {
+        case ESP_RST_POWERON: return "power on";
+        case ESP_RST_SW: return "restart";
+        case ESP_RST_PANIC: return "crash";
+        case ESP_RST_INT_WDT: case ESP_RST_TASK_WDT: case ESP_RST_WDT: return "watchdog";
+        case ESP_RST_BROWNOUT: return "brownout";
+        case ESP_RST_DEEPSLEEP: return "deep sleep";
+        default: return "other";
+    }
+}
+
+static void update_routes(void) {
+    server.on("/update/github", HTTP_POST, [](AsyncWebServerRequest *request){
+        bool force = request->hasParam("force", true);
+        knomi_update_start(force);
+        request->send(200, "application/json", knomi_update_status_json());
+    });
+    server.on("/update/progress", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", knomi_update_status_json());
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
+}
+
+static void log_routes(void) {
+    server.on("/log", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send_P(200, "text/html", log_html);
+    });
+    server.on("/log.txt", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncWebServerResponse *r = request->beginResponse(200, "text/plain; charset=utf-8", knomi_log_text());
+        r->addHeader("Cache-Control", "no-store");
+        if (request->hasParam("dl")) {
+            r->addHeader("Content-Disposition", String("attachment; filename=\"knomi-") + knomi_config.hostname + "-log.txt\"");
+        }
+        request->send(r);
+    });
+    server.on("/log/clear", HTTP_POST, [](AsyncWebServerRequest *request){
+        knomi_log_clear();
+        request->send(200, "text/plain", "ok");
+    });
+    server.on("/log/info", HTTP_GET, [](AsyncWebServerRequest *request){
+        StaticJsonDocument<768> d;
+        d["fw"] = FW_VERSION;
+#ifdef KNOMIV1
+        d["board"] = "KNOMI 1";
+#else
+        d["board"] = "KNOMI 2";
+#endif
+        d["uptime"] = millis() / 1000;
+        d["reset"] = reset_reason_text();
+        d["heap"] = ESP.getFreeHeap();
+        d["heap_min"] = ESP.getMinFreeHeap();
+        d["psram"] = ESP.getFreePsram();
+        if (WiFi.status() == WL_CONNECTED)
+            d["wifi"] = WiFi.SSID() + " · " + String(WiFi.RSSI()) + " dBm · " + WiFi.localIP().toString();
+        else d["wifi"] = knomi_ble_link_active() ? "off (Bluetooth link)" : "not connected";
+        d["backend"] = knomi_config.backend;
+        d["host"] = String(knomi_config.moonraker_ip) + ":" + knomi_config.moonraker_port;
+        String st = coaster_state_json();
+        StaticJsonDocument<256> cs;
+        deserializeJson(cs, st);
+        d["mood"] = cs["mood"] | "?";
+        d["fs_used"] = LittleFS.usedBytes();
+        d["fs_total"] = LittleFS.totalBytes();
+        String out;
+        serializeJson(d, out);
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", out);
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
+}
+
 static void coaster_routes(void) {
     server.on("/coaster", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send_P(200, "text/html", coaster_html);
@@ -653,6 +729,11 @@ static void coaster_routes(void) {
         if (!b || index + len > total) return;
         memcpy(b + index, data, len);
         b[index + len] = 0;
+    });
+    server.on("/coaster/card", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", coaster_plugin_json());
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
     });
     server.on("/coaster/state", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *r = request->beginResponse(200, "application/json", coaster_state_json());
@@ -728,6 +809,8 @@ void webserver_setup(void) {
     screen_routes();
     layout_routes();
     coaster_routes();
+    log_routes();
+    update_routes();
     bluetooth_routes();
     backup_routes(server);
 

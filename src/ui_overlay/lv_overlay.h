@@ -8,16 +8,7 @@ extern lv_obj_t * ui_img_main_gif;
 
 LV_IMG_DECLARE(gif_welcome);
 LV_IMG_DECLARE(gif_setup);
-LV_IMG_DECLARE(gif_shaping);
-LV_IMG_DECLARE(gif_pid);
-LV_IMG_DECLARE(gif_cleaning);
-LV_IMG_DECLARE(gif_filament);
 LV_IMG_DECLARE(gif_voron);
-LV_IMG_DECLARE(gif_homing);
-LV_IMG_DECLARE(gif_probing);
-LV_IMG_DECLARE(gif_qgling);
-LV_IMG_DECLARE(gif_print);
-LV_IMG_DECLARE(gif_print_ok);
 
 // lv_setup_screens.cpp
 void lv_setup_screens_init(void);

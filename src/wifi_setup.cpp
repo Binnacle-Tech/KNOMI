@@ -213,13 +213,13 @@ void eeprom_init(void) {
         Serial.print("sta_ssid: ");
         Serial.println(knomi_config.sta_ssid);
         Serial.print("sta_pwd: ");
-        Serial.println(knomi_config.sta_pwd);
+        Serial.println("(hidden)");
         Serial.print("sta_auth: ");
         Serial.println(knomi_config.sta_auth);
         Serial.print("ap_ssid: ");
         Serial.println(knomi_config.ap_ssid);
         Serial.print("ap_pwd: ");
-        Serial.println(knomi_config.ap_pwd);
+        Serial.println("(hidden)");
         Serial.print("hostname: ");
         Serial.println(knomi_config.hostname);
         Serial.print("moonraker_ip: ");
@@ -363,13 +363,13 @@ void eeprom_write_knomi_config(void) {
     Serial.print("sta_ssid: ");
     Serial.println(knomi_config.sta_ssid);
     Serial.print("sta_pwd: ");
-    Serial.println(knomi_config.sta_pwd);
+    Serial.println("(hidden)");
     Serial.print("sta_auth: ");
     Serial.println(knomi_config.sta_auth);
     Serial.print("ap_ssid: ");
     Serial.println(knomi_config.ap_ssid);
     Serial.print("ap_pwd: ");
-    Serial.println(knomi_config.ap_pwd);
+    Serial.println("(hidden)");
     Serial.print("hostname: ");
     Serial.println(knomi_config.hostname);
     Serial.print("moonraker_ip: ");
@@ -461,7 +461,7 @@ void wifi_config_loop(bool first_setup) {
             Serial.print("ap ssid: ");
             Serial.println(knomi_config.ap_ssid);
             Serial.print("ap pwd: ");
-            Serial.println(knomi_config.ap_pwd);
+            Serial.println("(hidden)");
             wifi_start_ap();
         }
     }
@@ -476,7 +476,7 @@ void wifi_config_loop(bool first_setup) {
             Serial.print("sta ssid: ");
             Serial.println(knomi_config.sta_ssid);
             Serial.print("sta pwd: ");
-            Serial.println(knomi_config.sta_pwd);
+            Serial.println("(hidden)");
             WiFi.setMinSecurity(wifi_auth_threshold());
             WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);   // find hidden SSIDs, pick the strongest AP
             WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);

@@ -25,6 +25,9 @@ Coaster is this firmware's mascot and every face on the KNOMI. Instead of loopin
 - **More animation states:** input shaper calibration, PID tuning, nozzle cleaning, filament load/unload and **paused** (M600, PAUSE, MMU/ERCF).
 - **Printing screen with useful info:** time left, nozzle/bed temps, Z height or layer, file name.
 - **Coaster, the mascot:** every face on the KNOMI is drawn live from the accelerometer and printer state (see above).
+- **One-click updates** from GitHub, straight from the KNOMI's settings page.
+- **Log page** at `/log` for troubleshooting without a USB cable.
+- **Display messages:** `M117` / `SET_DISPLAY_TEXT` show as Coaster speech bubbles.
 - **Print screen designer:** a drag-and-drop editor on the KNOMI's web page. Place text with live values, progress rings, gauges, bars and animations, and rotate between up to 4 pages (e.g. a face most of the time, stats every 30 s).
 - **Auto-dim and screen-off**, saved brightness, and wake on touch or printer activity.
 - **Animations can follow the UI color** instead of always being red.

@@ -18,11 +18,13 @@ void coaster_request_reload(void);                        // any task: re-read /
 void coaster_push_sample(float x, float y, float z);      // sensor task: printer-frame accel in g, gravity removed
 void coaster_event_ready(float secs);                     // LVGL task: heated up, print starting
 void coaster_poke(void);                                  // LVGL task: tapped / tickled
+void coaster_set_act(int slot);                           // LVGL task: busy state (GIF slot) Coaster stands in for
 
 #ifdef __cplusplus
 }
 String coaster_state_json(void);   // live mood + meters for the web page
 String coaster_tuning_json(void);  // current tuning (defaults if never saved)
+String coaster_plugin_json(void);  // mood, hat, last report for the OctoPrint sidebar
 const char * coaster_save_json(const char * json, size_t len);  // web task; NULL or an error
 void coaster_set_idle(bool on);    // web task
 #endif

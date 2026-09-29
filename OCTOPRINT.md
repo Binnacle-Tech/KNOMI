@@ -46,13 +46,12 @@ The plugin raises them on these commands:
 - filament: LOAD_FILAMENT, UNLOAD_FILAMENT, M701, M702
 
 If your macros have other names, call `_KNOMI_SET VAR=cleaning VALUE=1` / `VALUE=0` inside them.
-Each state has its own built-in animation, as does printing. You can replace any of them (next section). Faces (idle, pause, print starting, after the print) are Coaster.
+Coaster acts each state out (see Coaster below). You can upload your own GIF for any of them instead (next section).
 
 ## Custom animations
-Open `http://<knomi-ip>/gifs` (or use the link under the printer settings). Every animation has a slot:
-WiFi setup, homing, probing, QGL, the four new states,
-paused, heated, printing, finished. Upload a GIF to any slot and it applies right away. Use Restore to
-go back to the built-in. Files live in the 7MB flash partition, so they survive firmware updates.
+Open `http://<knomi-ip>/gifs`. Every busy state has a slot: WiFi setup, homing, probing, QGL, the four new
+states, printing, finished. Coaster acts them out unless you upload a GIF to a slot, which then plays instead
+right away. "Back to Coaster" removes it. Files live in the 7MB flash partition, so they survive firmware updates.
 Limits: 1.5MB per GIF and 5MB loaded in total. The screen is 240x240 and round.
 
 ## Display settings (settings page, section 02)
@@ -109,16 +108,26 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 | Part fan 80 %+ (plugin 0.5+) | squinting into the wind |
 | Speed factor 130 %+ (plugin 0.5+) | hanging on |
 
+**Busy states, acted out** (with a label underneath): homing (bracing, flinches at the endstop), probing (tap, tap, tap), leveling the gantry (eyes see-saw like the corners), input shaping (shivering), PID tuning (straining), cleaning the nozzle (scrubbing side to side), filament (chomping), starting a print (focused) and done (celebrating). Upload a GIF to a slot on /gifs to use your own animation instead.
+
+**Messages:** `M117 …`, `SET_DISPLAY_TEXT MSG=…` and `// action:notification …` (plugin 0.6+, or Moonraker's display status) show as a speech bubble from Coaster, who talks for the first couple of seconds. The text is also the `{msg}` token in the print screen designer.
+
+**Report card:** after a print, the "after the print" screen shows how the ride went: done or where it stopped, how many times Coaster screamed, peak g, dizzy spells and jolts. The last one is also on the /coaster page and in the OctoPrint sidebar.
+
+**Hats:** a party hat at New Year, a Santa hat in December and a witch hat at the end of October (the date comes from the internet once the KNOMI is on WiFi). Pick a hat or turn them off on the /coaster page.
+
+**OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood and the last report card. The KNOMI sends its mood to the plugin (over WiFi or Bluetooth).
+
 **Touch:** tap Coaster on the idle screen to poke it, hold to keep tickling. On the print screen a tap still changes pages; hold to tickle.
 
-- **Where:** every face screen. The busy animations without a face (homing, QGL, probing, input shaping, PID, cleaning, filament, printing) still play as GIFs you can replace.
-- **Print screen:** add "Coaster face" in the designer, or start from "Coaster face, stats every 10 %".
+- **Where:** everywhere a face or busy animation used to be. Only the WiFi setup screens still use GIFs.
+- **Print screen:** add "Coaster face" in the designer, or start from "Coaster, stats every 10 % and at the end".
 - **Tuning:** the **Coaster face** page (`/coaster`) has a simulated KNOMI to try settings on (play print moves, fling it, or play a Klipper accelerometer CSV), the KNOMI's live mood, and **Save to KNOMI**. Saved in `/coaster.json` and included in backups.
 
 The KNOMI 1 has no accelerometer, so there the face only reacts to printer data.
 
 ## Paused animation
-While a print is paused, the printing screen plays the **Paused** animation (its own slot on /gifs).
+While a print is paused, Coaster takes over the printing screen, bored (or hungry on a filament runout).
 Swipe down to resume, swipe up to cancel, same as before. The plugin treats these as paused:
 OctoPrint's own pause, PAUSE / M600 / M601, `// action:paused` lines, and `_KNOMI_SET VAR=paused VALUE=1`.
 It clears on RESUME, cancel, or print events. If Klipper paused on its own (M600, an MMU) without OctoPrint
@@ -158,9 +167,17 @@ file has arrived; an incomplete or wrong file changes nothing. The file contains
 API key, so keep it private.
 
 ## Updates
-When the settings page is opened from a network with internet access, it checks GitHub for a newer release and shows
-a banner with a download link for your board. Install it from `/update` as usual. The check runs in your browser;
-the KNOMI itself never contacts GitHub.
+**One click:** Settings › System › **Update from GitHub** (or **Install now** on the banner that appears when a newer
+release exists). The KNOMI asks GitHub for the latest release, downloads the .bin for its board over HTTPS (with the
+certificates checked) straight into its spare firmware slot, and restarts into it. Settings, animations and layouts stay.
+Printer polling pauses while it downloads. If it fails, the old firmware keeps running; the reason is on the page and in the log.
+
+Manual updates still work: upload a .bin at `/update`.
+
+## Log
+`http://<knomi-ip>/log` shows what the KNOMI prints to its serial port (the last 32 KB, with uptime stamps), plus
+firmware, memory, WiFi, printer connection and why it last restarted. **Download** saves it as a text file to send
+along with a bug report. Passwords and API keys are never logged.
 
 ## WiFi behaviour
 - First-time setup: the KNOMI shows a QR code. Scan it with your phone camera to join the KNOMI's setup network
