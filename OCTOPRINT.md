@@ -60,7 +60,7 @@ Limits: 1.5MB per GIF and 5MB loaded in total. The screen is 240x240 and round.
   starting something wakes it. The tap that wakes a dark screen doesn't press anything.
 - **While the printer is busy:** stay awake (default), or dim and sleep as usual.
 - **Printing screen:** *Info* shows the file name, %, time left (or elapsed), nozzle/bed temps, and Z height
-  (Layer x/y on Moonraker when the slicer reports layers). *Accelerometer* is the stock bars view.
+  (Layer x/y on Moonraker when the slicer reports layers, and on OctoPrint with plugin 0.7+, which works the layer out from the file position the way OctoPrint's G-code viewer does; files printed from OctoPrint's own storage only). *Accelerometer* is the stock bars view.
 - **Animations follow the UI color:** recolors the built-in animations to the UI color picked on the KNOMI.
   on or off. The green "print finished" check stays green. Uploaded GIFs are never recolored.
 
@@ -84,7 +84,7 @@ Up to 4 **pages**. A page either takes turns in the rotation for its number of s
 - pops up for its seconds every N %, at chosen percentages (e.g. 25, 50, 75), every N layer changes, or when the print starts
 - stays up while less than N minutes are left, or during the first layer
 
-Layer changes use the printer's layer number when it reports one, otherwise each new Z height that holds for 1.5 s. Tapping the KNOMI skips to the next rotation page. **Play a print** runs a 90-second fake print in the designer so you can see which page shows when.
+Layer changes use the layer number from Moonraker or the plugin (0.7+) when there is one, otherwise each new Z height that holds for 1.5 s. Without either (no plugin, or printing from Klipper's virtual SD card) the layer triggers and the first-layer condition do nothing. Tapping the KNOMI skips to the next rotation page. **Play a print** runs a 90-second fake print in the designer so you can see which page shows when.
 
 **Save & preview on KNOMI** shows the layout on the real screen for 20 s, using sample values if nothing is printing. You can also start from a few ready-made layouts, and download or load layout files to share them. The layout is included in backups. Settings › Printing screen switches between your layout and the stock accelerometer bars.
 
@@ -118,9 +118,9 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 
 **Feelings:** under the quick moods, Coaster has a slower feeling that lasts hours and survives restarts. Printing makes it happier, finishing prints (especially a streak) more so. Getting dizzy, failed prints, being left off for days, losing OctoPrint and heating up with nothing to print make it unhappier; heating for nothing gets it mad. Crashes, power blips and waking up at night leave it confused for a moment. Happy, it smiles more and hums; down, it droops, sighs and sulks. Each Coaster is also born with its own likes and dislikes (a favorite season, one it could do without, long or quick prints, fast moves, being poked, late nights, fans, heat, quiet time). They're rolled once, kept on the KNOMI, and can't be changed. It also learns from you: after five prints it knows your usual print length and time of day, and a print that breaks the habit (much longer, much shorter, an odd hour, a much wilder ride) gets a reaction. Some Coasters love a change of pace, others are creatures of habit and get uneasy. What you print a lot it slowly warms up to (lots of quick prints and it grows fond of them, late nights make a night owl), on top of what it was born with. The /coaster page shows how it feels, why, and what it likes.
 
-**Quirks:** every few seconds Coaster does something small on its own, printing or not: glances around, blinks, winks, yawns, hums, sneezes, stretches, rolls its eyes. It nods at each layer change and cheers at 25, 50 and 75 %. Each KNOMI gets its own personality from its chip ID.
+**Quirks:** every few seconds Coaster does something small on its own, printing or not: glances around, blinks, winks, yawns, hums, sneezes, stretches, rolls its eyes, sighs when it's down, huffs when it's mad. It nods at each layer change and cheers at 25, 50 and 75 %. Each KNOMI gets its own personality from its chip ID.
 
-**OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood and the last report card. The KNOMI sends its mood to the plugin (over WiFi or Bluetooth).
+**OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood, how it's feeling (plugin 0.7.1+) and the last report card. The KNOMI sends its mood to the plugin (over WiFi or Bluetooth).
 
 **Touch:** tap Coaster on the idle screen to poke it, hold to keep tickling. On the print screen a tap still changes pages; hold to tickle.
 

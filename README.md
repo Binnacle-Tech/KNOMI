@@ -13,7 +13,11 @@ Companion plugin: **[OctoPrint-KNOMI](https://github.com/Binnacle-Tech/OctoPrint
 
 <p align="center"><img src="docs/images/coaster-moods.png" alt="Coaster, the mascot, in six moods: calm, riding, excited, screaming, sleepy and happy when a print is done" width="100%"></p>
 
-Coaster is this firmware's mascot and every face on the KNOMI. Instead of looping a GIF, it's drawn live from the KNOMI 2's accelerometer, so it rides along with your toolhead. Its eyes slosh with every move. It gets excited on fast moves and screams on hard travel, then gets used to it. It flinches at endstop hits, shivers through input shaper tests, rides the elevator during QGL and dozes off when nothing moves. It strains to heat the hotend (steam, gritted teeth, sweat), focuses on the first layer, gets sad when a print is cancelled, lonely when WiFi drops, hungry on filament runout and dozes off with the screen. It celebrates when a print finishes, and giggles when you poke it. Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print screen in the designer.
+Coaster is this firmware's mascot and every face on the KNOMI. Instead of looping a GIF, it's drawn live from the KNOMI 2's accelerometer, so it rides along with your toolhead. Its eyes slosh with every move. It gets excited on fast moves and screams on hard travel, then gets used to it. It flinches at endstop hits, shivers through input shaper tests, rides the elevator during QGL and dozes off when nothing moves. It strains to heat the hotend (steam, gritted teeth, sweat), focuses on the first layer, gets sad when a print is cancelled, lonely when WiFi drops, hungry on filament runout and dozes off with the screen. It celebrates when a print finishes, and giggles when you poke it.
+
+It also has a life of its own. It glances around, winks, yawns, hums and sneezes on its own, nods at each layer and cheers at 25, 50 and 75 %. It has feelings that last: printing and finished prints make it happy; failed prints, getting dizzy, being left off for days or heating up with nothing to print make it unhappy or mad. Every Coaster is born with its own likes and dislikes (a favorite season, long or quick prints, fast moves, being poked...), learns your printing habits, and reacts when a print breaks them. It dresses up for the seasons too: holiday lights and snow, New Year and 4th of July fireworks, Halloween bats, spring petals, summer sunglasses and a party hat on its birthday.
+
+Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print screen in the designer.
 
 ## Features
 
@@ -23,8 +27,8 @@ Coaster is this firmware's mascot and every face on the KNOMI. Instead of loopin
 - **Bluetooth LE link** to the plugin (optional). No API key needed. WiFi can switch off while Bluetooth is connected and comes back automatically if the link drops.
 - **Custom GIF animations without reflashing.** Upload a GIF to any slot from the web page (homing, probing, QGL, printing, done and more), stored on the KNOMI's flash.
 - **More animation states:** input shaper calibration, PID tuning, nozzle cleaning, filament load/unload and **paused** (M600, PAUSE, MMU/ERCF).
-- **Printing screen with useful info:** time left, nozzle/bed temps, Z height or layer, file name.
-- **Coaster, the mascot:** every face on the KNOMI is drawn live from the accelerometer and printer state (see above).
+- **Printing screen with useful info:** time left, nozzle/bed temps, Z height and layer (on OctoPrint the plugin works the layer out from the file, like the G-code viewer), file name.
+- **Coaster, the mascot:** every face on the KNOMI is drawn live from the accelerometer and printer state, with quirks, lasting feelings, its own likes and dislikes, learned habits and seasonal decorations (see above).
 - **One-click updates** from GitHub, straight from the KNOMI's settings page.
 - **Log page** at `/log` for troubleshooting without a USB cable.
 - **Display messages:** `M117` / `SET_DISPLAY_TEXT` show as Coaster speech bubbles.
