@@ -323,7 +323,7 @@ void backup_restore_feed(void *r, const uint8_t *d, size_t n) { restore_feed((re
 
 /* ---------------- routes ---------------- */
 
-String message_page(const String &title, const String &body_html);  // webserver.cpp
+String message_page(const String &title, const String &body_html, const char * base = nullptr);  // webserver.cpp
 
 void backup_routes(AsyncWebServer &server) {
     server.on("/backup", HTTP_GET, [](AsyncWebServerRequest *request){

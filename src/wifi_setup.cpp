@@ -619,6 +619,14 @@ void wifi_task(void * parameter) {
     while (1) {
         bt_wifi_policy_loop();
         if (wifi_suspended) {
+            // WiFi is off but settings still get changed (over Bluetooth, through the plugin): save them and
+            // restart when asked; anything that needs WiFi (joining, the setup AP, scans) waits until it's back
+            uint16_t req = knomi_config_require_take();
+            if (req & EEPROM_PARA_CHANGED) eeprom_write_knomi_config();
+            if (req & WEB_POST_RESTART) ESP.restart();
+            req &= WEB_POST_LOCAL_HOSTNAME | WEB_POST_WIFI_CONFIG_MODE | WEB_POST_WIFI_CONFIG_AP |
+                   WEB_POST_WIFI_CONFIG_STA | WEB_POST_WIFI_REFRESH;
+            if (req) knomi_config_require_change(req);
             delay(100);
             continue;
         }

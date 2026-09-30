@@ -8,12 +8,14 @@
 //   FILES   write (encrypted+MITM)  plugin -> KNOMI, file list in frames: [flags][text], flags 1=start 2=end
 //   CMD     notify                  KNOMI -> plugin, Moonraker-style paths (same strings the UI queues)
 //   INFO    read                    firmware version / hostname
+//   TUNNEL  write+notify (encrypted) the KNOMI's web pages over Bluetooth (knomi_ble.cpp, "HTTP tunnel")
 // Pairing: LE Secure Connections, passkey shown on the KNOMI screen, bonded.
 #define KNOMI_BLE_SERVICE_UUID "4b4e4f4d-4900-4c69-6e6b-000000000001"
 #define KNOMI_BLE_STATUS_UUID  "4b4e4f4d-4900-4c69-6e6b-000000000002"
 #define KNOMI_BLE_FILES_UUID   "4b4e4f4d-4900-4c69-6e6b-000000000003"
 #define KNOMI_BLE_CMD_UUID     "4b4e4f4d-4900-4c69-6e6b-000000000004"
 #define KNOMI_BLE_INFO_UUID    "4b4e4f4d-4900-4c69-6e6b-000000000005"
+#define KNOMI_BLE_TUNNEL_UUID  "4b4e4f4d-4900-4c69-6e6b-000000000006"
 
 void knomi_ble_init(void);              // setup(): starts advertising if enabled in config
 bool knomi_ble_running(void);

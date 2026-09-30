@@ -4,7 +4,7 @@
 // so no literal dollar signs anywhere in here.
 const char index_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><head>
 <title>KNOMI · Settings</title>
-<link rel='shortcut icon' type='image/x-icon' href='/favicon.ico'>
+<link rel='shortcut icon' type='image/x-icon' href='favicon.ico'>
 )rawliteral" BINNACLE_HEAD R"rawliteral(
 <script>
 var popup_clicked = false, popup_btn = false;
@@ -66,9 +66,9 @@ function fwNewer(a, b){ for (var i = 0; i < 4; i++){ if (a[i] !== b[i]) return a
 function installUpdate(bid, pid){
   var b = document.getElementById(bid || "update-go"), p = document.getElementById(pid || "update-prog");
   b.disabled = true;
-  fetch("/update/github", {method:"POST"}).then(function(){ poll(); }).catch(function(){ p.textContent = "Couldn't start the update"; b.disabled = false; });
+  fetch("update/github", {method:"POST"}).then(function(){ poll(); }).catch(function(){ p.textContent = "Couldn't start the update"; b.disabled = false; });
   function poll(){
-    fetch("/update/progress").then(function(r){ return r.json(); }).then(function(s){
+    fetch("update/progress").then(function(r){ return r.json(); }).then(function(s){
       p.textContent = s.msg + (s.state == "downloading" ? " · " + s.pct + "%" : "");
       if (s.state == "checking" || s.state == "downloading") { setTimeout(poll, 800); return; }
       if (s.state == "done") { setTimeout(function(){ location.reload(); }, 20000); return; }
@@ -110,10 +110,10 @@ async function discoverOcto(){
   st.innerHTML = "<span class='pill now'>searching</span>";
   list.innerHTML = ""; btn.disabled = true;
   try {
-    var r = await (await fetch("/discover?start=1")).json();
+    var r = await (await fetch("discover?start=1")).json();
     for (var i = 0; i < 15 && r.scanning; i++) {
       await new Promise(function(res){ setTimeout(res, 1000); });
-      r = await (await fetch("/discover")).json();
+      r = await (await fetch("discover")).json();
     }
     if (!r.results.length) {
       st.innerHTML = "<span class='pill held'>none found</span> Is OctoPrint's discovery plugin on?";
@@ -156,7 +156,7 @@ async function discoverOcto(){
   <section class="card">
     <div class="card-h"><span class="idx">01</span><span class="k">Printer connection</span></div>
     <div class="card-b">
-      <form id="klipper-form" name="klipper-form" action="/" method="POST">
+      <form id="klipper-form" name="klipper-form" action="./" method="POST">
         <div class="row">
           <label class="field-label" for="backend">Backend</label>
           <select id="backend" name="backend" onchange="syncBackend()">
@@ -197,7 +197,7 @@ async function discoverOcto(){
 
   <section class="card" id="display">
     <div class="card-h"><span class="idx">02</span><span class="k">Display</span></div>
-    <form id="display-form" action="/display" method="POST">
+    <form id="display-form" action="display" method="POST">
     <div class="card-b">
       <div class="cols">
         <div class="row">
@@ -231,7 +231,7 @@ async function discoverOcto(){
             <option value="0" $pv_0$>Your layout (Print screen designer)</option>
             <option value="1" $pv_1$>Accelerometer bars (stock)</option>
           </select>
-          <div class="hint">Design your layout on the <a href="/layout">Print screen</a> page.</div>
+          <div class="hint">Design your layout on the <a href="layout">Print screen</a> page.</div>
         </div>
         <div class="row" style="grid-column:1/-1">
           <label class="field-label" for="gif_tint">Animations follow the UI color</label>
@@ -249,7 +249,7 @@ async function discoverOcto(){
 
   <section class="card" id="screen">
     <div class="card-h"><span class="idx">03</span><span class="k">Screen &amp; animations</span></div>
-    <form id="screen-form" action="/screen" method="POST">
+    <form id="screen-form" action="screen" method="POST">
     <div class="card-b">
       <div class="cols">
         <div class="row">
@@ -262,7 +262,7 @@ async function discoverOcto(){
         </div>
         <div class="row">
           <span class="field-label">Faces</span>
-          <div class="hint" style="margin-top:2px">Every face on the KNOMI is Coaster, reacting live to the toolhead and the printer. <a href="/coaster">Tune how it reacts</a>.</div>
+          <div class="hint" style="margin-top:2px">Every face on the KNOMI is Coaster, reacting live to the toolhead and the printer. <a href="coaster">Tune how it reacts</a>.</div>
         </div>
         <div class="row">
           <label class="field-label" for="touch_idle">Back to Coaster after (seconds)</label>
@@ -300,7 +300,7 @@ async function discoverOcto(){
 
   <section class="card" id="presets">
     <div class="card-h"><span class="idx">04</span><span class="k">Presets</span></div>
-    <form id="presets-form" action="/presets" method="POST">
+    <form id="presets-form" action="presets" method="POST">
     <div class="card-b">
       <div class="sub">Preheat (Temperature &rsaquo; Preheat on the KNOMI, after Cool down)</div>
       <div class="preset-h"><span>Name</span><span>Nozzle &deg;C</span><span>Bed &deg;C</span></div>
@@ -319,7 +319,7 @@ async function discoverOcto(){
 
   <section class="card" id="bluetooth">
     <div class="card-h"><span class="idx">05</span><span class="k">Bluetooth</span><span class="sp"></span>$bt_state$</div>
-    <form action="/bluetooth" method="POST">
+    <form action="bluetooth" method="POST">
     <div class="card-b">
       <div class="cols">
         <div class="row">
@@ -352,14 +352,14 @@ async function discoverOcto(){
     </div>
     <div class="card-f">
       <button type="submit" class="btn-primary">Save Bluetooth</button>
-      <button type="submit" class="btn-ghost btn-danger" formaction="/bluetooth/forget" onclick="return confirm('Forget all paired devices? The Pi will need to pair again.')">Forget paired devices</button>
+      <button type="submit" class="btn-ghost btn-danger" formaction="bluetooth/forget" onclick="return confirm('Forget all paired devices? The Pi will need to pair again.')">Forget paired devices</button>
     </div>
     </form>
   </section>
 
   <section class="card">
     <div class="card-h"><span class="idx">06</span><span class="k">WiFi networks</span><span class="sp"></span>
-      <form name="refresh" action="/" method="POST" style="margin:0"><button type="submit" class="btn-ghost" name="refresh" value="1">Rescan</button></form>
+      <form name="refresh" action="./" method="POST" style="margin:0"><button type="submit" class="btn-ghost" name="refresh" value="1">Rescan</button></form>
     </div>
     <div class="card-b">
       <div class="table-wrap"><table>
@@ -374,7 +374,7 @@ async function discoverOcto(){
   <section class="card">
     <div class="card-h"><span class="idx">07</span><span class="k">KNOMI network</span></div>
     <div class="card-b">
-      <form id="knomi-form" name="knomi-form" action="/" method="POST">
+      <form id="knomi-form" name="knomi-form" action="./" method="POST">
         <div class="cols">
           <div class="row">
             <label class="field-label" for="mode">WiFi mode</label>
@@ -405,17 +405,17 @@ async function discoverOcto(){
   <section class="card">
     <div class="card-h"><span class="idx">08</span><span class="k">System</span></div>
     <div class="card-f" style="border-top:0">
-      <a class="btn-ghost" href="/gifs">Custom animations</a>
+      <a class="btn-ghost" href="gifs">Custom animations</a>
       <button type="button" class="btn-ghost" id="sys-update" onclick="installUpdate('sys-update','sys-update-prog')">Update from GitHub</button>
-      <a class="btn-ghost" href="/update">Upload a .bin</a>
-      <a class="btn-ghost" href="/log">Log</a>
-      <form id="restart-form" name="restart-form" action="/" method="POST" style="margin:0"><input type="hidden" name="restart"></form>
+      <a class="btn-ghost" href="update">Upload a .bin</a>
+      <a class="btn-ghost" href="log">Log</a>
+      <form id="restart-form" name="restart-form" action="./" method="POST" style="margin:0"><input type="hidden" name="restart"></form>
       <button type="button" class="btn-ghost btn-danger" onclick="showPopupRestart()">Restart</button>
       <div class="hint" id="sys-update-prog" style="width:100%">Update from GitHub checks for a newer release and installs it; settings stay.</div>
     </div>
     <div class="card-f">
-      <a class="btn-ghost" href="/backup">Download backup</a>
-      <form action="/restore" method="POST" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0"
+      <a class="btn-ghost" href="backup">Download backup</a>
+      <form action="restore" method="POST" enctype="multipart/form-data" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0"
             onsubmit="return confirm('Restore this backup? It replaces all settings and custom animations, then restarts the KNOMI.')">
         <input type="file" name="backup" accept=".knomi" required>
         <button type="submit" class="btn-ghost">Restore</button>
@@ -430,7 +430,7 @@ async function discoverOcto(){
 <div id="modalOne" class="modal">
   <div class="dialog">
     <div class="card-h"><span class="k">Join network</span><button type="button" class="x close" aria-label="Close">&times;</button></div>
-    <form action="/" method="POST">
+    <form action="./" method="POST">
       <div class="card-b">
         <div class="row"><label class="field-label" for="ssid">Network</label><input readonly id="ssid" type="text" name="ssid" class="mono" maxlength="32"></div>
         <div class="row" style="margin:0"><label class="field-label" for="wifi-pwd">Password</label><input id="wifi-pwd" type="password" name="password" autocomplete="off"></div>

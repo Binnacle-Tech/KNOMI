@@ -4,6 +4,9 @@
 #include "knomi.h"
 #include "moonraker.h"
 #include "knomi_ble.h"
+#include <WiFi.h>
+#include <freertos/stream_buffer.h>
+#include "nimble/porting/nimble/include/os/os_mbuf.h"
 extern bool coaster_plugin_watched;   // knomi_coaster.cpp
 
 #define LINK_TIMEOUT_MS 5000   // plugin sends status at least every 2 s
@@ -147,6 +150,117 @@ class FilesCB : public NimBLECharacteristicCallbacks {
     }
 };
 
+/* ---------------- HTTP tunnel ----------------
+ * The plugin's settings page opens the KNOMI's own web pages through OctoPrint; with WiFi off they
+ * come over Bluetooth. The plugin writes a request (first frame: "METHOD path\ncontent-type\nlength",
+ * then the body in frames); a task here replays it against the KNOMI's web server on 127.0.0.1
+ * (the loopback works with WiFi off) and notifies the raw HTTP response back.
+ * Frames both ways: [flags][id][seq][data], flags 1 = first, 2 = last, 4 = error / abort. */
+static NimBLECharacteristic *ch_tun = nullptr;
+static StreamBufferHandle_t tun_body = nullptr;
+static QueueHandle_t tun_q = nullptr;
+typedef struct { uint8_t id; char method[8]; char path[240]; char ctype[96]; uint32_t len; } tun_req_t;
+static volatile bool tun_abort = false, tun_busy = false;
+
+static void tun_notify(uint8_t flags, uint8_t id, uint8_t seq, const uint8_t *data, size_t n) {
+    uint8_t f[515];
+    f[0] = flags; f[1] = id; f[2] = seq;
+    if (n) memcpy(f + 3, data, n);
+    // don't outrun the Bluetooth stack's buffers (a notify that finds none is silently dropped)
+    for (int i = 0; i < 400 && os_msys_num_free() < 6; i++) delay(2);
+    ch_tun->notify(f, n + 3);
+}
+
+static void tunnel_task(void *) {
+    static uint8_t buf[512];
+    tun_req_t r;
+    for (;;) {
+        if (xQueueReceive(tun_q, &r, portMAX_DELAY) != pdTRUE) continue;
+        tun_busy = true;
+        WiFiClient c;
+        if (!c.connect(IPAddress(127, 0, 0, 1), 80, 3000)) {
+            const char *e = "can't reach the KNOMI's web server";
+            tun_notify(1 | 2 | 4, r.id, 0, (const uint8_t *)e, strlen(e));
+            tun_busy = false;
+            continue;
+        }
+        c.printf("%s %s HTTP/1.1\r\nHost: knomi\r\nConnection: close\r\nContent-Length: %u\r\n", r.method, r.path, (unsigned)r.len);
+        if (r.ctype[0]) c.printf("Content-Type: %s\r\n", r.ctype);
+        c.print("\r\n");
+        uint32_t left = r.len;
+        while (left && !tun_abort) {
+            size_t n = xStreamBufferReceive(tun_body, buf, left < sizeof(buf) ? left : sizeof(buf), pdMS_TO_TICKS(15000));
+            if (!n) break;   // the plugin stopped sending
+            c.write(buf, n);
+            left -= n;
+        }
+        if (left || tun_abort) {
+            c.stop();
+            if (!tun_abort) tun_notify(1 | 2 | 4, r.id, 0, (const uint8_t *)"request body stopped", 20);
+            tun_busy = false;
+            continue;
+        }
+        // stream the response back, sized to the connection's MTU
+        uint16_t mtu = server ? server->getPeerMTU(authed_conn) : 23;
+        size_t chunk = (mtu > 30 ? mtu - 3 : 20) - 3;
+        if (chunk > 509) chunk = 509;
+        uint8_t seq = 0;
+        bool first = true;
+        uint32_t idle = millis();
+        while (!tun_abort) {
+            int n = c.available() ? c.read(buf, chunk) : 0;
+            if (n > 0) {
+                tun_notify(first ? 1 : 0, r.id, seq++, buf, n);
+                first = false;
+                idle = millis();
+            } else if (!c.connected()) {
+                break;
+            } else if (millis() - idle > 15000) {
+                break;
+            } else {
+                delay(2);
+            }
+        }
+        c.stop();
+        if (!tun_abort) tun_notify((first ? 1 : 0) | 2, r.id, seq, nullptr, 0);
+        tun_busy = false;
+    }
+}
+
+class TunnelCB : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic *c) override {
+        std::string v = c->getValue();
+        if (v.size() < 3) return;
+        uint8_t flags = (uint8_t)v[0];
+        const uint8_t *d = (const uint8_t *)v.data() + 3;
+        size_t n = v.size() - 3;
+        if (flags & 4) { tun_abort = true; return; }
+        if (flags & 1) {
+            // a new request: finish off any old one first
+            if (tun_busy) {
+                tun_abort = true;
+                for (int i = 0; i < 100 && tun_busy; i++) delay(10);
+            }
+            tun_abort = false;
+            xStreamBufferReset(tun_body);
+            tun_req_t r;
+            memset(&r, 0, sizeof(r));
+            r.id = (uint8_t)v[1];
+            String head((const char *)d, n);   // "METHOD path\ncontent-type\nlength"
+            int a = head.indexOf(' '), b = head.indexOf('\n'), e = head.indexOf('\n', b + 1);
+            if (a < 0 || b < 0 || e < 0) return;
+            strlcpy(r.method, head.substring(0, a).c_str(), sizeof(r.method));
+            strlcpy(r.path, head.substring(a + 1, b).c_str(), sizeof(r.path));
+            strlcpy(r.ctype, head.substring(b + 1, e).c_str(), sizeof(r.ctype));
+            r.len = (uint32_t)head.substring(e + 1).toInt();
+            xQueueSend(tun_q, &r, 0);
+            return;
+        }
+        // body: waits (holding up this write's reply, which paces the plugin) until the task has room
+        if (n) xStreamBufferSend(tun_body, d, n, pdMS_TO_TICKS(5000));
+    }
+};
+
 void knomi_ble_init(void) {
     lock = xSemaphoreCreateMutex();
     cmd_lock = xSemaphoreCreateMutex();
@@ -169,6 +283,12 @@ void knomi_ble_init(void) {
     svc->createCharacteristic(KNOMI_BLE_FILES_UUID, secure_write, 512)->setCallbacks(new FilesCB());
     ch_cmd = svc->createCharacteristic(KNOMI_BLE_CMD_UUID,
         NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN, 512);
+    ch_tun = svc->createCharacteristic(KNOMI_BLE_TUNNEL_UUID, secure_write |
+        NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN, 512);
+    ch_tun->setCallbacks(new TunnelCB());
+    tun_body = xStreamBufferCreate(4096, 1);
+    tun_q = xQueueCreate(1, sizeof(tun_req_t));
+    xTaskCreate(tunnel_task, "ble tunnel", 4096, NULL, 4, NULL);
     NimBLECharacteristic *info = svc->createCharacteristic(KNOMI_BLE_INFO_UUID, NIMBLE_PROPERTY::READ);
     String info_s = String("{\"fw\":\"" FW_VERSION "\",\"host\":\"") + knomi_config.hostname + "\"}";
     info->setValue((const uint8_t *)info_s.c_str(), info_s.length());

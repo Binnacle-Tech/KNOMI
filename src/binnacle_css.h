@@ -186,24 +186,24 @@ input[type=color]{width:52px;height:36px;padding:2px;background:var(--panel-2);b
 // Shared <head> bits: fonts load without blocking (skipped silently offline) + saved color mode
 #define BINNACLE_HEAD \
   "<meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>" \
-  "<link rel='stylesheet' href='/binnacle.css'>" \
+  "<link rel='stylesheet' href='binnacle.css'>" \
   "<link rel='stylesheet' media='print' onload=\"this.media='all'\" " \
   "href='https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap'>" \
   "<script>try{var m=localStorage.getItem('knomi-mode');if(m&&m!='dark')document.documentElement.setAttribute('data-theme',m)}catch(e){}" \
   "function setMode(m){if(m=='dark')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',m);" \
   "try{localStorage.setItem('knomi-mode',m)}catch(e){}}" \
   "addEventListener('DOMContentLoaded',function(){var s=document.getElementById('mode-sel');if(s)s.value=document.documentElement.getAttribute('data-theme')||'dark';" \
-  "document.querySelectorAll('.rail nav a').forEach(function(a){if(a.getAttribute('href')==location.pathname)a.className='on'})})</script>"
+  "document.querySelectorAll('.rail nav a').forEach(function(a){if(a.pathname==location.pathname)a.className='on'})})</script>"
 
 // Coaster, the mascot, next to the KNOMI wordmark
 #define KNOMI_MARK "<svg class='mark' viewBox='0 0 256 256' aria-hidden='true'><circle cx='128' cy='128' r='126' fill='#000' stroke='#334353' stroke-width='6'/><g stroke='#C02F30' stroke-width='16' stroke-linecap='round' fill='none'><path d='M32 112h80M144 112h80'/><path stroke-width='14' d='M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0'/></g><g fill='#C02F30'><path d='M42 112a30 30 0 0 0 60 0z'/><path d='M154 112a30 30 0 0 0 60 0z'/></g></svg>"
 
 // The top bar, the same on every page. The link for the page you're on is highlighted by BINNACLE_HEAD's script.
 #define BINNACLE_RAIL \
-  "<header class='rail'><div class='wrap wide rail-in'><div class='brand'><a class='n' href='/'>" KNOMI_MARK \
+  "<header class='rail'><div class='wrap wide rail-in'><div class='brand'><a class='n' href='./'>" KNOMI_MARK \
   "<span>KNOMI<span class='dot'>.</span></span></a><span class='f'>Printer display</span></div><span class='rail-sp'></span>" \
-  "<nav><a href='/'>Settings</a><a href='/gifs'>Animations</a><a href='/layout'>Print screen</a><a href='/coaster'>Coaster face</a>" \
-  "<a href='/update'>Firmware</a><a href='/log'>Log</a></nav>" BINNACLE_MODES "</div></header>"
+  "<nav><a href='./'>Settings</a><a href='gifs'>Animations</a><a href='layout'>Print screen</a><a href='coaster'>Coaster face</a>" \
+  "<a href='update'>Firmware</a><a href='log'>Log</a></nav>" BINNACLE_MODES "</div></header>"
 
 #define BINNACLE_MODES \
   "<div class='modes'><select id='mode-sel' aria-label='Color mode' onchange='setMode(this.value)'>" \

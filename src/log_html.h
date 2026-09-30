@@ -36,7 +36,7 @@ const char log_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><hea
       <input type="search" id="filter" placeholder="Filter lines" aria-label="Filter lines">
       <span class="sp"></span>
       <button type="button" class="btn-ghost" id="copy">Copy</button>
-      <a class="btn-ghost" href="/log.txt?dl=1">Download</a>
+      <a class="btn-ghost" href="log.txt?dl=1">Download</a>
       <button type="button" class="btn-ghost" id="clear">Clear</button>
     </div>
     <pre id="log">Loading…</pre>
@@ -48,17 +48,17 @@ const char log_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><hea
 var $=function(i){return document.getElementById(i)},paused=false,text="";
 function fmtUp(s){var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+"d ":"")+h+"h "+m+"m"}
 function kb(b){return Math.round(b/1024)+" KB"}
-function info(){fetch("/log/info").then(function(r){return r.json()}).then(function(j){
+function info(){fetch("log/info").then(function(r){return r.json()}).then(function(j){
   var rows=[["Firmware",j.fw],["Board",j.board],["Uptime",fmtUp(j.uptime)],["Last restart",j.reset],["Free RAM",kb(j.heap)+" (low "+kb(j.heap_min)+")"],
     ["Free PSRAM",kb(j.psram)],["WiFi",j.wifi],["Printer",j.backend+" "+j.host],["Coaster",j.mood],["Flash used",kb(j.fs_used)+" of "+kb(j.fs_total)]];
   $("info").innerHTML=rows.map(function(r){return'<div><span>'+r[0]+'</span><b>'+String(r[1]).replace(/[&<>]/g,"")+'</b></div>'}).join("");
 }).catch(function(){})}
 function show(){var f=$("filter").value.toLowerCase(),t=f?text.split("\n").filter(function(l){return l.toLowerCase().indexOf(f)>=0}).join("\n"):text;
   var el=$("log"),atEnd=el.scrollTop+el.clientHeight>=el.scrollHeight-20;el.textContent=t||"(nothing yet)";if(atEnd)el.scrollTop=el.scrollHeight}
-function poll(){if(!paused)fetch("/log.txt").then(function(r){return r.text()}).then(function(t){text=t;show()}).catch(function(){});setTimeout(poll,2000)}
+function poll(){if(!paused)fetch("log.txt").then(function(r){return r.text()}).then(function(t){text=t;show()}).catch(function(){});setTimeout(poll,2000)}
 $("pause").addEventListener("click",function(){paused=!paused;this.textContent=paused?"Resume":"Pause"});
 $("filter").addEventListener("input",show);
-$("clear").addEventListener("click",function(){fetch("/log/clear",{method:"POST"}).then(function(){text="";show()})});
+$("clear").addEventListener("click",function(){fetch("log/clear",{method:"POST"}).then(function(){text="";show()})});
 $("copy").addEventListener("click",function(){var t=$("log").textContent;
   try{navigator.clipboard.writeText(t).then(function(){$("copied").textContent="copied"},function(){sel()})}catch(e){sel()}
   function sel(){var r=document.createRange();r.selectNodeContents($("log"));var s=getSelection();s.removeAllRanges();s.addRange(r);$("copied").textContent="selected, press Ctrl+C"}

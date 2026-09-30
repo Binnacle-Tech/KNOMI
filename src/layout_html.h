@@ -267,7 +267,7 @@ function layered(pg){
       var r=e.rd?e.h/2:0;
       h+='<div class="el barel'+s+'" data-i="'+i+'" style="left:'+e.x+'px;top:'+e.y+'px;width:'+e.w+'px;height:'+e.h+'px;border-radius:'+r+'px;background:'+col(e.b)+'"><i style="width:'+pct()+'%;background:'+col(e.c)+';border-radius:'+r+'px"></i></div>';
     }else if(e.t=="gif"){
-      h+='<div class="el gifel'+s+'" data-i="'+i+'" style="left:'+e.x+'px;top:'+e.y+'px"><img alt="" src="/gif/file?slot='+encodeURIComponent(e.g)+'&v='+V+'"></div>';
+      h+='<div class="el gifel'+s+'" data-i="'+i+'" style="left:'+e.x+'px;top:'+e.y+'px"><img alt="" src="gif/file?slot='+encodeURIComponent(e.g)+'&v='+V+'"></div>';
     }else if(e.t=="face"){
       // resting coaster face (it moves on the KNOMI)
       var c=col("t"),d=e.d||240;
@@ -343,12 +343,12 @@ function renderProps(){
     h+='<div class="half"><label class="chk"><input type="checkbox" data-b="rd"> Rounded</label></div>';
   }else if(e.t=="face"){
     h+=num("x","X",0,240)+num("y","Y",0,240)+num("d","Size",60,240,"half");
-    h+='<div class="full hint">The face reacts to the toolhead live on the KNOMI; this preview shows it at rest. <a href="/coaster">Tune it</a></div>';
+    h+='<div class="full hint">The face reacts to the toolhead live on the KNOMI; this preview shows it at rest. <a href="coaster">Tune it</a></div>';
   }else if(e.t=="gif"){
     h+='<div class="half"><label class="field-label">Animation</label><select data-k="g">'+
       state.gifs.map(function(g){return'<option value="'+g.name+'">'+esc(g.label)+'</option>'}).join("")+'</select></div>';
     h+=num("x","X",0,240)+num("y","Y",0,240);
-    h+='<div class="full hint">Plays the same animation as that slot, including one you uploaded. <a href="/gifs">Animations</a></div>';
+    h+='<div class="full hint">Plays the same animation as that slot, including one you uploaded. <a href="gifs">Animations</a></div>';
   }
   h+='<div class="full" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">'+
      '<button type="button" class="btn-ghost" data-center="x">Center horizontally</button>'+
@@ -513,14 +513,14 @@ document.addEventListener("keydown",function(ev){
 /* save / preview / file */
 function save(then){
   status("Saving…");
-  fetch("/layout.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(L)})
+  fetch("layout.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(L)})
   .then(function(r){return r.text().then(function(t){if(!r.ok)throw new Error(t||r.status);return t})})
   .then(function(){saved=JSON.stringify(L);dirty();status("Saved. The KNOMI switched to it.","ok");if(then)then()})
   .catch(function(e){status("Not saved: "+e.message,"bad")});
 }
 $("save").addEventListener("click",function(){save()});
 $("preview").addEventListener("click",function(){save(function(){
-  fetch("/layout/preview",{method:"POST"}).then(function(r){status(r.ok?"Showing on the KNOMI for 20 seconds (sample data unless printing).":"Preview failed",r.ok?"ok":"bad")})})});
+  fetch("layout/preview",{method:"POST"}).then(function(r){status(r.ok?"Showing on the KNOMI for 20 seconds (sample data unless printing).":"Preview failed",r.ok?"ok":"bad")})})});
 $("export").addEventListener("click",function(){
   var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(L,null,1)],{type:"application/json"}));
   a.download="knomi-print-screen.json";a.click();setTimeout(function(){URL.revokeObjectURL(a.href)},2000);
@@ -532,11 +532,11 @@ $("import").addEventListener("change",function(){
 });
 $("revert").addEventListener("click",function(){L=JSON.parse(saved);page=Math.min(page,L.pages.length-1);sel=-1;render();renderProps();status("")});
 $("reset").addEventListener("click",function(){if(!confirm("Put the default printing screen back on the KNOMI?"))return;
-  fetch("/layout/reset",{method:"POST"}).then(function(){return load()}).then(function(){status("Default layout restored.","ok")})});
+  fetch("layout/reset",{method:"POST"}).then(function(){return load()}).then(function(){status("Default layout restored.","ok")})});
 window.addEventListener("beforeunload",function(ev){if(dirty()){ev.preventDefault();ev.returnValue=""}});
 
 /* live data */
-function poll(){fetch("/status.json").then(function(r){return r.json()}).then(function(j){
+function poll(){fetch("status.json").then(function(r){return r.json()}).then(function(j){
   state.tokens=j.tokens||SAMPLE;if(j.theme)state.theme=j.theme;if(j.gifs)state.gifs=j.gifs;render();}).catch(function(){})}
 $("live").addEventListener("change",function(){live=this.checked;clearInterval(liveTimer);if(live){poll();liveTimer=setInterval(poll,2000)}render()});
 
@@ -549,9 +549,9 @@ window.addEventListener("resize",fit);fit();
 
 function load(){
   return Promise.all([
-    fetch("/layout.json").then(function(r){return r.json()}),
-    fetch("/layout.json?default=1").then(function(r){return r.json()}),
-    fetch("/status.json").then(function(r){return r.json()}).catch(function(){return{}})
+    fetch("layout.json").then(function(r){return r.json()}),
+    fetch("layout.json?default=1").then(function(r){return r.json()}),
+    fetch("status.json").then(function(r){return r.json()}).catch(function(){return{}})
   ]).then(function(res){
     L=res[0];DEF=res[1];var st=res[2];
     if(st.theme)state.theme=st.theme;if(st.gifs)state.gifs=st.gifs;if(st.tokens)state.tokens=st.tokens;

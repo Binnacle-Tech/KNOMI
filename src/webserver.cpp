@@ -211,13 +211,16 @@ String knomi_html_processor(const String& var){
     return value;    // Could just be something between two normal $ signs in the HTML...
 }
 
-// Small Binnacle-styled page for POST results
-String message_page(const String &title, const String &body_html) {
-    return String("<!DOCTYPE html><html lang='en'><head><title>KNOMI</title>") + BINNACLE_HEAD +
+String message_page(const String &title, const String &body_html, const char * base = nullptr);
+// Small Binnacle-styled page for POST results. Links are relative (so the pages also work through the
+// OctoPrint plugin's proxy); a page answering a nested path like /bluetooth/forget passes base "../".
+String message_page(const String &title, const String &body_html, const char * base) {
+    return String("<!DOCTYPE html><html lang='en'><head><title>KNOMI</title>") +
+        (base ? String("<base href='") + base + "'>" : String()) + BINNACLE_HEAD +
         "</head><body>" BINNACLE_RAIL
         "<main class='wrap wide'><section class='mast'><h1>" + title + "<span class='dot'>.</span></h1></section>"
         "<section class='card'><div class='card-b'>" + body_html + "</div>"
-        "<div class='card-f'><a class='btn-primary' href='/'>Back to settings</a></div></section></main></body></html>";
+        "<div class='card-f'><a class='btn-primary' href='./'>Back to settings</a></div></section></main></body></html>";
 }
 
 /*
@@ -342,7 +345,7 @@ static String gifs_page(void) {
         page += "<section class='card'><div class='card-h'><span class='idx'>" + String(idx) +
                 "</span><span class='k'>" + String(info.label) + "</span></div><div class='card-b' style='display:flex;flex-direction:column;flex:1'>";
         if (info.has_custom || info.has_builtin) {
-            page += "<div class='screen'><img loading='lazy' alt='' src='/gif/file?slot=" + n + "&t=" + String(millis()) + "'></div>";
+            page += "<div class='screen'><img loading='lazy' alt='' src='gif/file?slot=" + n + "&t=" + String(millis()) + "'></div>";
         } else {
             page += "<div class='screen empty' style='flex-direction:column;gap:8px'><span style='display:block;width:72px;height:72px'>" KNOMI_MARK "</span>Coaster</div>";
         }
@@ -357,11 +360,11 @@ static String gifs_page(void) {
             page += "<span class='pill held'>Coaster acts this out</span>";
         }
         page += "</div><div class='slot-actions'>"
-                "<form method='POST' action='/gif/upload?slot=" + n + "' enctype='multipart/form-data'>"
+                "<form method='POST' action='gif/upload?slot=" + n + "' enctype='multipart/form-data'>"
                 "<input type='file' name='gif' accept='image/gif' required>"
                 "<button type='submit' class='btn-ghost' style='justify-content:center'>Upload</button></form>";
         if (info.has_custom) {
-            page += "<form method='POST' action='/gif/delete?slot=" + n + "'><button type='submit' class='btn-ghost' style='justify-content:center'>" +
+            page += "<form method='POST' action='gif/delete?slot=" + n + "'><button type='submit' class='btn-ghost' style='justify-content:center'>" +
                     String(info.has_builtin ? "Restore built-in" : "Back to Coaster") + "</button></form>";
         }
         page += "</div></div></section>";
@@ -418,8 +421,8 @@ static void gif_upload_chunk(AsyncWebServerRequest *request, String filename, si
 }
 
 static String upload_error_page(const String &msg) {
-    String p = message_page("Upload failed", "<p><span class='pill bad'>" + html_escape(msg) + "</span></p>");
-    p.replace("href='/'>Back to settings", "href='/gifs'>Back to animations");
+    String p = message_page("Upload failed", "<p><span class='pill bad'>" + html_escape(msg) + "</span></p>", "../");
+    p.replace("href='./'>Back to settings", "href='gifs'>Back to animations");
     return p;
 }
 
@@ -469,7 +472,7 @@ static void bluetooth_routes(void) {
                     " seconds, or when you press <b>Turn KNOMI WiFi on</b> in the plugin settings.</p>";
         }
         if (note.isEmpty()) {
-            request->redirect("/#bluetooth");
+            request->redirect("./#bluetooth");
             return;
         }
         request->send(200, "text/html", message_page("Bluetooth saved", note));
@@ -478,7 +481,7 @@ static void bluetooth_routes(void) {
         knomi_ble_forget_bonds();
         request->send(200, "text/html", message_page("Paired devices forgotten",
             "<p>Pair the Pi again with <span class='mono'>bluetoothctl</span>. Remove the old pairing there first "
-            "(<span class='mono'>remove " + html_escape(knomi_ble_address()) + "</span>).</p>"));
+            "(<span class='mono'>remove " + html_escape(knomi_ble_address()) + "</span>).</p>", "../"));
     });
 }
 
@@ -493,7 +496,7 @@ static void display_routes(void) {
         knomi_config.gif_tint = int_param(request, "gif_tint", 0, GIF_TINT_ALL, knomi_config.gif_tint);
         knomi_config_require_change(LOCAL_POST_SETTINGS);  // save to EEPROM (WiFi task)
         knomi_display_settings_dirty = true;               // apply on screen (LVGL task)
-        request->redirect("/#display");
+        request->redirect("./#display");
     });
 }
 
@@ -530,7 +533,7 @@ static void screen_routes(void) {
         knomi_config_sanitize_screen();
         knomi_config_require_change(LOCAL_POST_SETTINGS);
         knomi_display_settings_dirty = true;
-        request->redirect("/#screen");
+        request->redirect("./#screen");
     });
     server.on("/presets", HTTP_POST, [](AsyncWebServerRequest *request){
         knomi_config_t &c = knomi_config;
@@ -558,7 +561,7 @@ static void screen_routes(void) {
         knomi_config_sanitize_screen();
         knomi_config_require_change(LOCAL_POST_SETTINGS);
         knomi_display_settings_dirty = true;
-        request->redirect("/#presets");
+        request->redirect("./#presets");
     });
 }
 
@@ -791,7 +794,7 @@ static void gif_routes(void) {
         gif_upload_state_t *st = (gif_upload_state_t *)request->_tempObject;
         if (!st) { request->send(400, "text/html", upload_error_page("No file received")); return; }
         if (st->error) { request->send(400, "text/html", upload_error_page(st->msg)); return; }
-        request->redirect("/gifs");
+        request->redirect("../gifs");
     }, gif_upload_chunk);
     server.on("/gif/delete", HTTP_POST, [](AsyncWebServerRequest *request){
         int slot = slot_param(request);
@@ -799,7 +802,7 @@ static void gif_routes(void) {
             LittleFS.remove(knomi_gif_path((knomi_gif_slot_t)slot));
             knomi_gif_request_reload((knomi_gif_slot_t)slot);
         }
-        request->redirect("/gifs");
+        request->redirect("../gifs");
     });
     server.on("/discover", HTTP_GET, [](AsyncWebServerRequest *request){
         if (request->hasParam("start")) octoprint_discover_start();
@@ -889,7 +892,7 @@ void webserver_setup(void) {
             // scan crashed the KNOMI if the browser went away meanwhile (and answered from the wrong task)
             request->send(200, "text/html", message_page("Scanning",
                 "<p><span class='pill now'>scanning</span></p><p>Looking for WiFi networks. The settings page comes "
-                "back with the list in a few seconds.</p><script>setTimeout(function(){location.href='/'},6000)</script>"));
+                "back with the list in a few seconds.</p><script>setTimeout(function(){location.href='./'},6000)</script>"));
         } else {
             request->send_P(200, "text/html", index_html, knomi_html_processor);
         }

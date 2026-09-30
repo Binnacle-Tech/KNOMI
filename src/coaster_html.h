@@ -88,7 +88,7 @@ textarea{width:100%;min-height:90px;background:var(--well);color:var(--text);bor
   <section class="mast">
     <span class="label">Coaster face</span>
     <h1>Coaster face<span class="dot">.</span></h1>
-    <p class="lede">A face drawn live from the KNOMI's accelerometer instead of a GIF. Its eyes and head hang on springs, so every move of the toolhead sloshes them around, and it picks a mood from how hard and how long it's being thrown. Try settings here on the simulated KNOMI (play a print, or grab it and fling it), then save them to your KNOMI. It's every face on your KNOMI: idle, getting ready, paused and after the print, and you can place it on the <a href="/layout" style="color:var(--cyan)">print screen</a> too.</p>
+    <p class="lede">A face drawn live from the KNOMI's accelerometer instead of a GIF. Its eyes and head hang on springs, so every move of the toolhead sloshes them around, and it picks a mood from how hard and how long it's being thrown. Try settings here on the simulated KNOMI (play a print, or grab it and fling it), then save them to your KNOMI. It's every face on your KNOMI: idle, getting ready, paused and after the print, and you can place it on the <a href="layout" style="color:var(--cyan)">print screen</a> too.</p>
     <div class="rule"></div>
   </section>
 
@@ -267,20 +267,20 @@ buildSliders();
 $("reset").addEventListener("click",function(){T=Object.assign({},TUNE_DEF);saveTune();buildSliders()});
 /* ---------------- your KNOMI ---------------- */
 var faceColor="#C02F30";
-fetch("/status.json").then(function(r){return r.json()}).then(function(j){if(j.theme)faceColor=j.theme}).catch(function(){});
+fetch("status.json").then(function(r){return r.json()}).then(function(j){if(j.theme)faceColor=j.theme}).catch(function(){});
 function say(msg,bad){var e=$("saved");e.textContent=msg;e.className="saved"+(bad?" bad":"");clearTimeout(say.t);say.t=setTimeout(function(){e.textContent=""},3000)}
 function knomiLoad(){
-  return fetch("/coaster.json").then(function(r){return r.json()}).then(function(j){
+  return fetch("coaster.json").then(function(r){return r.json()}).then(function(j){
     Object.keys(TUNE_DEF).forEach(function(k){if(typeof j[k]=="number")T[k]=j[k]});decoLoad(j);buildSliders();
   }).catch(function(){say("Couldn't read the KNOMI's tuning",true)});
 }
 function knomiSave(msg){
   var body=Object.assign({},T,decoSettings());
-  fetch("/coaster.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+  fetch("coaster.json",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
     .then(function(r){if(!r.ok)throw 0;say(msg)}).catch(function(){say("Not saved, try again",true)});
 }
 ["dMode","dLights","dAnim","dHemi","dBday","dTalk","dClock"].forEach(function(id){$(id).addEventListener("change",function(){knomiSave("Saved")})});
-function album(){fetch("/coaster/album").then(function(r){return r.json()}).then(function(a){
+function album(){fetch("coaster/album").then(function(r){return r.json()}).then(function(a){
   function esc(x){return String(x).replace(/[&<>]/g,"")}
   var born=a.born?new Date(a.born*1000).toLocaleDateString(undefined,{year:"numeric",month:"long",day:"numeric"}):"not yet (no clock)";
   var bd=(a.bday||"9-28").split("-"),bdt=new Date(2000,+bd[0]-1,+bd[1]).toLocaleDateString(undefined,{month:"long",day:"numeric"});
@@ -297,7 +297,7 @@ function album(){fetch("/coaster/album").then(function(r){return r.json()}).then
   $("album").innerHTML="<dl class='kv'>"+rows.map(function(r){return"<dt>"+esc(r[0])+"</dt><dd>"+esc(r[1])+"</dd>"}).join("")+"</dl>";
 }).catch(function(){$("album").textContent="The album is on the KNOMI (firmware OP28 or newer)."})}
 album();setInterval(album,60000);
-function knomiCard(){fetch("/coaster/card").then(function(r){return r.json()}).then(function(j){var r=j.report;if(!r){$("kReport").textContent="";return}
+function knomiCard(){fetch("coaster/card").then(function(r){return r.json()}).then(function(j){var r=j.report;if(!r){$("kReport").textContent="";return}
   var h=Math.floor(r.secs/3600),m=Math.floor(r.secs%3600/60);
   $("kReport").textContent="Last print: "+(r.done?"done":"stopped at "+r.progress+"%")+" after "+(h?h+"h ":"")+m+"m · "+r.screams+" screams · peak "+r.peak.toFixed(1)+" g · dizzy "+r.dizzies+"x · "+r.jolts+" jolts"}).catch(function(){})}
 knomiCard();setInterval(knomiCard,10000);
@@ -305,7 +305,7 @@ $("saveK").addEventListener("click",function(){knomiSave("Saved. The KNOMI uses 
 $("loadK").addEventListener("click",function(){knomiLoad().then(function(){say("Back to the KNOMI's tuning")})});
 var KCOL={sad:"#9AA7F0",shocked:"#E06C5A",lonely:"#7E8F9F",confused:"#F0C079",impatient:"#E8A33D","cooling off":"#4FD1C5",focused:"#4FD1C5","almost there":"#E8A33D",hungry:"#F0C079",windy:"#4FD1C5","hanging on":"#E06C5A",ready:"#E8A33D",calm:"#93A4B2",riding:"#4FD1C5",excited:"#E8A33D",screaming:"#E06C5A",startled:"#F0C079",dizzy:"#9AA7F0",shivering:"#4FD1C5",elevator:"#9AA7F0",sleepy:"#7E8F9F",bored:"#7E8F9F",giggle:"#F0C079",celebrate:"#E8A33D",whee:"#E8A33D",mad:"#E06C5A"};
 function knomiPoll(){
-  fetch("/coaster/state").then(function(r){return r.json()}).then(function(j){
+  fetch("coaster/state").then(function(r){return r.json()}).then(function(j){
     var c=$("kMood");c.textContent=j.mood;c.style.color=KCOL[j.mood]||"#E8A33D";
     var th=Math.min(1,j.thrill),bz=Math.min(1,j.buzz/0.4),dz=Math.min(1,j.dizzy);
     $("kThrill").style.width=th*100+"%";$("kvThrill").textContent=Math.round(j.thrill*100)+"%";

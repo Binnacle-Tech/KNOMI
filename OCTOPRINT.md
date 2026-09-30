@@ -174,6 +174,12 @@ sends the file list, and runs the KNOMI's buttons inside OctoPrint.
    - **Turn KNOMI WiFi on** in the plugin settings brings WiFi back for 10 minutes (to reach the web page).
    - GIF uploads, OTA and this settings page need WiFi.
 
+**The KNOMI's pages without WiFi (OP41+, plugin 0.12.3+):** OctoPrint, Settings, **KNOMI**, *KNOMI's own settings*:
+**Open here** (or **New tab**) shows all of the KNOMI's web pages (settings, animations, print screen, Coaster,
+firmware, log) inside OctoPrint. The plugin fetches them over WiFi when the KNOMI has it on, and over Bluetooth
+when it doesn't. Over Bluetooth pages take a few seconds, a GIF upload about a minute, a firmware file a few
+minutes. Only OctoPrint users allowed to change settings can open them.
+
 To pair again from scratch: **Forget** in the plugin settings, and **Forget paired devices** on the KNOMI's settings page.
 
 ## Backup and restore

@@ -77,7 +77,7 @@ function md5(buf){ // RFC 1321; the upload needs it and browsers don't have MD5 
 function waitBack(sid){
   var tries = 0;
   setTimeout(function poll(){
-    fetch("/log/info", {cache:"no-store"}).then(function(r){ return r.json(); }).then(function(i){
+    fetch("log/info", {cache:"no-store"}).then(function(r){ return r.json(); }).then(function(i){
       if (i.uptime < 120){ say(sid, "Done. Now running " + i.fw + ".", "ok"); setTimeout(function(){ location.reload(); }, 3000); }
       else if (++tries < 60) setTimeout(poll, 2000);
     }).catch(function(){ if (++tries < 60) setTimeout(poll, 2000); else say(sid, "It hasn't come back after 2 minutes. Check the screen.", "bad"); });
@@ -86,9 +86,9 @@ function waitBack(sid){
 function installUpdate(){
   var b = el("gh-go"); b.disabled = true;
   say("gh-status", "Checking…");
-  fetch("/update/github", {method:"POST"}).then(poll).catch(function(){ say("gh-status", "Couldn't start the update.", "bad"); b.disabled = false; });
+  fetch("update/github", {method:"POST"}).then(poll).catch(function(){ say("gh-status", "Couldn't start the update.", "bad"); b.disabled = false; });
   function poll(){
-    fetch("/update/progress", {cache:"no-store"}).then(function(r){ return r.json(); }).then(function(s){
+    fetch("update/progress", {cache:"no-store"}).then(function(r){ return r.json(); }).then(function(s){
       if (s.state == "downloading" || s.state == "done") bar("gh-bar", s.state == "done" ? 100 : s.pct);
       if (s.state == "checking" || s.state == "downloading"){ say("gh-status", s.msg + (s.state == "downloading" ? " · " + s.pct + "%" : "")); setTimeout(poll, 800); return; }
       if (s.state == "done"){ say("gh-status", s.msg + " Restarting…", "ok"); waitBack("gh-status"); return; }
@@ -116,10 +116,10 @@ function upload(){
       else { say("up-status", "The KNOMI didn't take it: " + (x.responseText || x.status), "bad"); b.disabled = false; }
     };
     x.onerror = function(){ say("up-status", "The upload broke off. Try again.", "bad"); b.disabled = false; };
-    x.open("POST", "/update"); x.send(fd);
+    x.open("POST", "update"); x.send(fd);
   });
 }
-fetch("/log/info").then(function(r){ return r.json(); }).then(function(i){ if (i.slot) el("slot").textContent = "running from " + i.slot; }).catch(function(){ el("slot").style.display = "none"; });
+fetch("log/info").then(function(r){ return r.json(); }).then(function(i){ if (i.slot) el("slot").textContent = "running from " + i.slot; }).catch(function(){ el("slot").style.display = "none"; });
 // newest release, if this browser can reach GitHub (not over the KNOMI's own access point)
 fetch("https://api.github.com/repos/$repo$/releases/latest").then(function(r){ return r.ok ? r.json() : null; }).then(function(rel){
   if (!rel) return;
