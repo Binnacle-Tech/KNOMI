@@ -109,6 +109,9 @@
 /*Enable complex draw engine.
  *Required to draw shadow, gradient, rounded corners, circles, arc, skew lines, image transformations or any masks*/
 #define LV_DRAW_COMPLEX 1
+/* Coaster draws lots of circles of different sizes (eyes, cheeks, leaves, notes); with LVGL's default 4 cached
+ * radii most of them were recalculated every frame. Entries are small and live in PSRAM. */
+#define LV_CIRCLE_CACHE_SIZE 32
 #if LV_DRAW_COMPLEX != 0
 
     /*Allow buffering some shadow calculation.

@@ -1,3 +1,5 @@
+#include "knomi_perf.h"
+#include <esp_timer.h>
 #include <stdio.h> // sprintf
 #include <Arduino.h>
 
@@ -234,7 +236,9 @@ void lvgl_ui_task(void * parameter) {
         lv_loop_auto_idle(status);
         lv_loop_btn_event();
         knomi_gif_process();
-        coaster_loop();
+        int64_t logic_t0 = esp_timer_get_time();
+        coaster_loop();   // Coaster's thinking (moods, springs, deciding what to redraw); timed for /perf
+        knomi_perf_logic((uint32_t)(esp_timer_get_time() - logic_t0));
         idle_face_sync();
         knomi_power_loop();
         lv_setup_screens_loop();

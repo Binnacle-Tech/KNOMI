@@ -42,14 +42,20 @@ void lis2dw12_task(void * parameter) {
     lis2dw12.Enable_X();
     Serial.println("\r\n******** LIS2DW12 init ok *****\r\n");
 
-    int32_t raw[3];
+    // Get_X_Axes() reads the range and mode back from the sensor on every call (3 I2C transactions per
+    // sample, 200 times a second, sharing the bus with the touch screen); they don't change, so read once
+    float sens = 0;
+    lis2dw12.Get_X_Sensitivity(&sens);
+    int32_t raw[3] = {0, 0, 0};
     float g[3] = {0, 0, 0};
     float peak[3] = {0, 0, 0};
     bool first = true;
     uint8_t z_axis = 1;   // raw index gravity is on (stock mount: raw Y)
 
     for(;;) {
-        lis2dw12.Get_X_Axes(raw);
+        int16_t r16[3];
+        if (lis2dw12.Get_X_AxesRaw(r16) == LIS2DW12_STATUS_OK)
+            for (int i = 0; i < 3; i++) raw[i] = (int32_t)(r16[i] * sens);   // same as Get_X_Axes()
         if (first) {
             for (int i = 0; i < 3; i++) g[i] = raw[i];
             first = false;
