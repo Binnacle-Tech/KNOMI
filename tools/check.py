@@ -205,6 +205,48 @@ def check_routes():
 
 # ---------------------------------------------------------------- pages
 
+def check_printf():
+    """printf-style calls whose number of arguments doesn't match the format (the compiler can't see
+    these through Print::printf; one shuffled Coaster's saved personality for five releases)."""
+    spec = re.compile(r"%(?:%|[-+ #0]*(\*|\d+)?(?:\.(\*|\d+))?(?:hh|h|ll|l|z|j|t|L)?[diouxXeEfgGcspn])")
+    bad = count = 0
+    for path in sorted(glob.glob(os.path.join(SRC, "**", "*.c*"), recursive=True)):
+        code = strip_comments(read(path))
+        for m in re.finditer(r"\b(?:printf|snprintf|sprintf)\s*\(", code):
+            i, depth, args, cur, in_str = m.end(), 1, [], "", False
+            while i < len(code) and depth:
+                c = code[i]
+                if in_str:
+                    cur += c
+                    if c == "\\": cur += code[i + 1]; i += 1
+                    elif c == '"': in_str = False
+                elif c == '"': in_str = True; cur += c
+                elif c in "([{": depth += 1; cur += c
+                elif c in ")]}":
+                    depth -= 1
+                    if depth: cur += c
+                elif c == "," and depth == 1: args.append(cur.strip()); cur = ""
+                else: cur += c
+                i += 1
+            args.append(cur.strip())
+            fmt_i = next((k for k, a in enumerate(args) if re.fullmatch(r'(?:"(?:[^"\\]|\\.)*"\s*)+', a)), None)
+            if fmt_i is None:
+                continue   # format isn't a plain string literal (or uses macros like PRIu32): can't check
+            fmt = "".join(re.findall(r'"((?:[^"\\]|\\.)*)"', args[fmt_i]))
+            want = 0
+            for sm in spec.finditer(fmt):
+                if sm.group(0) == "%%": continue
+                want += 1 + (sm.group(1) == "*") + (sm.group(2) == "*")
+            have = len(args) - fmt_i - 1
+            count += 1
+            if want != have:
+                line = code.count("\n", 0, m.start()) + 1
+                fail("printf", f"{os.path.relpath(path, ROOT)}:{line}: format wants {want} values, gets {have}")
+                bad += 1
+    if not bad:
+        ok("printf", f"{count} printf-style calls have the right number of values")
+
+
 def check_pages():
     node = shutil.which("node")
     if not node:
@@ -570,6 +612,7 @@ def main():
         check_tables(a.plugin)
         check_routes()
         check_pages()
+        check_printf()
         if a.build:
             build(envs, a.pio)
         for env in envs:

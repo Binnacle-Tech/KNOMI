@@ -459,41 +459,54 @@ static void feel(float delta, const char * why, bool speak = false) {
     }
 }
 
+// Written with ArduinoJson (it was a long printf whose arguments had slipped out of line with its format, so
+// the ritual, hobby, signature, layer tally, ratings and milestones got shuffled on every restart). "v":2 marks
+// files written this way. Written to a temp file first, so a restart mid-write can't lose it.
+#define FEEL_TMP "/coaster_feel.tmp"
 static void feel_save(void) {
     time_t now = time(NULL);
     if (now > 1700000000) last_seen = now;
-    File f = LittleFS.open(FEEL_PATH, "w");
+    DynamicJsonDocument d(6144);   // on the heap
+    d["v"] = 2;
+    d["h"] = serialized(String(H, 3)); d["streak"] = streak; d["prints"] = prints_done; d["seen"] = (long)last_seen;
+    d["season"] = season_seen; d["bday"] = bday_year;
+    JsonArray lk = d.createNestedArray("like"), ln = d.createNestedArray("learned");
+    for (int i = 0; i < LK_COUNT; i++) { lk.add(like[i]); ln.add(learned[i]); }
+    d["open"] = serialized(String(openness, 2)); d["hn"] = habit_n;
+    d["hlen"] = serialized(String(habit_len, 3)); d["hx"] = serialized(String(habit_hx, 3));
+    d["hy"] = serialized(String(habit_hy, 3)); d["hpeak"] = serialized(String(habit_peak, 3));
+    JsonArray ml = d.createNestedArray("mlike"), mn = d.createNestedArray("mlearn"), mp = d.createNestedArray("mprints");
+    for (int i = 0; i < MAT_COUNT; i++) { ml.add(mat_like[i]); mn.add(mat_learn[i]); mp.add(mat_prints[i]); }
+    JsonArray fs = d.createNestedArray("files");
+    for (int i = 0; i < 12; i++) {
+        JsonArray e = fs.createNestedArray();
+        e.add(files_seen[i].h); e.add(files_seen[i].n); e.add(files_seen[i].fails); e.add(files_seen[i].wild);
+    }
+    d["sig"] = signature; d["layers"] = layers_ridden; d["ritual"] = ritual; d["hobby"] = hobby; d["bias"] = look_bias;
+    d["rsum"] = rating_sum; d["rn"] = rating_n; d["rlast"] = last_rating; d["pokes"] = poke_days;
+    d["ms"] = milestones; d["anniv"] = anniv_year;
+    JsonArray wk = d.createNestedArray("week");
+    for (int i = 0; i < 7; i++) wk.add(week[i]);
+    d["born"] = born; d["total"] = total_s; d["longest"] = longest_s; d["failed"] = prints_failed;
+    d["screams"] = screams_total; d["dizzies"] = dizzies_total; d["wildest"] = wildest_cg; d["best"] = best_streak;
+    if (d.overflowed()) { Serial.println("coaster: feelings didn't fit in memory, not saved"); return; }
+    File f = LittleFS.open(FEEL_TMP, "w");
     if (!f) return;
-    f.printf("{\"h\":%.3f,\"streak\":%d,\"prints\":%u,\"seen\":%ld,\"season\":%d,\"bday\":%d,\"like\":[",
-             H, streak, prints_done, (long)last_seen, season_seen, bday_year);
-    for (int i = 0; i < LK_COUNT; i++) f.printf("%s%d", i ? "," : "", like[i]);
-    f.printf("],\"learned\":[");
-    for (int i = 0; i < LK_COUNT; i++) f.printf("%s%d", i ? "," : "", learned[i]);
-    f.printf("],\"open\":%.2f,\"hn\":%u,\"hlen\":%.3f,\"hx\":%.3f,\"hy\":%.3f,\"hpeak\":%.3f",
-             openness, habit_n, habit_len, habit_hx, habit_hy, habit_peak);
-    f.printf(",\"mlike\":[");
-    for (int i = 0; i < MAT_COUNT; i++) f.printf("%s%d", i ? "," : "", mat_like[i]);
-    f.printf("],\"mlearn\":[");
-    for (int i = 0; i < MAT_COUNT; i++) f.printf("%s%d", i ? "," : "", mat_learn[i]);
-    f.printf("],\"mprints\":[");
-    for (int i = 0; i < MAT_COUNT; i++) f.printf("%s%u", i ? "," : "", mat_prints[i]);
-    f.printf("],\"files\":[");
-    for (int i = 0; i < 12; i++) f.printf("%s[%u,%u,%u,%u]", i ? "," : "", files_seen[i].h, files_seen[i].n, files_seen[i].fails, files_seen[i].wild);
-    f.printf("],\"sig\":%d,\"layers\":%u,\"ritual\":%d,\"hobby\":%d,\"bias\":%d,\"rsum\":%u,\"rn\":%u,\"rlast\":%u,\"pokes\":%u,\"ms\":%u,\"anniv\":%d,\"week\":[",
-             ritual, hobby, look_bias, rating_sum, rating_n, last_rating, poke_days, milestones, anniv_year);
-    for (int i = 0; i < 7; i++) f.printf("%s%u", i ? "," : "", week[i]);
-    f.printf("],\"born\":%u,\"total\":%u,\"longest\":%u,\"failed\":%u,\"screams\":%u,\"dizzies\":%u,\"wildest\":%u,\"best\":%u}",
-             born, total_s, longest_s, prints_failed, screams_total, dizzies_total, wildest_cg, best_streak);
+    size_t n = serializeJson(d, f);
     f.close();
+    if (!n || !LittleFS.rename(FEEL_TMP, FEEL_PATH)) { Serial.println("coaster: couldn't save feelings"); return; }
     feel_dirty = false;
     feel_save_ms = millis();
 }
 
 static void feel_load(void) {
-    File f = LittleFS.open(FEEL_PATH, "r");
+    const char * path = LittleFS.exists(FEEL_PATH) ? FEEL_PATH : FEEL_TMP;   // a save cut short by a restart
+    File f = LittleFS.open(path, "r");
     if (f) {
-        DynamicJsonDocument d(4096);   // on the heap: the LVGL task's stack is small
-        if (deserializeJson(d, f) == DeserializationError::Ok) {
+        DynamicJsonDocument d(6144);   // on the heap: the LVGL task's stack is small
+        DeserializationError err = deserializeJson(d, f);
+        if (err != DeserializationError::Ok) Serial.printf("coaster: couldn't read its feelings (%s)\r\n", err.c_str());
+        if (err == DeserializationError::Ok) {
             JsonArrayConst lk = d["like"];
             if (lk.size() == LK_COUNT) { for (int i = 0; i < LK_COUNT; i++) like[i] = constrain((int)(lk[i] | 0), -100, 100); likes_rolled = true; }
             JsonArrayConst ln = d["learned"];
@@ -521,6 +534,21 @@ static void feel_load(void) {
             if (wk.size() == 7) for (int i = 0; i < 7; i++) week[i] = wk[i] | 0;
             born = d["born"] | 0u; total_s = d["total"] | 0u; longest_s = d["longest"] | 0u; prints_failed = d["failed"] | 0u;
             screams_total = d["screams"] | 0u; dizzies_total = d["dizzies"] | 0u; wildest_cg = d["wildest"] | 0; best_streak = d["best"] | 0;
+            if ((d["v"] | 0) < 2) {
+                // written by the broken save (OP30-OP35): these fields held each other's values. The originals
+                // are gone; start them clean instead of carrying the jumble along
+                ritual = hobby = signature = -1;   // rolled fresh below, once, and kept from now on
+                layers_ridden = 0; rating_sum = rating_n = 0; last_rating = 0; poke_days = 0;
+                static const uint16_t pm[] = {1, 10, 25, 50, 100, 250, 500, 1000};   // same as the milestone check
+                static const uint16_t hm[] = {10, 50, 100, 250, 500, 1000};
+                milestones = 0;   // the ones already passed, marked as celebrated (no repeat parties)
+                for (int i = 0; i < 8; i++) if (prints_done >= pm[i]) milestones |= 1u << i;
+                for (int i = 0; i < 6; i++) if (total_s / 3600 >= hm[i]) milestones |= 1u << (8 + i);
+                time_t nw = time(NULL);
+                anniv_year = (born && nw > (time_t)born) ? (int16_t)((nw - (time_t)born) / (365L * 86400)) : 0;
+                feel_dirty = true;
+                Serial.println("coaster: repaired its saved personality (old save format)");
+            }
         }
         f.close();
     }
