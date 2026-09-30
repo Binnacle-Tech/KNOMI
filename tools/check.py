@@ -231,6 +231,18 @@ def check_pages():
                 bad += 1
     if not bad:
         ok("pages", f"{count} page scripts parse")
+    # every page uses the shared look: same head (colors, color modes) and the same top bar
+    same = 0
+    for h in sorted(glob.glob(os.path.join(SRC, "*_html.h"))) + [os.path.join(SRC, "webserver.cpp")]:
+        page = read(h)
+        if re.search(r"<header class=[\"']rail", page):
+            fail("pages", f"{os.path.basename(h)} has its own top bar; use BINNACLE_RAIL so every page matches")
+            same += 1
+        if h.endswith("_html.h") and not ("BINNACLE_HEAD" in page and "BINNACLE_RAIL" in page):
+            fail("pages", f"{os.path.basename(h)} doesn't use BINNACLE_HEAD and BINNACLE_RAIL (binnacle_css.h)")
+            same += 1
+    if not same:
+        ok("pages", "every page uses the shared head and top bar")
 
 
 # ---------------------------------------------------------------- build: size and stack

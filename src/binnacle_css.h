@@ -32,7 +32,10 @@ body{background:var(--ink);color:var(--text);font-family:var(--font-ui);font-siz
   line-height:1.6;-webkit-font-smoothing:antialiased}
 a{color:var(--cyan)}
 :focus-visible{outline:2px solid var(--amber);outline-offset:2px}
-.wrap{max-width:860px;margin:0 auto;padding:0 20px}
+.wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+.wrap.wide{max-width:1120px}
+/* settings: cards flow into two columns on wide screens */
+.stack2{columns:2 440px;column-gap:18px}.stack2>.card{break-inside:avoid;display:inline-block;width:100%}
 
 /* top rail */
 .rail{position:sticky;top:0;z-index:20;background:var(--ink);background:color-mix(in srgb,var(--ink) 88%,transparent);
@@ -168,10 +171,12 @@ input[type=color]{width:52px;height:36px;padding:2px;background:var(--panel-2);b
 .foot{color:var(--muted-2);font-size:var(--t-small);padding:10px 0 40px}
 @media (max-width:640px){
   .cols{grid-template-columns:1fr}
-  .brand .f,.modes{display:none}
-  .rail-in{gap:8px}
-  .rail nav{gap:0}
-  .rail nav a{padding:6px 7px;font-size:12px}
+  /* phones: brand and color mode on top, every page link on a row of its own below (none hidden) */
+  .rail{position:static}
+  .brand .f{display:none}
+  .rail-in{gap:4px 8px;flex-wrap:wrap;padding-bottom:6px}
+  .rail nav{order:3;width:100%;flex-wrap:wrap;gap:0;margin:0 -7px;overflow:visible}
+  .rail nav a{padding:6px 7px;font-size:12.5px}
   input[type=text],input[type=password],select{font-size:16px}
   .btn-primary,.btn-ghost{padding:12px 18px}
 }
@@ -187,10 +192,18 @@ input[type=color]{width:52px;height:36px;padding:2px;background:var(--panel-2);b
   "<script>try{var m=localStorage.getItem('knomi-mode');if(m&&m!='dark')document.documentElement.setAttribute('data-theme',m)}catch(e){}" \
   "function setMode(m){if(m=='dark')document.documentElement.removeAttribute('data-theme');else document.documentElement.setAttribute('data-theme',m);" \
   "try{localStorage.setItem('knomi-mode',m)}catch(e){}}" \
-  "addEventListener('DOMContentLoaded',function(){var s=document.getElementById('mode-sel');if(s)s.value=document.documentElement.getAttribute('data-theme')||'dark'})</script>"
+  "addEventListener('DOMContentLoaded',function(){var s=document.getElementById('mode-sel');if(s)s.value=document.documentElement.getAttribute('data-theme')||'dark';" \
+  "document.querySelectorAll('.rail nav a').forEach(function(a){if(a.getAttribute('href')==location.pathname)a.className='on'})})</script>"
 
 // Coaster, the mascot, next to the KNOMI wordmark
 #define KNOMI_MARK "<svg class='mark' viewBox='0 0 256 256' aria-hidden='true'><circle cx='128' cy='128' r='126' fill='#000' stroke='#334353' stroke-width='6'/><g stroke='#C02F30' stroke-width='16' stroke-linecap='round' fill='none'><path d='M32 112h80M144 112h80'/><path stroke-width='14' d='M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0'/></g><g fill='#C02F30'><path d='M42 112a30 30 0 0 0 60 0z'/><path d='M154 112a30 30 0 0 0 60 0z'/></g></svg>"
+
+// The top bar, the same on every page. The link for the page you're on is highlighted by BINNACLE_HEAD's script.
+#define BINNACLE_RAIL \
+  "<header class='rail'><div class='wrap wide rail-in'><div class='brand'><a class='n' href='/'>" KNOMI_MARK \
+  "<span>KNOMI<span class='dot'>.</span></span></a><span class='f'>Printer display</span></div><span class='rail-sp'></span>" \
+  "<nav><a href='/'>Settings</a><a href='/gifs'>Animations</a><a href='/layout'>Print screen</a><a href='/coaster'>Coaster face</a>" \
+  "<a href='/update'>Firmware</a><a href='/log'>Log</a></nav>" BINNACLE_MODES "</div></header>"
 
 #define BINNACLE_MODES \
   "<div class='modes'><select id='mode-sel' aria-label='Color mode' onchange='setMode(this.value)'>" \

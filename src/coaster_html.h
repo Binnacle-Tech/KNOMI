@@ -1,38 +1,22 @@
 #ifndef COASTER_HTML_H
 #define COASTER_HTML_H
 // Coaster face tuning page (/coaster). Served as-is (no template processor).
-const char coaster_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KNOMI · Coaster face</title>
-<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+// Base look (colors, color modes, top bar, cards, buttons) comes from binnacle.css like every other page.
+#include "binnacle_css.h"
+const char coaster_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><head><title>KNOMI · Coaster face</title>
+)rawliteral" BINNACLE_HEAD R"rawliteral(
 <style>
-/* Binnacle instrument-panel palette, single dark look (it's a screen on a printer) */
-:root{
-  color-scheme:dark;
-  --ink:#0E1419;--panel:#151E27;--panel-2:#1B2731;--well:#0A1016;
-  --line:#26333E;--line-2:#334353;
-  --amber:#E8A33D;--amber-soft:#F0C079;--cyan:#4FD1C5;--violet:#9AA7F0;
-  --text:#E7EEF4;--muted:#93A4B2;--muted-2:#7E8F9F;
-  --font-disp:"Space Grotesk",system-ui,sans-serif;
-  --font-ui:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --font-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
-  --r:10px;--r-ctrl:8px;
-}
-*{box-sizing:border-box}
-body{background:var(--ink);color:var(--text);font-family:var(--font-ui);font-size:14px;line-height:1.55;
-  padding-inline:20px;padding-block:22px 40px;-webkit-font-smoothing:antialiased}
-.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
-.pagehead{display:flex;flex-direction:column;gap:6px;border-bottom:1px solid var(--line);padding-bottom:16px}
-.eyebrow{font-family:var(--font-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2)}
-h1{font-family:var(--font-disp);font-weight:700;font-size:clamp(26px,4vw,34px);letter-spacing:-.01em;margin:0;line-height:1.1;text-wrap:balance}
-h1 .dot{color:var(--amber)}
-.lede{color:var(--muted);max-width:68ch;margin:0}
+:root{--r:var(--r-card);--violet:#9AA7F0}
+[data-theme="light"]{--violet:#4A56B8}
+.cwrap{display:flex;flex-direction:column;gap:22px;padding-bottom:40px}
+.cwrap .mast{padding-bottom:0}
 .grid{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:24px;align-items:start}
-.stage{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);display:flex;flex-direction:column;align-items:center;gap:14px}
+.stage{position:sticky;top:76px;display:flex;flex-direction:column;align-items:center;gap:14px}
 .mount{position:relative;width:100%;max-width:400px;aspect-ratio:1;display:grid;place-items:center;
   background:repeating-linear-gradient(90deg,transparent 0 23px,rgba(255,255,255,.025) 23px 24px),
              repeating-linear-gradient(0deg,transparent 0 23px,rgba(255,255,255,.025) 23px 24px);border-radius:14px;
   border:1px solid var(--line);touch-action:none;user-select:none;overflow:hidden}
-.mount .hint{position:absolute;left:12px;bottom:10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted-2);letter-spacing:.04em}
+.mount .hint{margin:0;position:absolute;left:12px;bottom:10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted-2);letter-spacing:.04em}
 .mount .axes{position:absolute;right:12px;top:10px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted-2);text-align:right;line-height:1.5}
 .axes b{font-weight:500}.ax-x{color:var(--amber)}.ax-y{color:var(--cyan)}.ax-z{color:var(--violet)}
 .device{width:78%;aspect-ratio:1;border-radius:50%;cursor:grab;will-change:transform;
@@ -46,18 +30,17 @@ h1 .dot{color:var(--amber)}
   padding:3px 10px;border-radius:20px;border:1px solid currentColor;color:var(--amber)}
 .why{color:var(--muted);font-size:12.5px;min-height:1.5em}
 .meters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:4px}
-.meter{display:flex;flex-direction:column;gap:3px}
+.meter{display:flex;flex-direction:column;gap:3px;height:auto;overflow:visible;background:none;margin:0;border-radius:0}
 .meter span{font-family:var(--font-mono);font-size:10.5px;color:var(--muted-2);text-transform:uppercase;letter-spacing:.08em}
 .meter .bar{height:6px;background:var(--well);border-radius:4px;overflow:hidden}
 .meter .bar i{display:block;height:100%;width:0;background:var(--amber);border-radius:4px}
 .meter b{font-family:var(--font-mono);font-weight:500;font-size:12px;font-variant-numeric:tabular-nums}
 
 .cards{display:flex;flex-direction:column;gap:16px;min-width:0}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
-.card-h{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--line)}
-.card-h h2{font-family:var(--font-mono);font-weight:500;font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;margin:0;color:var(--text)}
+.cards .card{margin:0}
+.card-h h2{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted-2);font-weight:700;margin:0}
 .card-h .sp{flex:1}
-.card-b{padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+.card-b{display:flex;flex-direction:column;gap:12px}
 .scen{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
 button{font:inherit;color:var(--text);background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r-ctrl);
   padding:8px 12px;cursor:pointer;text-align:left}
@@ -68,9 +51,7 @@ button:focus-visible,input:focus-visible,label.file:focus-within{outline:2px sol
 .scen button small{color:var(--muted-2);font-size:11.5px;line-height:1.35}
 .scen button[aria-pressed="true"]{border-color:var(--amber);background:color-mix(in srgb,var(--amber) 10%,var(--panel-2))}
 .scen button[aria-pressed="true"] b{color:var(--amber)}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.btn-primary{background:var(--amber);color:#1a1206;border-color:var(--amber);font-weight:600}
-.btn-primary:hover{background:var(--amber-soft);border-color:var(--amber-soft)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0}
 label.file{display:inline-flex;align-items:center;gap:8px;background:var(--panel-2);border:1px solid var(--line-2);border-radius:var(--r-ctrl);padding:8px 12px;cursor:pointer}
 label.file:hover{border-color:var(--muted-2)}
 .note{color:var(--muted-2);font-size:12px;margin:0}
@@ -99,35 +80,17 @@ textarea{width:100%;min-height:90px;background:var(--well);color:var(--text);bor
   .stage{position:static}
   .sliders{grid-template-columns:1fr}
 }
-/* top rail, same as the other KNOMI pages */
-body{padding-top:0}
-.rail{position:sticky;top:0;z-index:20;background:var(--ink);border-bottom:1px solid var(--line);margin:0 -20px 18px;padding:0 20px}
-.rail-in{max-width:1120px;margin:0 auto;display:flex;align-items:center;gap:16px;min-height:56px}
-.brand{display:flex;align-items:baseline;gap:10px;flex:none}
-.brand a{font-family:var(--font-disp);font-weight:700;font-size:19px;color:var(--text);text-decoration:none}
-.brand .dot{color:var(--amber)}
-.rail-sp{flex:1}
-.rail nav{display:flex;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
-.rail nav a{white-space:nowrap;font-size:12.5px;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:8px}
-.rail nav a:hover{color:var(--text);background:var(--panel-2)}
-.rail nav a.on{color:var(--amber)}
-.kstate{display:flex;flex-direction:column;gap:10px}
-.saved{font-family:var(--font-mono);font-size:11.5px;color:var(--cyan)}
-.saved.bad{color:#E06C5A}
-@media (max-width:640px){.rail nav a{padding:6px 7px;font-size:12px}}
-.album .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}.album dt{color:var(--muted-2)}.album dd{margin:0;color:var(--text);font-variant-numeric:tabular-nums}
+.album .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}.album dt{color:var(--muted-2)}.album dd{margin:0;color:var(--text);font-family:inherit;font-variant-numeric:tabular-nums}
 </style></head><body>
-<header class="rail"><div class="rail-in">
-  <div class="brand"><a href="/" style="display:inline-flex;align-items:center;gap:8px"><svg class="mark" style="width:24px;height:24px" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="126" fill="#000" stroke="#334353" stroke-width="6"/><g stroke="#C02F30" stroke-width="16" stroke-linecap="round" fill="none"><path d="M32 112h80M144 112h80"/><path stroke-width="14" d="M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0"/></g><g fill="#C02F30"><path d="M42 112a30 30 0 0 0 60 0z"/><path d="M154 112a30 30 0 0 0 60 0z"/></g></svg><span>KNOMI<span class="dot">.</span></span></a></div><span class="rail-sp"></span>
-  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a class="on" href="/coaster">Coaster face</a><a href="/update">Firmware</a><a href="/log">Log</a></nav>
-</div></header>
+)rawliteral" BINNACLE_RAIL R"rawliteral(
 
-<div class="wrap">
-  <header class="pagehead">
-    <span class="eyebrow">KNOMI · reactive face</span>
-    <h1>Coaster Face<span class="dot">.</span></h1>
+<div class="wrap wide cwrap">
+  <section class="mast">
+    <span class="label">Coaster face</span>
+    <h1>Coaster face<span class="dot">.</span></h1>
     <p class="lede">A face drawn live from the KNOMI's accelerometer instead of a GIF. Its eyes and head hang on springs, so every move of the toolhead sloshes them around, and it picks a mood from how hard and how long it's being thrown. Try settings here on the simulated KNOMI (play a print, or grab it and fling it), then save them to your KNOMI. It's every face on your KNOMI: idle, getting ready, paused and after the print, and you can place it on the <a href="/layout" style="color:var(--cyan)">print screen</a> too.</p>
-  </header>
+    <div class="rule"></div>
+  </section>
 
   <div class="grid">
     <div class="stage">

@@ -6,7 +6,6 @@
 const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><head><title>KNOMI · Print screen</title>
 )rawliteral" BINNACLE_HEAD R"rawliteral(
 <style>
-.wrap.wide{max-width:1120px}
 .designer{display:grid;grid-template-columns:auto minmax(0,1fr);gap:22px;align-items:start}
 .stage{position:sticky;top:76px;display:flex;flex-direction:column;align-items:center;gap:12px}
 .bezel{padding:14px;border-radius:50%;background:radial-gradient(circle at 30% 25%,#2a3642,#0b1015 70%);box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 0 0 1px #3a4855}
@@ -68,12 +67,7 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
   .props .half{grid-column:1/-1}
 }
 </style></head><body>
-<header class="rail"><div class="wrap wide rail-in">
-  <div class="brand"><a class="n" href="/"><svg class="mark" viewBox="0 0 256 256" aria-hidden="true"><circle cx="128" cy="128" r="126" fill="#000" stroke="#334353" stroke-width="6"/><g stroke="#C02F30" stroke-width="16" stroke-linecap="round" fill="none"><path d="M32 112h80M144 112h80"/><path stroke-width="14" d="M100 176a14 14 0 0 0 28 0a14 14 0 0 0 28 0"/></g><g fill="#C02F30"><path d="M42 112a30 30 0 0 0 60 0z"/><path d="M154 112a30 30 0 0 0 60 0z"/></g></svg><span>KNOMI<span class="dot">.</span></span></a><span class="f">Printer display</span></div>
-  <span class="rail-sp"></span>
-  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a class="on" href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a><a href="/log">Log</a></nav>
-  )rawliteral" BINNACLE_MODES R"rawliteral(
-</div></header>
+)rawliteral" BINNACLE_RAIL R"rawliteral(
 <main class="wrap wide">
 <section class="mast">
   <span class="label">Print screen</span>

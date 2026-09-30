@@ -5,8 +5,7 @@
 const char log_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><head><title>KNOMI · Log</title>
 )rawliteral" BINNACLE_HEAD R"rawliteral(
 <style>
-.wrap.wide{max-width:1120px}
-.info{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px 18px}
+.info{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px 18px}
 .info div{display:flex;flex-direction:column;gap:2px;min-width:0}
 .info span{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted-2)}
 .info b{font-family:var(--font-mono);font-weight:500;font-size:13px;overflow-wrap:anywhere}
@@ -17,12 +16,7 @@ const char log_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><hea
 .bar input[type=search]{width:220px;background:var(--panel-2);color:var(--text);border:1px solid var(--line-2);border-radius:var(--r-ctrl);padding:8px 10px;font:inherit}
 #copied{font-family:var(--font-mono);font-size:11.5px;color:var(--cyan)}
 </style></head><body>
-<header class="rail"><div class="wrap wide rail-in">
-  <div class="brand"><a class="n" href="/">)rawliteral" KNOMI_MARK R"rawliteral(<span>KNOMI<span class="dot">.</span></span></a><span class="f">Printer display</span></div>
-  <span class="rail-sp"></span>
-  <nav><a href="/">Settings</a><a href="/gifs">Animations</a><a href="/layout">Print screen</a><a href="/coaster">Coaster face</a><a href="/update">Firmware</a><a class="on" href="/log">Log</a></nav>
-  )rawliteral" BINNACLE_MODES R"rawliteral(
-</div></header>
+)rawliteral" BINNACLE_RAIL R"rawliteral(
 <main class="wrap wide">
 <section class="mast">
   <span class="label">Log</span>

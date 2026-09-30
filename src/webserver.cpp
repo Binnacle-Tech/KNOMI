@@ -22,15 +22,16 @@
 
 static AsyncWebServer server(SERVER_PORT);
 
-const char captive_html[] PROGMEM = R"rawliteral(<html>
-<head>
-<meta http-equiv="refresh" content="2;url=/" />
-<title>For makers! By makers!</title>
-</head>
-<body>
-You've successfully connected to the BTT KNOMI Screen. Click <a href="/">here</a> to go to the homepage.
-</body>
-</html>)rawliteral";
+// Shown by phones' "sign in to network" window when joining the KNOMI's own access point. Styled inline in the
+// house colors (it may be the only page that loads there), then it moves on to the settings page.
+const char captive_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="refresh" content="2;url=/">
+<title>KNOMI</title></head>
+<body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0E1419;color:#E7EEF4;font:15px/1.6 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;text-align:center;padding:20px;box-sizing:border-box">
+<div><div style="font:700 30px system-ui,sans-serif;letter-spacing:-.01em">KNOMI<span style="color:#E8A33D">.</span></div>
+<p style="color:#93A4B2;margin:8px 0 18px">Connected to the KNOMI. Opening its settings…</p>
+<a href="/" style="display:inline-block;background:#E8A33D;color:#1A1206;text-decoration:none;font-weight:600;padding:10px 22px;border-radius:8px">Open settings</a></div>
+</body></html>)rawliteral";
 
 // This is a wrapper for a normal Async handler that allows the captive portal to intercept
 // all requests regardless of their destination.
@@ -213,9 +214,8 @@ String knomi_html_processor(const String& var){
 // Small Binnacle-styled page for POST results
 String message_page(const String &title, const String &body_html) {
     return String("<!DOCTYPE html><html lang='en'><head><title>KNOMI</title>") + BINNACLE_HEAD +
-        "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
-        "<a class='n' href='/'>" KNOMI_MARK "<span>KNOMI<span class='dot'>.</span></span></a><span class='f'>Printer display</span></div></div></header>"
-        "<main class='wrap'><section class='mast'><h1>" + title + "<span class='dot'>.</span></h1></section>"
+        "</head><body>" BINNACLE_RAIL
+        "<main class='wrap wide'><section class='mast'><h1>" + title + "<span class='dot'>.</span></h1></section>"
         "<section class='card'><div class='card-b'>" + body_html + "</div>"
         "<div class='card-f'><a class='btn-primary' href='/'>Back to settings</a></div></section></main></body></html>";
 }
@@ -226,6 +226,7 @@ String message_page(const String &title, const String &body_html) {
  */
 #include "favicon.h"
 #include "index_html.h"
+#include "update_html.h"
 typedef struct {
     const char * name;
     char * value;
@@ -326,10 +327,7 @@ void webserver_wifi_refresh_callback(void) {
 
 static String gifs_page(void) {
     String page = String("<!DOCTYPE html><html lang='en'><head><title>KNOMI · Animations</title>") + BINNACLE_HEAD +
-        "</head><body><header class='rail'><div class='wrap rail-in'><div class='brand'>"
-        "<a class='n' href='/'>" KNOMI_MARK "<span>KNOMI<span class='dot'>.</span></span></a><span class='f'>Printer display</span></div>"
-        "<span class='rail-sp'></span><nav><a href='/'>Settings</a><a class='on' href='/gifs'>Animations</a><a href='/layout'>Print screen</a><a href='/coaster'>Coaster face</a>"
-        "<a href='/update'>Firmware</a><a href='/log'>Log</a></nav>" BINNACLE_MODES "</div></header><main class='wrap'>"
+        "</head><body>" BINNACLE_RAIL "<main class='wrap wide'>"
         "<section class='mast'><span class='label'>Animations</span><h1>Animations<span class='dot'>.</span></h1>"
         "<p class='lede'>Coaster acts out every state live. Upload a GIF to a slot to play your own animation there instead; it shows on the display right away. "
         "The screen is a 240&times;240 circle, so keep the subject centered.</p>";
@@ -834,6 +832,9 @@ void webserver_setup(void) {
     coaster_routes();
     log_routes();
     update_routes();
+    server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request){   // our page; uploads still POST to AsyncElegantOTA
+        request->send_P(200, "text/html", update_html, knomi_html_processor);
+    }).setFilter(exact("/update"));
     AsyncElegantOTA.begin(&server);   // after /update/github and /update/progress, or its /update grabs them
     bluetooth_routes();
     backup_routes(server);
