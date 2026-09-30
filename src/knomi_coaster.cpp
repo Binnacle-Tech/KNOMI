@@ -2400,6 +2400,7 @@ void coaster_loop(void) {
         sense(a, SAMPLE_DT); pick_mood(SAMPLE_DT, d); step_body(SAMPLE_DT); step_expr(SAMPLE_DT); step_deco(SAMPLE_DT);
         steps++;
     }
+    knomi_perf_samples(steps);
     if (!steps) {
         float el = (ms - last_ms) / 1000.0f;
         static const float zero[3] = {0, 0, 0};

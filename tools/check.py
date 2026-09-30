@@ -546,7 +546,7 @@ def perf_device(ip, seconds, csv_path):
             continue
         row = {"t": round(time.time() - t0, 1)}
         for k in ("printing", "fps", "frame_ms", "frame_ms_max", "px_per_frame", "face_ms", "face_ms_max",
-                  "faces_per_s", "flush_ms", "flush_ms_max", "logic_pct", "logic_ms_max", "heap", "heap_min", "heap_block", "frag", "psram"):
+                  "faces_per_s", "flush_ms", "flush_ms_max", "logic_pct", "logic_ms_max", "acc_hz", "acc_err_hz", "acc_used_hz", "heap", "heap_min", "heap_block", "frag", "psram"):
             row[k] = p.get(k)
         row["cpu0"], row["cpu1"] = (p.get("cpu") or [None, None])[:2]
         for name, pct in (p.get("tasks") or {}).items():

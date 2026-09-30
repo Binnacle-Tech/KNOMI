@@ -47,6 +47,12 @@ static volatile uint32_t frames, frame_ms_sum, frame_ms_max, px_sum;
 static volatile uint32_t faces, face_us_sum, face_us_max;
 static volatile uint32_t flushes, flush_us_sum, flush_us_max;
 static volatile uint32_t logic_us_sum, logic_us_max;
+static volatile uint32_t acc_ok, acc_err, acc_used;
+static volatile int32_t acc_last[3];
+void knomi_perf_accel(bool ok, const int32_t raw[3]) {
+    if (ok) { acc_ok++; acc_last[0] = raw[0]; acc_last[1] = raw[1]; acc_last[2] = raw[2]; } else acc_err++;
+}
+void knomi_perf_samples(uint32_t n) { acc_used += n; }
 void knomi_perf_logic(uint32_t us) { logic_us_sum += us; if (us > logic_us_max) logic_us_max = us; }
 void knomi_perf_flush(uint32_t us) {
     flushes++; flush_us_sum += us; if (us > flush_us_max) flush_us_max = us;
@@ -76,6 +82,9 @@ String knomi_perf_json(void) {
         o += ",\"px_per_frame\":" + String(frames ? px_sum / frames : 0);
         o += ",\"face_ms\":" + String(faces ? face_us_sum / 1000.0f / faces : 0, 2) + ",\"face_ms_max\":" + String(face_us_max / 1000.0f, 2);
         o += ",\"faces_per_s\":" + String(faces / win, 1);
+        o += ",\"acc_hz\":" + String(acc_ok / win, 0) + ",\"acc_err_hz\":" + String(acc_err / win, 0) +
+             ",\"acc_used_hz\":" + String(acc_used / win, 0) + ",\"acc_mg\":[" + String(acc_last[0]) + "," +
+             String(acc_last[1]) + "," + String(acc_last[2]) + "]";
         o += ",\"logic_pct\":" + String(logic_us_sum / 1e4f / win, 1) + ",\"logic_ms_max\":" + String(logic_us_max / 1000.0f, 2);
         o += ",\"flush_ms\":" + String(flushes ? flush_us_sum / 1000.0f / flushes : 0, 2) + ",\"flush_ms_max\":" + String(flush_us_max / 1000.0f, 2);
         if (win > 25) o += ",\"cpu_note\":\"CPU numbers are only exact when /perf is read every few seconds\"";
@@ -97,6 +106,7 @@ String knomi_perf_json(void) {
     faces = face_us_sum = face_us_max = 0;
     flushes = flush_us_sum = flush_us_max = 0;
     logic_us_sum = logic_us_max = 0;
+    acc_ok = acc_err = acc_used = 0;
     idle_us[0] = idle_us[1] = 0;
     size_t free_int = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     size_t big_int = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);

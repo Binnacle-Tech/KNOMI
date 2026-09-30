@@ -2,6 +2,7 @@
 #include <LIS2DW12Sensor.h>
 #include "pinout.h"
 #include "knomi_coaster.h"
+#include "knomi_perf.h"
 
 #ifdef LIS2DW_SUPPORT
 
@@ -42,31 +43,27 @@ void lis2dw12_task(void * parameter) {
     lis2dw12.Enable_X();
     Serial.println("\r\n******** LIS2DW12 init ok *****\r\n");
 
-    // Get_X_Axes() reads the range back from the sensor on every call (an extra I2C transaction per sample,
-    // 200 times a second, on the bus the touch screen shares). It doesn't change, so it's read about once a
-    // second instead, and samples wait until a good one has come back (OP35-37 read it once at startup; when
-    // that single read failed, every sample came out as zero and Coaster felt no motion at all)
-    float sens = 0;
-    uint16_t sens_age = 0;
-    int32_t raw[3] = {0, 0, 0};
+    // Back to the stock Get_X_Axes() per sample (OP35-38 read the range separately and Coaster stopped
+    // feeling motion). /perf reports reads, failures and the last values so a stuck sensor shows up.
+    int32_t raw[3] = {0, 0, 0}, last_raw[3] = {0, 0, 0};
     float g[3] = {0, 0, 0};
     float peak[3] = {0, 0, 0};
     bool first = true;
     uint8_t z_axis = 1;   // raw index gravity is on (stock mount: raw Y)
+    uint32_t same_n = 0;
 
     for(;;) {
-        if (sens <= 0 || ++sens_age >= 200) {
-            float s2 = 0;
-            if (lis2dw12.Get_X_Sensitivity(&s2) == LIS2DW12_STATUS_OK && s2 > 0) {
-                if (sens <= 0) Serial.printf("LIS2DW12: reading, %.3f mg per count\r\n", s2);
-                sens = s2;
+        if (lis2dw12.Get_X_Axes(raw) == LIS2DW12_STATUS_OK) knomi_perf_accel(true, raw);
+        else knomi_perf_accel(false, raw);
+        // exactly the same reading for 2 s is a sensor that stopped measuring: wake it up again
+        if (raw[0] == last_raw[0] && raw[1] == last_raw[1] && raw[2] == last_raw[2]) {
+            if (++same_n == 400) {
+                Serial.println("LIS2DW12: readings stopped changing, restarting it");
+                lis2dw12.Disable_X(); lis2dw12.Set_X_ODR(200.0f); lis2dw12.Set_X_FS(4.0f); lis2dw12.Enable_X();
+                same_n = 0;
             }
-            sens_age = 0;
-        }
-        if (sens <= 0) { delay(SAMPLE_MS); continue; }   // no good range yet: try again next sample
-        int16_t r16[3];
-        if (lis2dw12.Get_X_AxesRaw(r16) == LIS2DW12_STATUS_OK)
-            for (int i = 0; i < 3; i++) raw[i] = (int32_t)(r16[i] * sens);   // same as Get_X_Axes()
+        } else same_n = 0;
+        memcpy(last_raw, raw, sizeof(raw));
         if (first) {
             for (int i = 0; i < 3; i++) g[i] = raw[i];
             first = false;
