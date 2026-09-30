@@ -184,6 +184,22 @@ bool knomi_ble_link_active(void) {
 
 bool knomi_ble_process(void) {
     if (!running) return false;
+    // log when the plugin's link comes up or drops, so the log page shows whether it's working
+    static bool was_active = false;
+    bool active = knomi_ble_link_active();
+    if (active != was_active) {
+        if (active) Serial.println("ble: OctoPrint plugin link up (status arriving over Bluetooth)");
+        else Serial.printf("ble: OctoPrint plugin link lost (%s)\r\n", !authed ? "not paired or disconnected" : "no status for a while");
+        was_active = active;
+    }
+    static uint32_t authed_since = 0;   // paired and connected but nothing sent: say so once
+    if (authed && !last_status_ms) {
+        if (!authed_since) authed_since = millis();
+        else if (millis() - authed_since > 30000) {
+            Serial.println("ble: connected and paired, but the plugin isn't sending anything (Bluetooth enabled in the plugin? bleak installed?)");
+            authed_since = 0xFFFFFFFF;
+        }
+    } else if (!authed) authed_since = 0;
     String s;
     xSemaphoreTake(lock, portMAX_DELAY);
     if (status_new) { s = status_buf; status_new = false; }
