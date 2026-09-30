@@ -1655,7 +1655,7 @@ static int hat_today(void) {
 }
 
 enum { P_SNOW, P_PETAL, P_LEAF, P_HEART };
-typedef struct { float x, y, ph, rot, vr, vy, r; uint8_t kind; uint32_t col; } deco_part_t;
+typedef struct { float x, y, ph, rot, vr, vy, r; uint8_t kind; uint32_t col; float vx; uint16_t seq; bool rest; } deco_part_t;
 static deco_part_t dparts[36];
 static uint8_t dparts_n = 0;
 typedef struct { float x, y, vx, vy; } spark_t;
@@ -1668,25 +1668,102 @@ static bool shades_on = false;
 static uint32_t deco_check_ms = 0;
 static int deco_cached = 0;
 
+/* Autumn leaves: a fixed handful drift down and pile up at the bottom of the round screen. The printer's
+ * moves shake them loose and toss them back up (they lag the toolhead, like loose leaves in a box). */
+#define LEAVES 12
+static uint8_t leaves_made = 0;
+static uint16_t leaf_seq = 0;
+static float bowl_y(float x) { float dx = x - 120; return 120 + sqrtf(max(0.0f, 112.0f * 112.0f - dx * dx)); }
+// where leaf i rests: the curve of the screen, on top of the leaves that landed under it earlier
+static float leaf_rest_y(int i) {
+    const deco_part_t & q = dparts[i];
+    int lay = 0;
+    for (int j = 0; j < dparts_n; j++)
+        if (j != i && dparts[j].rest && dparts[j].seq < q.seq && fabsf(dparts[j].x - q.x) < 8) lay++;
+    return bowl_y(q.x) - 3 - 3.5f * lay;
+}
+static void step_leaf(int i, float dt) {
+    deco_part_t & q = dparts[i];
+    float jolt = sqrtf(lp[0] * lp[0] + lp[2] * lp[2]);   // g, in the screen's plane (printer X and Z)
+    if (q.rest) {
+        // shaken loose: harder moves throw more of them, higher
+        if (jolt > 0.12f && frand(0, 1) < (jolt - 0.12f) * 8 * dt) {
+            float k = min(1.6f, jolt / 0.3f);
+            q.rest = false; q.vy = -frand(50, 110) * k; q.vx = -lp[0] * 260 + frand(-25, 25); q.vr = frand(-8, 8);
+            return;
+        }
+        float dx = q.x - 120;
+        float slope = atan2f(dx, sqrtf(max(1.0f, 112.0f * 112.0f - dx * dx)));   // lies along the curve
+        if (fabsf(dx) > 25) q.x -= (dx > 0 ? 1 : -1) * 45 * sinf(fabsf(slope)) * dt;   // slides down the curve
+        int lay = 0; float mx = 0;
+        for (int j = 0; j < dparts_n; j++)
+            if (j != i && dparts[j].rest && dparts[j].seq < q.seq && fabsf(dparts[j].x - q.x) < 8) { lay++; mx += dparts[j].x; }
+        if (lay >= 3) q.x += (q.x >= mx / lay ? 1 : -1) * 8 * dt;   // too tall a stack: slumps sideways
+        float ty = leaf_rest_y(i);
+        q.y += (ty - q.y) * (1 - expf(-dt * 10));             // settles (and drops when a leaf under it flies off)
+        float target = slope + PI * roundf((q.rot - slope) / PI);
+        q.rot += (target - q.rot) * (1 - expf(-dt * 6));
+        return;
+    }
+    // in the air: gravity, then fluttering down slowly; loose, so it lags whatever the toolhead does
+    q.vx += -lp[0] * 300 * dt;
+    q.vy += lp[2] * 300 * dt + 80 * dt;
+    const float term = 24;
+    if (q.vy > term) q.vy += (term - q.vy) * (1 - expf(-dt * 4));
+    q.vx *= expf(-dt * 1.2f);
+    q.ph += dt;
+    float sway = sinf(q.ph * 2.2f) * 16 * clampf(q.vy / term, 0, 1);
+    q.x += (q.vx + sway) * dt; q.y += q.vy * dt; q.rot += q.vr * dt;
+    q.vr *= expf(-dt * 0.8f);
+    if (q.vr > -2 && q.vr < 2) q.vr = q.vr < 0 ? -2 : 2;   // keeps tumbling a little on the way down
+    // the rim of the screen (skipped while it first drifts in from the top)
+    float dx = q.x - 120, dy = q.y - 120, d = sqrtf(dx * dx + dy * dy);
+    if (d > 114 && !(q.y < 40 && q.vy > 0)) {
+        float nx = dx / d, ny = dy / d, vn = q.vx * nx + q.vy * ny;
+        q.x = 120 + nx * 114; q.y = 120 + ny * 114;
+        if (vn > 0) { q.vx -= 1.3f * vn * nx; q.vy -= 1.3f * vn * ny; }
+    }
+    // landing on the pile; a leaf that would sit too high tumbles off to one side
+    if (q.vy >= 0 && q.y > 120) {
+        q.seq = leaf_seq + 1;
+        float fy = leaf_rest_y(i);
+        if (q.y >= fy) {
+            for (int t = 0; t < 4 && bowl_y(q.x) - 3 - fy > 10; t++) { q.x += (esp_random() & 1) ? 6 : -6; fy = leaf_rest_y(i); }
+            q.rest = true; q.seq = ++leaf_seq; q.vx = q.vy = 0; q.y = min(q.y, fy);
+        }
+    }
+}
+
 static void step_deco(float dt) {
     if (millis() - deco_check_ms > 5000 || deco_kind < 0) { deco_check_ms = millis(); deco_cached = deco_today(); }
     int k = deco_cached;
-    if (k != deco_kind) { deco_kind = k; dparts_n = 0; rockets_n = 0; }
+    if (k != deco_kind) { deco_kind = k; dparts_n = 0; rockets_n = 0; leaves_made = 0; }
+    if (k == D_AUTUMN) {
+        deco_spawn -= dt;
+        if (leaves_made < LEAVES && deco_spawn <= 0 && dparts_n < (int)(sizeof(dparts) / sizeof(dparts[0]))) {
+            deco_spawn = 0.7f;
+            static const uint32_t c[] = {0xE65100, 0xF9A825, 0xBF360C, 0xA1887F};
+            deco_part_t q = {frand(40, 200), -8, frand(0, 6.28f), frand(0, 6.28f), frand(-2, 2), frand(16, 26), 0, P_LEAF,
+                             c[esp_random() % 4], 0, 0, false};
+            dparts[dparts_n++] = q;
+            leaves_made++;
+        }
+        for (int i = 0; i < dparts_n; i++) step_leaf(i, dt);
+    }
     // falling / floating things
     bool snow = deco_snowy(k);
-    int want = snow ? (k == D_WINTER ? 30 : 24) : k == D_SPRING ? 14 : k == D_AUTUMN ? 12 : k == D_VALENTINE ? 10 : 0;
-    if (!want) dparts_n = 0;
-    deco_spawn -= dt;
-    if (dparts_n < want && deco_spawn <= 0) {
+    int want = snow ? (k == D_WINTER ? 30 : 24) : k == D_SPRING ? 14 : k == D_VALENTINE ? 10 : 0;
+    if (!want && k != D_AUTUMN) dparts_n = 0;
+    if (k != D_AUTUMN) deco_spawn -= dt;
+    if (k != D_AUTUMN && dparts_n < want && deco_spawn <= 0) {
         deco_spawn = k == D_VALENTINE ? 0.5f : 0.25f;
         deco_part_t q = {frand(10, 230), -8, frand(0, 6.28f), frand(0, 6.28f), frand(-2, 2), 0, 0, 0, 0};
         if (snow) { q.kind = P_SNOW; q.r = frand(1, 2.4f); q.vy = frand(14, 30); q.col = 0xE7EEF4; }
         else if (k == D_SPRING) { q.kind = P_PETAL; q.vy = frand(10, 18); q.col = (esp_random() & 1) ? 0xF8BBD0 : 0xF48FB1; }
-        else if (k == D_AUTUMN) { static const uint32_t c[] = {0xE65100, 0xF9A825, 0xBF360C, 0xA1887F}; q.kind = P_LEAF; q.vy = frand(16, 26); q.col = c[esp_random() % 4]; }
         else { q.kind = P_HEART; q.y = 250; q.vy = -frand(10, 18); q.r = frand(3.5f, 6); q.col = (esp_random() & 1) ? 0xE53935 : 0xF48FB1; }
         dparts[dparts_n++] = q;
     }
-    for (int i = 0; i < dparts_n; i++) {
+    for (int i = 0; i < dparts_n && k != D_AUTUMN; i++) {
         deco_part_t & q = dparts[i];
         q.ph += dt; q.y += q.vy * dt; q.rot += q.vr * dt;
         q.x += sinf(q.ph * (q.kind == P_LEAF ? 2.2f : 1.3f)) * (q.kind == P_SNOW ? 8 : 16) * dt;

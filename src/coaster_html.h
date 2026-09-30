@@ -761,24 +761,56 @@ function decoKind(){
 var DNAME={holidays:"Holiday lights",newyear:"New Year",winter:"Snow",valentine:"Valentine's",spring:"Spring",summer:"Summer",july4:"4th of July",autumn:"Autumn leaves",halloween:"Halloween",birthday:"Birthday!","":"None"};
 // southern summer holidays: lights but no snow
 function snowy(k){return k=="winter"||(k=="holidays"&&!($("dMode").value=="auto"&&$("dHemi").value=="s"))}
+// autumn: a fixed 12 leaves drift down, pile up at the bottom, and get tossed back up by moves (same as the KNOMI)
+function bowlY(x){var dx=x-120;return 120+Math.sqrt(Math.max(0,112*112-dx*dx))}
+function leafRestY(q){var lay=0;deco.parts.forEach(function(o){if(o!==q&&o.rest&&o.seq<q.seq&&Math.abs(o.x-q.x)<8)lay++});return bowlY(q.x)-3-3.5*lay}
+function stepLeaf(q,dt){
+  var lp=S.lp,jolt=Math.hypot(lp[0],lp[2]);
+  if(q.rest){
+    if(jolt>0.12&&Math.random()<(jolt-0.12)*8*dt){var k=Math.min(1.6,jolt/0.3);q.rest=false;q.vy=-rnd(50,110)*k;q.vx=-lp[0]*260+rnd(-25,25);q.vr=rnd(-8,8);return}
+    var dx=q.x-120,sl=Math.atan2(dx,Math.sqrt(Math.max(1,112*112-dx*dx)));
+    if(Math.abs(dx)>25)q.x-=(dx>0?1:-1)*45*Math.sin(Math.abs(sl))*dt;
+    var lay=0,mx=0;deco.parts.forEach(function(o){if(o!==q&&o.rest&&o.seq<q.seq&&Math.abs(o.x-q.x)<8){lay++;mx+=o.x}});
+    if(lay>=3)q.x+=(q.x>=mx/lay?1:-1)*8*dt;
+    q.y+=(leafRestY(q)-q.y)*(1-Math.exp(-dt*10));
+    var tg=sl+Math.PI*Math.round((q.rot-sl)/Math.PI);
+    q.rot+=(tg-q.rot)*(1-Math.exp(-dt*6));return;
+  }
+  q.vx+=-lp[0]*300*dt;q.vy+=lp[2]*300*dt+80*dt;
+  var term=24;if(q.vy>term)q.vy+=(term-q.vy)*(1-Math.exp(-dt*4));
+  q.vx*=Math.exp(-dt*1.2);q.ph+=dt;
+  var sway=Math.sin(q.ph*2.2)*16*clamp(q.vy/term,0,1);
+  q.x+=(q.vx+sway)*dt;q.y+=q.vy*dt;q.rot+=q.vr*dt;q.vr*=Math.exp(-dt*0.8);if(Math.abs(q.vr)<2)q.vr=q.vr<0?-2:2;
+  var ex=q.x-120,ey=q.y-120,d=Math.hypot(ex,ey);
+  if(d>114&&!(q.y<40&&q.vy>0)){var nx=ex/d,ny=ey/d,vn=q.vx*nx+q.vy*ny;q.x=120+nx*114;q.y=120+ny*114;if(vn>0){q.vx-=1.3*vn*nx;q.vy-=1.3*vn*ny}}
+  if(q.vy>=0&&q.y>120){q.seq=deco.seq+1;var fy=leafRestY(q);
+    if(q.y>=fy){for(var t=0;t<4&&bowlY(q.x)-3-fy>10;t++){q.x+=Math.random()<0.5?6:-6;fy=leafRestY(q)}q.rest=true;q.seq=++deco.seq;q.vx=q.vy=0;q.y=Math.min(q.y,fy)}}
+}
 function stepDeco(dt){
   var k=decoKind();
-  if(k!==deco.kind){deco.kind=k;deco.parts=[];deco.fw=[];$("decoNow").textContent=DNAME[k]}
+  if(k!==deco.kind){deco.kind=k;deco.parts=[];deco.fw=[];deco.leaves=0;deco.seq=0;$("decoNow").textContent=DNAME[k]}
+  if(k=="autumn"){
+    deco.spawn-=dt;
+    if((deco.leaves||0)<12&&deco.spawn<=0){deco.spawn=0.7;deco.leaves=(deco.leaves||0)+1;
+      deco.parts.push({kind:"leaf",x:rnd(40,200),y:-8,ph:rnd(0,6.28),rot:rnd(0,6.28),vr:rnd(-2,2),vx:0,vy:rnd(16,26),seq:0,rest:false,col:["#E65100","#F9A825","#BF360C","#A1887F"][Math.floor(rnd(0,4))]})}
+    deco.parts.forEach(function(q){stepLeaf(q,dt)});
+  }
   // falling / floating things
-  var want=snowy(k)?(k=="winter"?34:26):k=="spring"?14:k=="autumn"?12:k=="valentine"?10:0;
-  deco.spawn-=dt;
-  if(deco.parts.length<want&&deco.spawn<=0){
+  var want=snowy(k)?(k=="winter"?34:26):k=="spring"?14:k=="valentine"?10:0;
+  if(k!="autumn")deco.spawn-=dt;
+  if(k!="autumn"&&deco.parts.length<want&&deco.spawn<=0){
     deco.spawn=k=="valentine"?0.5:0.25;
     var p={x:rnd(10,230),y:-8,ph:rnd(0,6.28),rot:rnd(0,6.28),vr:rnd(-2,2),life:99};
     if(snowy(k)){p.kind="snow";p.r=rnd(1,2.4);p.vy=rnd(14,30)}
     else if(k=="spring"){p.kind="petal";p.vy=rnd(10,18);p.col=Math.random()<0.5?"#F8BBD0":"#F48FB1"}
-    else if(k=="autumn"){p.kind="leaf";p.vy=rnd(16,26);p.col=["#E65100","#F9A825","#BF360C","#A1887F"][Math.floor(rnd(0,4))]}
     else if(k=="valentine"){p.kind="heart";p.y=250;p.vy=-rnd(10,18);p.col=Math.random()<0.5?"#E53935":"#F48FB1";p.r=rnd(3.5,6)}
     deco.parts.push(p);
   }
-  deco.parts.forEach(function(p){p.ph+=dt;p.y+=p.vy*dt;p.x+=Math.sin(p.ph*(p.kind=="leaf"?2.2:1.3))*(p.kind=="snow"?8:16)*dt;p.rot+=p.vr*dt});
-  deco.parts=deco.parts.filter(function(p){return p.y<250&&p.y>-20&&p.x>-20&&p.x<260});
-  if(!want)deco.parts=[];
+  if(k!="autumn"){
+    deco.parts.forEach(function(p){p.ph+=dt;p.y+=p.vy*dt;p.x+=Math.sin(p.ph*1.3)*(p.kind=="snow"?8:16)*dt;p.rot+=p.vr*dt});
+    deco.parts=deco.parts.filter(function(p){return p.y<250&&p.y>-20&&p.x>-20&&p.x<260});
+    if(!want)deco.parts=[];
+  }
   // fireworks
   if(k=="newyear"||k=="july4"){
     deco.fwT-=dt;
