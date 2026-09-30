@@ -1,3 +1,4 @@
+#include "config.h"
 // Coaster face engine and renderer. Port of the web mock-up (coaster-face.html):
 // same springs, same moods, same one-face morphing expressions.
 #include <Arduino.h>
@@ -2308,6 +2309,7 @@ String coaster_plugin_json(bool motion) {
     n += snprintf(buf + n, sizeof(buf) - n, ",\"hf\":%.2f", heat_frac);
     if (weather_t > 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"wx\":%d", weather > 0 ? 1 : -1);
     n += snprintf(buf + n, sizeof(buf) - n, ",\"sig\":%d", signature);
+    n += snprintf(buf + n, sizeof(buf) - n, ",\"fw\":\"%s\"", FW_VERSION);   // shown in the plugin's settings
     if (cur_mat >= 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"mat\":\"%s\"", MAT_NAMES[cur_mat]);
     if ((int32_t)(mutter_until - millis()) > 0 && mutter_buf[0]) n += snprintf(buf + n, sizeof(buf) - n, ",\"mu\":\"%s\"", mutter_buf);
     if ((int32_t)(say_until - millis()) > 0 && say_buf[0]) {   // what it's saying (no quotes or backslashes in its lines)

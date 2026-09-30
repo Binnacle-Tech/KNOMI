@@ -161,18 +161,12 @@ Over Bluetooth there's no API key and no polling: the plugin pushes status on ch
 sends the file list, and runs the KNOMI's buttons inside OctoPrint.
 
 1. KNOMI settings page, **Bluetooth**: set *On*, save, restart the KNOMI (System, then Restart).
-2. Pair once from the Pi (the KNOMI shows a 6-digit code):
-   ```
-   bluetoothctl
-   scan on                    # wait for KNOMI-<hostname>, note its address (also shown on the KNOMI page)
-   pair  XX:XX:XX:XX:XX:XX    # type the code shown on the KNOMI
-   trust XX:XX:XX:XX:XX:XX
-   exit
-   ```
+2. OctoPrint, Settings, **KNOMI**, **Bluetooth**: click **Find KNOMI**, then **Pair** next to it, and type the
+   6-digit code the KNOMI shows. That's it: the plugin pairs, trusts it, remembers the address and connects.
+   The **Link** line shows the state. (You can still pair by hand with `bluetoothctl` if you prefer.)
    If the Pi's Bluetooth is disabled (`dtoverlay=disable-bt` in `/boot/config.txt`, common on Klipper setups
    that use the GPIO UART), remove that line and reboot first.
-3. OctoPrint, Settings, **KNOMI**: tick *Connect to the KNOMI over Bluetooth* and save. The address fills in
-   after the first connection. The Status line shows the link state.
+3. If it doesn't connect, **Reconnect** retries, and **Forget** unpairs it on the Pi.
 4. Optional, once it says *connected*: on the KNOMI page set **WiFi while Bluetooth is connected** to
    *Turn WiFi off*. This option only unlocks while a Bluetooth link is live, so you can't strand the KNOMI.
    - WiFi turns off 10 s after Bluetooth connects.
@@ -180,7 +174,7 @@ sends the file list, and runs the KNOMI's buttons inside OctoPrint.
    - **Turn KNOMI WiFi on** in the plugin settings brings WiFi back for 10 minutes (to reach the web page).
    - GIF uploads, OTA and this settings page need WiFi.
 
-"Forget paired devices" on the KNOMI clears its bonds. Also run `remove <address>` in bluetoothctl before pairing again.
+To pair again from scratch: **Forget** in the plugin settings, and **Forget paired devices** on the KNOMI's settings page.
 
 ## Backup and restore
 Settings page → System → **Download backup** saves one `.knomi` file with every setting and custom animation.
