@@ -172,7 +172,7 @@ sends the file list, and runs the KNOMI's buttons inside OctoPrint.
    - WiFi turns off 10 s after Bluetooth connects.
    - If Bluetooth is down for the **fallback** time (default 60 s), including after boot, WiFi comes back.
    - **Turn KNOMI WiFi on** in the plugin settings brings WiFi back for 10 minutes (to reach the web page).
-   - GIF uploads, OTA and this settings page need WiFi.
+   - With WiFi off, the KNOMI's pages (settings, GIF uploads, firmware) still work through the plugin (below).
 
 **The KNOMI's pages without WiFi (OP41+, plugin 0.12.3+):** OctoPrint, Settings, **KNOMI**, *KNOMI's own settings*:
 **Open here** (or **New tab**) shows all of the KNOMI's web pages (settings, animations, print screen, Coaster,
