@@ -7,6 +7,7 @@
 void knomi_perf_init(void);                          // setup(): idle hooks on both cores
 void knomi_perf_frame(uint32_t render_ms, uint32_t px);   // LVGL finished a screen refresh
 void knomi_perf_face(uint32_t us);                   // one Coaster face drawn
+void knomi_perf_flush(uint32_t us);                  // one area sent to the screen over SPI
 void knomi_perf_delay(uint32_t ms);                  // delay() in our tasks: counts busy time
 String knomi_perf_json(void);                        // everything since the last call
 #endif

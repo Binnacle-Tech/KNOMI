@@ -339,7 +339,7 @@ def check_build(env):
         return
     graph = call_graph(elf, objdump)
     code = "\n".join(strip_comments(read(p)) for p in glob.glob(os.path.join(SRC, "**", "*.cpp"), recursive=True))
-    tasks = re.findall(r'xTaskCreate\(\s*(\w+)\s*,\s*"([^"]+)"\s*,\s*(\d+)', code)
+    tasks = re.findall(r'xTaskCreate(?:PinnedToCore)?\(\s*(\w+)\s*,\s*"([^"]+)"\s*,\s*(\d+)', code)
     # LVGL calls our draw/event callbacks through function pointers: follow them by hand
     callbacks = [f for f in graph if re.search(r"(_cb|_event|draw_face|face_event)\(_?lv_event", f)]
     memo = {}
@@ -504,7 +504,7 @@ def perf_device(ip, seconds, csv_path):
             continue
         row = {"t": round(time.time() - t0, 1)}
         for k in ("printing", "fps", "frame_ms", "frame_ms_max", "px_per_frame", "face_ms", "face_ms_max",
-                  "faces_per_s", "heap", "heap_min", "heap_block", "frag", "psram"):
+                  "faces_per_s", "flush_ms", "flush_ms_max", "heap", "heap_min", "heap_block", "frag", "psram"):
             row[k] = p.get(k)
         row["cpu0"], row["cpu1"] = (p.get("cpu") or [None, None])[:2]
         for name, pct in (p.get("tasks") or {}).items():
@@ -534,7 +534,8 @@ def perf_device(ip, seconds, csv_path):
             continue
         ok(f"perf {label}", f"{len(rs) * 2} s: {avg(rs, 'fps'):.1f} fps, frame {avg(rs, 'frame_ms'):.1f} ms avg / "
                             f"{max(r['frame_ms_max'] for r in rs)} ms worst, face {avg(rs, 'face_ms'):.2f} ms avg / "
-                            f"{max(r['face_ms_max'] for r in rs):.1f} ms worst")
+                            f"{max(r['face_ms_max'] for r in rs):.1f} ms worst"
+                            + (f", sending {avg(rs, 'flush_ms'):.1f} ms" if any(r.get('flush_ms') for r in rs) else ""))
         ok(f"perf {label}", f"CPU core0 {avg(rs, 'cpu0'):.0f}%, core1 {avg(rs, 'cpu1'):.0f}%; tasks busy: " +
            ", ".join(f"{t[5:]} {avg(rs, t):.1f}%" for t in sorted(tasks)))
     lo = min(r["heap"] for r in rows)

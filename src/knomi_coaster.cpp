@@ -2193,7 +2193,7 @@ void coaster_loop(void) {
         last_ms = ms;
     }
 
-    if (ms - frame_ms >= FRAME_MS) {
+    if (ms - frame_ms >= FRAME_MS && !knomi_power_screen_off()) {   // dark screen: skip drawing (/perf)
         frame_ms = ms;
         lv_obj_t * scr = lv_scr_act();
         for (int i = 0; i < MAX_FACES; i++) {

@@ -45,6 +45,10 @@ void knomi_perf_delay(uint32_t ms) {
 /* ---- display ---- */
 static volatile uint32_t frames, frame_ms_sum, frame_ms_max, px_sum;
 static volatile uint32_t faces, face_us_sum, face_us_max;
+static volatile uint32_t flushes, flush_us_sum, flush_us_max;
+void knomi_perf_flush(uint32_t us) {
+    flushes++; flush_us_sum += us; if (us > flush_us_max) flush_us_max = us;
+}
 void knomi_perf_frame(uint32_t render_ms, uint32_t px) {
     frames++; frame_ms_sum += render_ms; if (render_ms > frame_ms_max) frame_ms_max = render_ms; px_sum += px;
 }
@@ -70,6 +74,7 @@ String knomi_perf_json(void) {
         o += ",\"px_per_frame\":" + String(frames ? px_sum / frames : 0);
         o += ",\"face_ms\":" + String(faces ? face_us_sum / 1000.0f / faces : 0, 2) + ",\"face_ms_max\":" + String(face_us_max / 1000.0f, 2);
         o += ",\"faces_per_s\":" + String(faces / win, 1);
+        o += ",\"flush_ms\":" + String(flushes ? flush_us_sum / 1000.0f / flushes : 0, 2) + ",\"flush_ms_max\":" + String(flush_us_max / 1000.0f, 2);
         if (win > 25) o += ",\"cpu_note\":\"CPU numbers are only exact when /perf is read every few seconds\"";
         o += ",\"cpu\":[" + String(100 - min(100.0f, idle_us[0] / 1e4f / win), 0) + "," + String(100 - min(100.0f, idle_us[1] / 1e4f / win), 0) + "]";
         o += ",\"tasks\":{";
@@ -87,6 +92,7 @@ String knomi_perf_json(void) {
     }
     frames = frame_ms_sum = frame_ms_max = px_sum = 0;
     faces = face_us_sum = face_us_max = 0;
+    flushes = flush_us_sum = flush_us_max = 0;
     idle_us[0] = idle_us[1] = 0;
     size_t free_int = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     size_t big_int = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);

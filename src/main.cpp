@@ -88,12 +88,12 @@ void setup() {
     knomi_fs_init(); // custom GIF storage
     knomi_ble_init(); // Bluetooth link to the OctoPrint plugin, if enabled, before the UI and web server use it
 
-    xTaskCreate(lvgl_ui_task, "lvgl ui",
+    xTaskCreatePinnedToCore(lvgl_ui_task, "lvgl ui",
         16384, // Stack size (bytes): Coaster's drawing, settings and feelings run here
         NULL,  // Parameter to pass
         10,     // Task priority
-        &knomi_tasks[KT_LVGL]   // Task handle
-        );
+        &knomi_tasks[KT_LVGL],  // Task handle
+        1);    // core 1; frames are sent to the screen from core 0 (lvgl_hal.cpp)
 
 #ifdef LIS2DW_SUPPORT
     xTaskCreate(lis2dw12_task, "lis2dw12",

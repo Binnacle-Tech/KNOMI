@@ -102,3 +102,4 @@ void knomi_power_loop(void) {
 }
 
 bool knomi_power_dozing(void) { return state != PWR_AWAKE; }
+bool knomi_power_screen_off(void) { return level_now == 0; }

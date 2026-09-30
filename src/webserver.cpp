@@ -708,7 +708,7 @@ static void log_routes(void) {
         deserializeJson(cs, st);
         d["mood"] = cs["mood"] | "?";
         // free stack per task (bytes never used so far): tools/check.py warns when one runs low
-        static const char * tn[KNOMI_TASKS] = {"ui", "accel", "wifi", "printer", "post"};
+        static const char * tn[KNOMI_TASKS] = {"ui", "accel", "wifi", "printer", "post", "flush"};
         JsonObject stacks = d.createNestedObject("stacks");
         for (int i = 0; i < KNOMI_TASKS; i++) if (knomi_tasks[i]) stacks[tn[i]] = uxTaskGetStackHighWaterMark(knomi_tasks[i]);
         const esp_partition_t * run = esp_ota_get_running_partition();

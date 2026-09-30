@@ -1,4 +1,6 @@
 #include "knomi_perf.h"
+#include "knomi_health.h"
+#include <esp_timer.h>
 #include "lvgl_hal.h"
 #include "pinout.h"
 
@@ -8,18 +10,51 @@ extern TwoWire i2c0;
 CST816S ts_cst816s = CST816S(CST816S_RST_PIN, CST816S_IRQ_PIN, &i2c0);
 #endif
 
-/* Display flushing */
-void usr_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
+/* Display flushing
+ *
+ * Sending a frame to the screen over SPI takes ~12 ms and used to happen on the LVGL task, so drawing
+ * and sending took turns on one core (/perf: core 1 ~90% busy, core 0 ~2%). Now LVGL draws into one of two
+ * frame buffers while a small task on the other core sends the previous one. TFT_eSPI's own DMA isn't used:
+ * in the version we build with it "draws once then freezes" on the ESP32-S3.
+ */
+typedef struct { lv_disp_drv_t *disp; lv_area_t area; lv_color_t *px; } flush_job_t;
+static QueueHandle_t flush_q = NULL;
+static TaskHandle_t lvgl_task = NULL;
+
+static void push_area(const lv_area_t *area, lv_color_t *color_p) {
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
-
-    // usr fill color
+    int64_t t0 = esp_timer_get_time();
     tft_gc9a01.startWrite();
     tft_gc9a01.setAddrWindow(area->x1, area->y1, w, h);
     tft_gc9a01.pushColors((uint16_t *)&color_p->full, w * h, true);
     tft_gc9a01.endWrite();
+    knomi_perf_flush((uint32_t)(esp_timer_get_time() - t0));
+}
 
+static void flush_task(void *) {
+    flush_job_t j;
+    for (;;) {
+        if (xQueueReceive(flush_q, &j, portMAX_DELAY) != pdTRUE) continue;
+        push_area(&j.area, j.px);
+        lv_disp_flush_ready(j.disp);
+        if (lvgl_task) xTaskNotifyGive(lvgl_task);   // LVGL may be waiting for this buffer
+    }
+}
+
+void usr_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *color_p) {
+    if (flush_q) {
+        flush_job_t j = {disp, *area, color_p};
+        xQueueSend(flush_q, &j, portMAX_DELAY);
+        return;
+    }
+    push_area(area, color_p);   // one buffer only (not enough memory): send it right here
     lv_disp_flush_ready(disp);
+}
+
+// LVGL waits here instead of spinning while the other buffer is still being sent
+static void usr_disp_wait(lv_disp_drv_t *) {
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(4));
 }
 
 #ifdef CST816S_SUPPORT
@@ -131,9 +166,19 @@ void lvgl_hal_init(void) {
 
     // must static
     static lv_disp_draw_buf_t draw_buf;
+    // two whole-screen buffers in PSRAM (plenty there): Coaster's face is drawn in one pass per frame
     static lv_color_t *color_buf = (lv_color_t *)LV_MEM_CUSTOM_ALLOC(TFT_WIDTH * TFT_HEIGHT * sizeof(lv_color_t));
+    static lv_color_t *color_buf2 = (lv_color_t *)LV_MEM_CUSTOM_ALLOC(TFT_WIDTH * TFT_HEIGHT * sizeof(lv_color_t));
+    lvgl_task = xTaskGetCurrentTaskHandle();
+    if (color_buf2) {
+        flush_q = xQueueCreate(1, sizeof(flush_job_t));
+        if (!flush_q || xTaskCreatePinnedToCore(flush_task, "flush", 3072, NULL, 9, &knomi_tasks[KT_FLUSH], 0) != pdPASS) {
+            flush_q = NULL;
+            Serial.println("display: sending frames on the UI task (couldn't start the flush task)");
+        }
+    }
     lv_init();
-    lv_disp_draw_buf_init(&draw_buf, color_buf, NULL, TFT_WIDTH * TFT_HEIGHT);
+    lv_disp_draw_buf_init(&draw_buf, color_buf, flush_q ? color_buf2 : NULL, TFT_WIDTH * TFT_HEIGHT);
 
     /*Initialize the display*/
     // must static
@@ -143,6 +188,7 @@ void lvgl_hal_init(void) {
     disp_drv.hor_res = TFT_WIDTH;
     disp_drv.ver_res = TFT_HEIGHT;
     disp_drv.flush_cb = usr_disp_flush;
+    disp_drv.wait_cb = usr_disp_wait;
     disp_drv.monitor_cb = [](lv_disp_drv_t *, uint32_t ms, uint32_t px) { knomi_perf_frame(ms, px); };   // /perf
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
