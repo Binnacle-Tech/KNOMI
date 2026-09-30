@@ -21,6 +21,7 @@ static volatile bool pairing = false;   // a passkey was shown for this connecti
 static volatile bool wifi_request = false;
 
 static SemaphoreHandle_t lock;
+static SemaphoreHandle_t cmd_lock;   // commands are sent from the post task and the LVGL task
 static String status_buf;          // latest status JSON (guarded by lock)
 static bool status_new = false;
 static String files_accum;         // frames being assembled (NimBLE task only)
@@ -128,8 +129,14 @@ class FilesCB : public NimBLECharacteristicCallbacks {
         std::string v = c->getValue();
         if (v.empty()) return;
         uint8_t flags = (uint8_t)v[0];
-        if (flags & 1) files_accum = "";
-        if (files_accum.length() + v.size() < 2048) files_accum += String(v.c_str() + 1);
+        static bool files_full = false;   // once a frame didn't fit, keep only the complete names so far
+        if (flags & 1) { files_accum = ""; files_full = false; }
+        if (!files_full && files_accum.length() + v.size() < 2048) files_accum += String(v.c_str() + 1);
+        else if (!files_full) {
+            files_full = true;
+            int nl = files_accum.lastIndexOf('\n');   // drop the name the missing frame would have finished
+            files_accum = nl >= 0 ? files_accum.substring(0, nl) : String();
+        }
         if (flags & 2) {
             xSemaphoreTake(lock, portMAX_DELAY);
             files_cached = files_accum;
@@ -142,6 +149,7 @@ class FilesCB : public NimBLECharacteristicCallbacks {
 
 void knomi_ble_init(void) {
     lock = xSemaphoreCreateMutex();
+    cmd_lock = xSemaphoreCreateMutex();
     if (!knomi_config.bt_enabled) return;
 
     String name = String("KNOMI-") + knomi_config.hostname;
@@ -210,8 +218,10 @@ bool knomi_ble_process(void) {
 
 bool knomi_ble_send_command(const String &path) {
     if (!knomi_ble_link_active() || !ch_cmd) return false;
+    xSemaphoreTake(cmd_lock, portMAX_DELAY);   // one command's value and notify together
     ch_cmd->setValue((const uint8_t *)path.c_str(), path.length());
     ch_cmd->notify();
+    xSemaphoreGive(cmd_lock);
     return true;
 }
 

@@ -21,11 +21,24 @@ knomi_config_t knomi_config;
 
 void webserver_setup(void);
 
-static uint16_t knomi_config_require = WEB_POST_NULL;
+// What needs doing: set from web handlers (async_tcp task) and the LVGL task, done by the wifi task.
+// Guarded: an unguarded |= racing the wifi task's &= could drop a request (a saved setting lost at reboot).
+static volatile uint16_t knomi_config_require = WEB_POST_NULL;
+static portMUX_TYPE require_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // ap info + sta info + wifi mode + wifi mode
 void knomi_config_require_change(uint16_t require) {
+    portENTER_CRITICAL(&require_mux);
     knomi_config_require |= require;
+    portEXIT_CRITICAL(&require_mux);
+}
+// everything asked for so far, and clear it (requests made while it's being handled wait for the next pass)
+static uint16_t knomi_config_require_take(void) {
+    portENTER_CRITICAL(&require_mux);
+    uint16_t r = knomi_config_require;
+    knomi_config_require = 0;
+    portEXIT_CRITICAL(&require_mux);
+    return r;
 }
 
 wifi_mode_t wifi_get_mode_from_string(String mode) {
@@ -400,23 +413,24 @@ static void wifi_start_ap(void) {
 }
 
 void wifi_config_loop(bool first_setup) {
-    if (knomi_config_require & EEPROM_PARA_CHANGED) {
+    uint16_t req = knomi_config_require_take();
+    if (req & EEPROM_PARA_CHANGED) {
         eeprom_write_knomi_config();
         Serial.println("knomi_config write to EEPROM");
-        Serial.print("knomi_config_require: ");
-        Serial.println(knomi_config_require);
+        Serial.print("req: ");
+        Serial.println(req);
         Serial.print("para: ");
-        Serial.println(knomi_config_require & EEPROM_PARA_CHANGED);
+        Serial.println(req & EEPROM_PARA_CHANGED);
     }
-    if (knomi_config_require & LOCAL_POST_LV_THEME_COLOR) {
-        knomi_config_require &= ~LOCAL_POST_LV_THEME_COLOR;
+    if (req & LOCAL_POST_LV_THEME_COLOR) {
+        req &= ~LOCAL_POST_LV_THEME_COLOR;
     }
-    if (knomi_config_require & LOCAL_POST_SETTINGS) {
-        knomi_config_require &= ~LOCAL_POST_SETTINGS;
+    if (req & LOCAL_POST_SETTINGS) {
+        req &= ~LOCAL_POST_SETTINGS;
     }
 
     if (first_setup) {
-        knomi_config_require = WEB_POST_LOCAL_HOSTNAME | \
+        req = WEB_POST_LOCAL_HOSTNAME | \
                               WEB_POST_WIFI_CONFIG_AP | \
                               WEB_POST_WIFI_CONFIG_STA | \
                               WEB_POST_WIFI_CONFIG_MODE;
@@ -424,8 +438,8 @@ void wifi_config_loop(bool first_setup) {
 
     // TODO: mDNS
     // hostname of ESP
-    if (knomi_config_require & WEB_POST_LOCAL_HOSTNAME) {
-        knomi_config_require &= ~WEB_POST_LOCAL_HOSTNAME;
+    if (req & WEB_POST_LOCAL_HOSTNAME) {
+        req &= ~WEB_POST_LOCAL_HOSTNAME;
         // must before WiFi.begin()
         WiFi.hostname(knomi_config.hostname);
         Serial.print("mdns hostname: ");
@@ -434,19 +448,19 @@ void wifi_config_loop(bool first_setup) {
 
     // WIFI mode
     wifi_mode_t wifi_mode = wifi_get_mode_from_string(knomi_config.mode);
-    if (knomi_config_require & WEB_POST_WIFI_CONFIG_MODE) {
-        knomi_config_require &= ~WEB_POST_WIFI_CONFIG_MODE;
+    if (req & WEB_POST_WIFI_CONFIG_MODE) {
+        req &= ~WEB_POST_WIFI_CONFIG_MODE;
         wifi_mode_t last_mode = WiFi.getMode();
         WiFi.mode(wifi_mode);  /*ESP32 Access point configured*/
         wifi_refresh_connected();
 
         if (last_mode == WIFI_MODE_AP) {
             if (wifi_mode ==  WIFI_MODE_STA || wifi_mode == WIFI_MODE_APSTA) {
-                knomi_config_require |= WEB_POST_WIFI_CONFIG_STA;
+                req |= WEB_POST_WIFI_CONFIG_STA;
             }
         } else if (last_mode == WIFI_MODE_STA) {
             if (wifi_mode ==  WIFI_MODE_AP || wifi_mode == WIFI_MODE_APSTA) {
-                knomi_config_require |= WEB_POST_WIFI_CONFIG_AP;
+                req |= WEB_POST_WIFI_CONFIG_AP;
             }
         }
     }
@@ -455,10 +469,10 @@ void wifi_config_loop(bool first_setup) {
     }
 
     // access point setup
-    if (knomi_config_require & WEB_POST_WIFI_CONFIG_AP) {
-        knomi_config_require &= ~WEB_POST_WIFI_CONFIG_AP;
+    if (req & WEB_POST_WIFI_CONFIG_AP) {
+        req &= ~WEB_POST_WIFI_CONFIG_AP;
         if (wifi_mode == WIFI_MODE_AP || wifi_mode == WIFI_MODE_APSTA) {
-            Serial.println("knomi_config_require: AP");
+            Serial.println("req: AP");
             Serial.print("ap ssid: ");
             Serial.println(knomi_config.ap_ssid);
             Serial.print("ap pwd: ");
@@ -468,9 +482,9 @@ void wifi_config_loop(bool first_setup) {
     }
 
     // station connect
-    if (knomi_config_require & WEB_POST_WIFI_CONFIG_STA) {
-        knomi_config_require &= ~WEB_POST_WIFI_CONFIG_STA;
-        Serial.println("knomi_config_require: STA");
+    if (req & WEB_POST_WIFI_CONFIG_STA) {
+        req &= ~WEB_POST_WIFI_CONFIG_STA;
+        Serial.println("req: STA");
         if (wifi_mode == WIFI_MODE_STA || wifi_mode == WIFI_MODE_APSTA) {
             Serial.println();
             Serial.println();
@@ -507,8 +521,8 @@ void wifi_config_loop(bool first_setup) {
     }
 
     //
-    if (knomi_config_require & WEB_POST_MOONRAKER) {
-        knomi_config_require &= ~WEB_POST_MOONRAKER;
+    if (req & WEB_POST_MOONRAKER) {
+        req &= ~WEB_POST_MOONRAKER;
         Serial.print("klipper ip: ");
         Serial.println(knomi_config.moonraker_ip);
         Serial.print("port: ");
@@ -520,13 +534,13 @@ void wifi_config_loop(bool first_setup) {
     }
 
     // refresh wifi scan
-    if (knomi_config_require & WEB_POST_WIFI_REFRESH) {
-        knomi_config_require &= ~WEB_POST_WIFI_REFRESH;
+    if (req & WEB_POST_WIFI_REFRESH) {
+        req &= ~WEB_POST_WIFI_REFRESH;
         WiFi.scanNetworks(true, false, false, 300U);
     }
 
     // restart
-    if (knomi_config_require & WEB_POST_RESTART) {
+    if (req & WEB_POST_RESTART) {
         ESP.restart();
     }
 }

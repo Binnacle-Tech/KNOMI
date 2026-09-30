@@ -3,6 +3,7 @@
 #include "moonraker.h"
 #include "lv_overlay.h"
 #include "../knomi_coaster.h"
+#include "../knomi_health.h"
 
 typedef enum {
     LV_POPUP_NULL = 0,
@@ -16,7 +17,33 @@ static lv_popup_status_t lv_popup_status = LV_POPUP_NULL;
 static lv_obj_t * previous_menu;
 
 static void popup_face_show(bool show);
+static void popup_show(const char * warning, bool clickable);
+
+/* LVGL isn't thread-safe, and errors come in on the printer tasks (a 400 from Klipper, a 409 from OctoPrint).
+ * From any other task the message is parked here and the LVGL task shows it (lv_popup_poll). */
+static portMUX_TYPE popup_mux = portMUX_INITIALIZER_UNLOCKED;
+static char popup_pending[160];
+static bool popup_pending_click = false, popup_has_pending = false;
 void lv_popup_warning(const char * warning, bool clickable) {
+    if (xTaskGetCurrentTaskHandle() == knomi_tasks[KT_LVGL]) { popup_show(warning, clickable); return; }
+    portENTER_CRITICAL(&popup_mux);
+    strlcpy(popup_pending, warning, sizeof(popup_pending));
+    popup_pending_click = clickable;
+    popup_has_pending = true;
+    portEXIT_CRITICAL(&popup_mux);
+}
+void lv_popup_poll(void) {   // LVGL task
+    if (!popup_has_pending) return;
+    char m[sizeof(popup_pending)];
+    bool click;
+    portENTER_CRITICAL(&popup_mux);
+    memcpy(m, popup_pending, sizeof(m));
+    click = popup_pending_click;
+    popup_has_pending = false;
+    portEXIT_CRITICAL(&popup_mux);
+    popup_show(m, click);
+}
+static void popup_show(const char * warning, bool clickable) {
     popup_face_show(false);   // other popups (pairing codes, action errors) have no face
     lv_textarea_set_text(ui_textarea_popup, warning);
 

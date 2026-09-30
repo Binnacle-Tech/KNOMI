@@ -8,7 +8,12 @@ void lv_btn_init(void) {
     Button_Init(BOOT_PIN);
 }
 
-void lv_test_wifi_ssid_update(void) {
+// The scan finishes on the wifi task; LVGL may only be touched from the LVGL task, so this just raises a
+// flag and lv_loop_btn_event() (LVGL task) fills in the labels.
+static volatile bool test_ssids_ready = false;
+void lv_test_wifi_ssid_update(void) { test_ssids_ready = true; }
+static void test_ssids_show(void) {
+    test_ssids_ready = false;
     lv_label_set_text(ui_label_ssid1, wifi_scan.ssid[0]);
     lv_label_set_text(ui_label_ssid2, wifi_scan.ssid[1]);
     lv_label_set_text(ui_label_ssid3, wifi_scan.ssid[2]);
@@ -23,6 +28,7 @@ void lv_test_sensor_btn_ok(lv_event_t * e) {
 }
 
 void lv_loop_btn_event(void) {
+    if (test_ssids_ready) test_ssids_show();
     v_btn_t btn = Button_GetAction(BOOT_PIN);
 
     if (btn != BTN_IDLE) {

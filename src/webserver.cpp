@@ -315,12 +315,6 @@ web_post_info_t web_post_info[] = {
     },
 };
 
-static AsyncWebServerRequest * wifi_refresh_request = NULL;
-void webserver_wifi_refresh_callback(void) {
-    if (wifi_refresh_request == NULL) return;
-    wifi_refresh_request->send_P(200, "text/html", index_html, knomi_html_processor);
-    wifi_refresh_request = NULL;
-}
 
 
 /* ---------------- custom GIFs ---------------- */
@@ -891,8 +885,11 @@ void webserver_setup(void) {
                 "<p><span class='pill now'>restarting</span></p><p>KNOMI is restarting. Reconnect once it's back, "
                 "usually 10 to 20 seconds.</p>"));
         } else if (post_require & WEB_POST_WIFI_REFRESH) {
-            wifi_refresh_request = request;
-            wifi_scan_refresh_set_callback(webserver_wifi_refresh_callback);
+            // answer now and reload when the scan is done: holding the request until the wifi task finished the
+            // scan crashed the KNOMI if the browser went away meanwhile (and answered from the wrong task)
+            request->send(200, "text/html", message_page("Scanning",
+                "<p><span class='pill now'>scanning</span></p><p>Looking for WiFi networks. The settings page comes "
+                "back with the list in a few seconds.</p><script>setTimeout(function(){location.href='/'},6000)</script>"));
         } else {
             request->send_P(200, "text/html", index_html, knomi_html_processor);
         }

@@ -1436,7 +1436,7 @@ static void watch_printer(const moonraker_data_t & d) {
             last_rating = (uint8_t)constrain((int)lroundf(sc), 1, 5);
             rating_sum += last_rating; rating_n++;
             static const char * why5[] = {"", "Rough.", "Bumpy.", "Not bad.", "Smooth ride.", "Loved it!"};
-            char r[56]; snprintf(r, sizeof(r), "%s %u/5 stars. %s", t, last_rating, why5[last_rating]);
+            char r[72]; snprintf(r, sizeof(r), "%s %u/5 stars. %s", t, last_rating, why5[last_rating]);
             say(r, 2);
             if (streak > best_streak) best_streak = streak;
             quirk_queue(Q_SIGNATURE, hobby == HOB_TIDY ? Q_STRETCH : 0);   // its signature move (and tidying up, if that's its hobby)

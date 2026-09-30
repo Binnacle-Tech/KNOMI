@@ -109,11 +109,16 @@ void lv_roller_set_type_settings(lv_event_t * e) {
 void lv_roller_set_type_print(lv_event_t * e) {
     String gcodes;
     if (moonraker.get_file_list(gcodes)) {
+        // too many to fit: keep whole names only (a cut-off name would be a file that doesn't exist)
+        if (gcodes.length() >= sizeof(gcode_options)) {
+            int nl = gcodes.lastIndexOf('\n', sizeof(gcode_options) - 2);
+            gcodes = nl > 0 ? gcodes.substring(0, nl + 1) : String("\n");
+        }
         if (gcodes.isEmpty()) gcodes = "\n"; // keep the roller valid with no files
         strlcpy(gcode_options, gcodes.c_str(), sizeof(gcode_options));
-        // drop the trailing '\n' (or the last char if truncated)
-        size_t n = min(sizeof(gcode_options), (size_t)gcodes.length());
-        gcode_options[n - 1] = 0;
+        // drop the trailing '\n'
+        size_t n = strlen(gcode_options);
+        if (n && gcode_options[n - 1] == '\n') gcode_options[n - 1] = 0;
     }
 
     lv_roller_set_type(UI_ROLLER_PRINT);
@@ -218,8 +223,10 @@ void lv_roller_set_service(void) {
         JsonArray files = json_parse["result"]["system_info"]["available_services"].as<JsonArray>();
         String services;
         uint8_t i = 0;
-        for (JsonObject file : files) {
-            String option = files[i].as<String>();
+        for (JsonVariant file : files) {
+            if (i >= sizeof(service_name_id) / sizeof(service_name_id[0])) break;   // hosts can run more than 20
+            String option = file.as<String>();
+            if (services.length() + option.length() + 1 >= sizeof(service_options)) break;   // whole names only
             service_name_id[i] = option;
             option[0] = toupper(option[0]);
             services += option + "\n";

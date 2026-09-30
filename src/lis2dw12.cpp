@@ -27,7 +27,7 @@ int32_t lis2dw12_acc[3];
  */
 #define SAMPLE_MS     5       // 200 Hz (the coaster face wants the motion, not just peaks)
 #define GRAVITY_ALPHA 0.0025f // ~2 s time constant for the gravity estimate
-#define PEAK_DECAY    0.96f   // per sample (same fall-off as 0.85 at 50 Hz)
+#define PEAK_DECAY    0.96f   // per 5 ms (same fall-off as 0.85 at 50 Hz)
 
 void lis2dw12_task(void * parameter) {
     Serial.println("\r\n******** LIS2DW12 startup *****\r\n");
@@ -54,6 +54,12 @@ void lis2dw12_task(void * parameter) {
 
     for(;;) {
         uint32_t t0 = millis();
+        // the loop doesn't run at a steady 200 a second: filter by the real time since the last pass
+        static uint32_t last_t = 0;
+        float dt = last_t ? constrain((t0 - last_t) / 1000.0f, 0.001f, 0.1f) : 0.005f;
+        last_t = t0;
+        float g_alpha = 1 - expf(-dt / 2.0f);          // ~2 s gravity estimate (was GRAVITY_ALPHA per sample)
+        float decay = powf(PEAK_DECAY, dt / 0.005f);    // PEAK_DECAY per 5 ms
         if (lis2dw12.Get_X_Axes(raw) == LIS2DW12_STATUS_OK) knomi_perf_accel(true, raw);
         else knomi_perf_accel(false, raw);
         // exactly the same reading for 2 s is a sensor that stopped measuring: wake it up again
@@ -71,7 +77,7 @@ void lis2dw12_task(void * parameter) {
         }
         float dyn[3];
         for (int i = 0; i < 3; i++) {
-            g[i] += GRAVITY_ALPHA * (raw[i] - g[i]);
+            g[i] += g_alpha * (raw[i] - g[i]);
             dyn[i] = raw[i] - g[i];
         }
         // which raw axis carries gravity (with hysteresis so it doesn't flicker)
@@ -91,7 +97,7 @@ void lis2dw12_task(void * parameter) {
         coaster_push_sample(dyn[ax] / 1000.0f, dyn[ay] / 1000.0f, up * dyn[az] / 1000.0f);
         for (int i = 0; i < 3; i++) {
             float v = fabsf(dyn[map[i]]);
-            peak[i] = max(v, peak[i] * PEAK_DECAY);
+            peak[i] = max(v, peak[i] * decay);
             lis2dw12_acc[i] = (int32_t)peak[i];
         }
 #ifdef LIS2DW12_DEBUG

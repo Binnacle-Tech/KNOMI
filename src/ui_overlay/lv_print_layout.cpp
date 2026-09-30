@@ -212,6 +212,7 @@ String print_layout_status_json(void) {
         s += token_names[i];
         s += "\":\"";
         for (const char * c = v; *c; c++) {
+            if ((uint8_t)*c < 0x20) { s += ' '; continue; }   // a tab or newline in a name would break the JSON
             if (*c == '"' || *c == '\\') s += '\\';
             s += *c;
         }

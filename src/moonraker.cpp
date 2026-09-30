@@ -31,7 +31,7 @@ static String url_encode_path(const String &in) {
 }
 
 static void octoprint_popup_error(int code, const String &response) {
-    static char msg[160];
+    char msg[160];   // not static: two tasks can get here at once
     String text;
     if (!response.isEmpty()) {
         DynamicJsonDocument json_parse(response.length() * 2 + 256);
@@ -116,26 +116,42 @@ String MOONRAKER::send_request(const char * type, String path, String body) {
     return response;
 }
 
+// The queue is filled by the LVGL task (buttons) and emptied by the post task: guarded by a mutex
+// (an unguarded count++ / count-- on the two cores could lose a command or send one twice)
+static SemaphoreHandle_t post_lock(void) {
+    static SemaphoreHandle_t m = NULL;
+    if (!m) m = xSemaphoreCreateMutex();
+    return m;
+}
+
 void MOONRAKER::http_post_loop(void) {
     if (post_queue.count == 0) return;
+    xSemaphoreTake(post_lock(), portMAX_DELAY);
+    String path = post_queue.queue[post_queue.index_r];
+    xSemaphoreGive(post_lock());
     if (knomi_ble_link_active())
-        knomi_ble_send_command(post_queue.queue[post_queue.index_r]); // plugin translates
+        knomi_ble_send_command(path); // plugin translates
     else if (knomi_backend_is_octoprint())
-        octoprint_post(post_queue.queue[post_queue.index_r]);
+        octoprint_post(path);
     else
-        send_request("POST", post_queue.queue[post_queue.index_r]);
+        send_request("POST", path);
+    xSemaphoreTake(post_lock(), portMAX_DELAY);
     post_queue.count--;
     post_queue.index_r = (post_queue.index_r + 1) % QUEUE_LEN;
+    xSemaphoreGive(post_lock());
 }
 
 bool MOONRAKER::post_to_queue(String path) {
+    xSemaphoreTake(post_lock(), portMAX_DELAY);
     if (post_queue.count >= QUEUE_LEN) {
+        xSemaphoreGive(post_lock());
         Serial.println("moonraker post queue overflow!");
         return false;
     }
     post_queue.queue[post_queue.index_w] = path;
     post_queue.index_w = (post_queue.index_w + 1) % QUEUE_LEN;
     post_queue.count++;
+    xSemaphoreGive(post_lock());
 #ifdef MOONRAKER_DEBUG
     Serial.printf("\r\n\r\n ************ post queue *******************\r\n\r\n");
     Serial.print("count: ");   Serial.println(post_queue.count);
@@ -617,6 +633,7 @@ void moonraker_task(void * parameter) {
     moonraker.data.time_left = -1;
     moonraker.data.z_um = INT32_MIN;
 
+    post_lock();   // create it before either side can use the queue
     xTaskCreate(moonraker_post_task, "moonraker post",
         8192,  // HTTP + the Coaster sidebar JSON  // Stack size (bytes)
         NULL,  // Parameter to pass

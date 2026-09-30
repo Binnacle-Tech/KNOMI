@@ -126,6 +126,7 @@ void lv_roller_set_extrude(lv_event_t * e) {
 
 
 void lv_popup_warning(const char * warning, bool clickable);
+void lv_popup_poll(void);
 void lv_popup_remove(lv_event_t * e) ;
 // lvgl ui
 void lvgl_ui_task(void * parameter) {
@@ -235,6 +236,7 @@ void lvgl_ui_task(void * parameter) {
 
         lv_loop_auto_idle(status);
         lv_loop_btn_event();
+        lv_popup_poll();   // error popups raised on other tasks
         knomi_gif_process();
         int64_t logic_t0 = esp_timer_get_time();
         coaster_loop();   // Coaster's thinking (moods, springs, deciding what to redraw); timed for /perf
