@@ -4,6 +4,7 @@
 #include <esp_ota_ops.h>
 #include "knomi_health.h"
 #include "knomi_perf.h"
+const char * knomi_wifi_policy(void);   // wifi_setup.cpp
 #include <ESPmDNS.h>
 
 #include "knomi.h"
@@ -710,6 +711,8 @@ static void log_routes(void) {
         for (int i = 0; i < KNOMI_TASKS; i++) if (knomi_tasks[i]) stacks[tn[i]] = uxTaskGetStackHighWaterMark(knomi_tasks[i]);
         const esp_partition_t * run = esp_ota_get_running_partition();
         d["slot"] = run ? run->label : "?";
+        d["ble"] = knomi_ble_link_active() ? "link up" : knomi_ble_connected() ? "connected, no status" : knomi_ble_running() ? "not connected" : "off";
+        d["wifi_policy"] = knomi_wifi_policy();
         d["fs_used"] = LittleFS.usedBytes();
         d["fs_total"] = LittleFS.totalBytes();
         String out;

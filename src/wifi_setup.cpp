@@ -560,6 +560,14 @@ static bool mdns_restart = false;
 static uint32_t bt_up_since = 0, bt_down_since = 0, wifi_forced_until = 0;
 
 bool knomi_wifi_suspended(void) { return wifi_suspended; }
+// for /log/info: what the WiFi-off setting is doing right now
+const char * knomi_wifi_policy(void) {
+    if (!(knomi_config.bt_enabled && knomi_config.bt_wifi_off)) return "wifi stays on (setting)";
+    if (wifi_suspended) return "wifi off (Bluetooth link up)";
+    if (wifi_forced_until && (int32_t)(wifi_forced_until - millis()) > 0) return "wifi on (plugin asked, for 10 min)";
+    if (!knomi_ble_link_active()) return "wifi on (waiting for the Bluetooth link)";
+    return "wifi on (turning off shortly)";
+}
 
 static void wifi_suspend(void) {
     Serial.println("wifi: off (Bluetooth link active)");
@@ -582,8 +590,11 @@ static void bt_wifi_policy_loop(void) {
     uint32_t now = millis();
     bool want_off = knomi_config.bt_enabled && knomi_config.bt_wifi_off && knomi_ble_running();
     bool link = knomi_ble_link_active();
-    if (link) { bt_down_since = 0; if (!bt_up_since) bt_up_since = now; }
-    else      { bt_up_since = 0;   if (!bt_down_since) bt_down_since = now; }
+    // "up since" counts from when the paired connection came up, not from the last status: a status that's
+    // a moment late (the plugin busy sending a page over the tunnel) no longer restarts the 10 s wait
+    bool conn = knomi_ble_connected();
+    if (conn) { if (!bt_up_since) bt_up_since = now; } else bt_up_since = 0;
+    if (link) bt_down_since = 0; else if (!bt_down_since) bt_down_since = now;
     if (knomi_ble_take_wifi_request()) wifi_forced_until = now + WIFI_FORCED_ON_MS;
     bool forced = wifi_forced_until && (int32_t)(wifi_forced_until - now) > 0;
 
@@ -592,6 +603,16 @@ static void bt_wifi_policy_loop(void) {
         if (!want_off || forced || (!link && now - bt_down_since >= fallback_ms)) wifi_resume();
     } else if (want_off && !forced && link && now - bt_up_since >= BT_SETTLE_MS) {
         wifi_suspend();
+    } else if (want_off) {
+        // set to turn off but it isn't: say why in the log (once per reason)
+        static int8_t said = -1;
+        int8_t why = forced ? 0 : !link ? 1 : 2;
+        if (why != said) {
+            said = why;
+            if (why == 0) Serial.printf("wifi: staying on for %u more min (the plugin asked for WiFi)\r\n", (unsigned)((wifi_forced_until - now) / 60000 + 1));
+            else if (why == 1) Serial.println("wifi: staying on until the plugin's Bluetooth link is up");
+            else Serial.println("wifi: turning off once the Bluetooth link has been up 10 s");
+        }
     }
     if (mdns_restart && WiFi.status() == WL_CONNECTED) {
         mdns_restart = false;
