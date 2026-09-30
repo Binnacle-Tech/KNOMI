@@ -141,13 +141,21 @@ void coaster_request_reload(void) { reload_pending = true; }
 /* ---------------- samples from the sensor task ---------------- */
 
 #define RING 64
-static float ring[RING][3];
+static float ring[RING][4];   // x, y, z (g) and the seconds since the sample before
 static volatile uint32_t ring_w = 0;
 static uint32_t ring_r = 0;
 
+// The sensor task doesn't manage a steady 200 a second (/perf OP39: 27-74 during a print), and the
+// physics used to assume it did, so Coaster ran in slow motion. Each sample now carries its real
+// spacing and the physics steps through it in 5 ms pieces.
 void coaster_push_sample(float x, float y, float z) {
+    static int64_t last_us = 0;
+    int64_t now = esp_timer_get_time();
+    float dt = last_us ? (now - last_us) / 1e6f : SAMPLE_DT;
+    last_us = now;
     uint32_t w = ring_w;
     ring[w % RING][0] = x; ring[w % RING][1] = y; ring[w % RING][2] = z;
+    ring[w % RING][3] = dt < 0.001f ? 0.001f : dt > 0.1f ? 0.1f : dt;   // a stall isn't replayed
     ring_w = w + 1;
 }
 
@@ -2394,10 +2402,16 @@ void coaster_loop(void) {
     if (w - ring_r > RING) ring_r = w - RING;   // fell behind: drop the oldest
     int steps = 0;
     while (ring_r != w) {
-        float a[3] = {ring[ring_r % RING][0], ring[ring_r % RING][1], ring[ring_r % RING][2]};
+        const float * r = ring[ring_r % RING];
+        float a[3] = {r[0], r[1], r[2]}, dt = r[3];
         ring_r++;
-        now_s += SAMPLE_DT;
-        sense(a, SAMPLE_DT); pick_mood(SAMPLE_DT, d); step_body(SAMPLE_DT); step_expr(SAMPLE_DT); step_deco(SAMPLE_DT);
+        int sub = (int)ceilf(dt / SAMPLE_DT - 0.01f);   // same sample held over each 5 ms piece
+        if (sub < 1) sub = 1;
+        float h = dt / sub;
+        for (int k = 0; k < sub; k++) {
+            now_s += h;
+            sense(a, h); pick_mood(h, d); step_body(h); step_expr(h); step_deco(h);
+        }
         steps++;
     }
     knomi_perf_samples(steps);

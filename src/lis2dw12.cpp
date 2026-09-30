@@ -53,6 +53,7 @@ void lis2dw12_task(void * parameter) {
     uint32_t same_n = 0;
 
     for(;;) {
+        uint32_t t0 = millis();
         if (lis2dw12.Get_X_Axes(raw) == LIS2DW12_STATUS_OK) knomi_perf_accel(true, raw);
         else knomi_perf_accel(false, raw);
         // exactly the same reading for 2 s is a sensor that stopped measuring: wake it up again
@@ -97,7 +98,9 @@ void lis2dw12_task(void * parameter) {
         Serial.printf("raw %d %d %d  g-axis %d  xyz %d %d %d\r\n", raw[0], raw[1], raw[2], z_axis,
                       lis2dw12_acc[0], lis2dw12_acc[1], lis2dw12_acc[2]);
 #endif
-        delay(SAMPLE_MS);
+        // aim for a sample every 5 ms: the read itself takes a few (3 I2C transactions at 100 kHz)
+        uint32_t spent = millis() - t0;
+        delay(spent >= SAMPLE_MS ? 1 : SAMPLE_MS - spent);
     }
 }
 
