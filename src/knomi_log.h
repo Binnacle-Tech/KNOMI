@@ -20,5 +20,9 @@ String knomi_log_text(void);   // the ring buffer, oldest first
 void knomi_log_clear(void);
 
 #define Serial knomi_log
+
+// delay() in our tasks also measures how long each task worked since its last delay (/perf)
+void knomi_perf_delay(uint32_t ms);
+#define delay(ms) knomi_perf_delay(ms)
 #endif
 #endif

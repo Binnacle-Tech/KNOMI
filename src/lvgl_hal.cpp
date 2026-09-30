@@ -1,3 +1,4 @@
+#include "knomi_perf.h"
 #include "lvgl_hal.h"
 #include "pinout.h"
 
@@ -142,6 +143,7 @@ void lvgl_hal_init(void) {
     disp_drv.hor_res = TFT_WIDTH;
     disp_drv.ver_res = TFT_HEIGHT;
     disp_drv.flush_cb = usr_disp_flush;
+    disp_drv.monitor_cb = [](lv_disp_drv_t *, uint32_t ms, uint32_t px) { knomi_perf_frame(ms, px); };   // /perf
     disp_drv.draw_buf = &draw_buf;
     lv_disp_drv_register(&disp_drv);
     // lv_disp_set_rotation(NULL, LV_DISP_ROT_180);

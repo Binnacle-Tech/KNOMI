@@ -1,4 +1,6 @@
 #include "config.h"
+#include "knomi_perf.h"
+#include <esp_timer.h>
 // Coaster face engine and renderer. Port of the web mock-up (coaster-face.html):
 // same springs, same moods, same one-face morphing expressions.
 #include <Arduino.h>
@@ -1901,7 +1903,13 @@ static void draw_hat(const pen_t & p, float cx, float cy, float sx, float sy) {
     }
 }
 
-static void draw_face(lv_event_t * e) {
+static void draw_face_(lv_event_t * e);
+static void draw_face(lv_event_t * e) {   // timed for /perf
+    int64_t t0 = esp_timer_get_time();
+    draw_face_(e);
+    knomi_perf_face((uint32_t)(esp_timer_get_time() - t0));
+}
+static void draw_face_(lv_event_t * e) {
     lv_obj_t * obj = lv_event_get_target(e);
     pen_t p;
     p.ctx = lv_event_get_draw_ctx(e);

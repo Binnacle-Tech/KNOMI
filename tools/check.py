@@ -18,6 +18,7 @@ Usage (from the repo root):
                                              after flashing: watch the KNOMI for 3 minutes
   python tools/check.py --plugin ../OctoPrint-KNOMI   also check the sidebar matches the firmware
   python tools/check.py --device 192.168.1.87 --flash release-op32/knomiv2-octoprint-firmware.bin
+  python tools/check.py --device 192.168.1.87 --perf 600       measure fps, CPU and memory over WiFi (OP33+)
                                              flash over WiFi, then watch it (refuses if any check failed)
 
 Exit code 0 = all good, 1 = something failed. Warnings don't fail the run.
@@ -469,6 +470,70 @@ def check_device(ip, soak):
         ok("device", f"ran {soak} s without restarting ({info.get('fw')}, running from {info.get('slot', '?')})")
 
 
+def perf_device(ip, seconds, csv_path):
+    """Read /perf every 2 s over WiFi and sum it up, split into idle and printing."""
+    import csv
+    base = f"http://{ip}"
+    try:
+        info = get_json(base + "/log/info")
+        get_json(base + "/perf")   # starts a fresh window
+    except Exception as e:
+        fail("perf", f"can't reach /perf on {ip} ({e}); it needs OP33 or newer")
+        return
+    print(f"measuring {ip} ({info.get('fw')}) for {seconds} s, writing {csv_path}...", flush=True)
+    rows, tasks, t0 = [], set(), time.time()
+    while time.time() - t0 < seconds:
+        time.sleep(2)
+        try:
+            p = get_json(base + "/perf", timeout=4)
+        except Exception:
+            continue
+        if "fps" not in p:
+            continue
+        row = {"t": round(time.time() - t0, 1)}
+        for k in ("printing", "fps", "frame_ms", "frame_ms_max", "px_per_frame", "face_ms", "face_ms_max",
+                  "faces_per_s", "heap", "heap_min", "heap_block", "frag", "psram"):
+            row[k] = p.get(k)
+        row["cpu0"], row["cpu1"] = (p.get("cpu") or [None, None])[:2]
+        for name, pct in (p.get("tasks") or {}).items():
+            row["task_" + name] = pct
+            tasks.add("task_" + name)
+        rows.append(row)
+        if len(rows) % 15 == 0:
+            print(f"  {row['t']:.0f} s: {row['fps']} fps, face {row['face_ms']} ms, cpu {row['cpu0']}%/{row['cpu1']}%, "
+                  f"heap {row['heap'] // 1024} KB (block {row['heap_block'] // 1024} KB)"
+                  + (" printing" if row["printing"] else ""), flush=True)
+    if not rows:
+        fail("perf", "got no samples")
+        return
+    cols = list(rows[0].keys() - tasks) + sorted(tasks)
+    cols = ["t", "printing"] + [c for c in cols if c not in ("t", "printing")]
+    with open(csv_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        w.writerows(rows)
+
+    def avg(rs, k):
+        v = [r[k] for r in rs if r.get(k) is not None]
+        return sum(v) / len(v) if v else 0
+
+    for label, rs in (("idle", [r for r in rows if not r["printing"]]), ("printing", [r for r in rows if r["printing"]])):
+        if not rs:
+            continue
+        ok(f"perf {label}", f"{len(rs) * 2} s: {avg(rs, 'fps'):.1f} fps, frame {avg(rs, 'frame_ms'):.1f} ms avg / "
+                            f"{max(r['frame_ms_max'] for r in rs)} ms worst, face {avg(rs, 'face_ms'):.2f} ms avg / "
+                            f"{max(r['face_ms_max'] for r in rs):.1f} ms worst")
+        ok(f"perf {label}", f"CPU core0 {avg(rs, 'cpu0'):.0f}%, core1 {avg(rs, 'cpu1'):.0f}%; tasks busy: " +
+           ", ".join(f"{t[5:]} {avg(rs, t):.1f}%" for t in sorted(tasks)))
+    lo = min(r["heap"] for r in rows)
+    ok("perf memory", f"heap {rows[0]['heap'] // 1024} -> {rows[-1]['heap'] // 1024} KB, lowest {lo // 1024} KB, "
+                      f"all-time lowest {rows[-1]['heap_min'] // 1024} KB, biggest block {min(r['heap_block'] for r in rows) // 1024} KB, "
+                      f"fragmentation up to {max(r['frag'] for r in rows):.0f}%")
+    if rows[-1]["heap"] < rows[0]["heap"] - 8192 and seconds >= 600:
+        warn("perf memory", "free memory dropped more than 8 KB over the run: maybe a leak, run longer to be sure")
+    ok("perf", f"samples saved to {csv_path}")
+
+
 # ---------------------------------------------------------------- main
 
 def main():
@@ -481,6 +546,9 @@ def main():
     ap.add_argument("--soak", type=int, default=120, help="seconds to watch the device (default 120)")
     ap.add_argument("--flash", nargs="?", const="auto", metavar="BIN",
                     help="with --device: upload firmware over WiFi first (default: the knomiv2 build in .pio), then watch it")
+    ap.add_argument("--perf", type=int, metavar="SECONDS",
+                    help="with --device: measure frame rate, CPU and memory for this long over WiFi (no flashing)")
+    ap.add_argument("--csv", default="knomi-perf.csv", help="where --perf saves its samples (default knomi-perf.csv)")
     a = ap.parse_args()
     envs = a.env or ["knomiv2", "knomiv1"]
 
@@ -500,7 +568,9 @@ def main():
             pass
         elif any(r[0] == "FAIL" for r in results[:-1]):
             fail("flash", "not flashing: fix the failed checks first")
-    if a.device and not any(r[1] == "flash" and r[0] == "FAIL" for r in results):
+    if a.device and a.perf:
+        perf_device(a.device, a.perf, a.csv)
+    elif a.device and not any(r[1] == "flash" and r[0] == "FAIL" for r in results):
         check_device(a.device, a.soak)
 
     width = max(len(c) for _, c, _ in results)

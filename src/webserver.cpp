@@ -3,6 +3,7 @@
 #include <AsyncElegantOTA.h>
 #include <esp_ota_ops.h>
 #include "knomi_health.h"
+#include "knomi_perf.h"
 #include <ESPmDNS.h>
 
 #include "knomi.h"
@@ -746,6 +747,11 @@ static void coaster_routes(void) {
     });
     server.on("/coaster/card", HTTP_GET, [](AsyncWebServerRequest *request){
         AsyncWebServerResponse *r = request->beginResponse(200, "application/json", coaster_plugin_json());
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
+    server.on("/perf", HTTP_GET, [](AsyncWebServerRequest *request){   // tools/check.py --perf
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", knomi_perf_json());
         r->addHeader("Cache-Control", "no-store");
         request->send(r);
     });

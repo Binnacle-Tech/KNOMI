@@ -6,6 +6,7 @@
 #include "knomi_gif.h"
 #include "knomi_ble.h"
 #include "knomi_health.h"
+#include "knomi_perf.h"
 #include <esp_ota_ops.h>
 
 
@@ -63,6 +64,7 @@ void setup() {
         delay(10);
     Serial.println("\r\n\r\n------------- Knomi startup -----------\r\n");
     self_rescue();
+    knomi_perf_init();
     Serial.println("SPI Flash: ");
     Serial.print("  Size: ");
     Serial.println(ESP.getFlashChipSize());
