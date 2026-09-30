@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <freertos/stream_buffer.h>
 #include "nimble/porting/nimble/include/os/os_mbuf.h"
+#include "nimble/nimble/host/services/gatt/include/services/gatt/ble_svc_gatt.h"
 extern bool coaster_plugin_watched;   // knomi_coaster.cpp
 
 #define LINK_TIMEOUT_MS 5000   // plugin sends status at least every 2 s
@@ -108,6 +109,9 @@ class ServerCB : public NimBLEServerCallbacks {
         if (ok) {
             authed = true;
             authed_conn = desc->conn_handle;
+            // tell the Pi our services may have changed: BlueZ caches a bonded device's services, so after a
+            // firmware update that adds one (the page tunnel, OP41) it wouldn't see it until it looks again
+            ble_svc_gatt_changed(0x0001, 0xFFFF);
         }
         // report to the screen only for a fresh pairing (not a bonded reconnect), or on failure
         if (pairing || !ok) pair_result = ok ? 1 : -1;

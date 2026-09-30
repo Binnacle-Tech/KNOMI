@@ -2571,6 +2571,8 @@ String coaster_plugin_json(bool motion) {
     if (weather_t > 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"wx\":%d", weather > 0 ? 1 : -1);
     n += snprintf(buf + n, sizeof(buf) - n, ",\"sig\":%d", signature);
     n += snprintf(buf + n, sizeof(buf) - n, ",\"fw\":\"%s\"", FW_VERSION);   // shown in the plugin's settings
+    if (WiFi.status() == WL_CONNECTED)   // so the plugin can open the KNOMI's pages over WiFi even when it talks over Bluetooth
+        n += snprintf(buf + n, sizeof(buf) - n, ",\"ip\":\"%s\"", WiFi.localIP().toString().c_str());
     if (cur_mat >= 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"mat\":\"%s\"", MAT_NAMES[cur_mat]);
     if ((int32_t)(mutter_until - millis()) > 0 && mutter_buf[0]) n += snprintf(buf + n, sizeof(buf) - n, ",\"mu\":\"%s\"", mutter_buf);
     if ((int32_t)(say_until - millis()) > 0 && say_buf[0]) {   // what it's saying (no quotes or backslashes in its lines)
