@@ -763,7 +763,26 @@ var DNAME={holidays:"Holiday lights",newyear:"New Year",winter:"Snow",valentine:
 function snowy(k){return k=="winter"||(k=="holidays"&&!($("dMode").value=="auto"&&$("dHemi").value=="s"))}
 // autumn: a fixed 12 leaves drift down, pile up at the bottom, and get tossed back up by moves (same as the KNOMI)
 function bowlY(x){var dx=x-120;return 120+Math.sqrt(Math.max(0,112*112-dx*dx))}
-function leafRestY(q){var lay=0;deco.parts.forEach(function(o){if(o!==q&&o.rest&&o.seq<q.seq&&Math.abs(o.x-q.x)<8)lay++});return bowlY(q.x)-3-3.5*lay}
+function leafRestY(q){var sn=q.kind=="snow",w=sn?4:8,lay=0;deco.parts.forEach(function(o){if(o!==q&&o.rest&&o.seq<q.seq&&Math.abs(o.x-q.x)<w)lay++});return bowlY(q.x)-(sn?2:3)-(sn?1.8:3.5)*lay}
+var SNOW_COLS=80,snowColN=new Array(80).fill(0);
+function snowCol(x){return Math.max(0,Math.min(79,Math.floor(x/3)))}
+function snowTop(c){return bowlY(c*3+1.5)-2-1.8*snowColN[c]}
+function snowPile(dt){
+  snowColN.fill(0);deco.parts.forEach(function(q){if(q.kind=="snow"&&q.rest)snowColN[snowCol(q.x)]++});
+  deco.parts.forEach(function(q){
+    if(q.kind!="snow"||!q.rest)return;
+    var c=snowCol(q.x),under=0;deco.parts.forEach(function(o){if(o!==q&&o.rest&&o.kind=="snow"&&o.seq<q.seq&&snowCol(o.x)==c)under++});
+    var y=bowlY(q.x)-2-1.8*under;q.y+=(y-q.y)*(1-Math.exp(-dt*8));
+    var yl=c>0?snowTop(c-1):-1e9,yr=c<79?snowTop(c+1):-1e9;
+    if(Math.max(yl,yr)>y+1)q.x+=(yr>yl?1:-1)*40*dt;
+  });
+}
+// snow keeps falling, piles up at the bottom (slumping into a mound), and each flake in the pile melts away after a while
+function stepSnow(q,dt){
+  if(q.rest){q.life-=dt;return}
+  q.ph+=dt;q.y+=q.vy*dt;q.x+=Math.sin(q.ph*1.3)*8*dt;
+  if(q.y>120&&q.y>=snowTop(snowCol(q.x))){q.rest=true;q.seq=++deco.seq;q.life=rnd(15,40)}
+}
 function stepLeaf(q,dt){
   var lp=S.lp,jolt=Math.hypot(lp[0],lp[2]);
   if(q.rest){
@@ -798,7 +817,8 @@ function stepDeco(dt){
   // falling / floating things
   var want=snowy(k)?(k=="winter"?34:26):k=="spring"?14:k=="valentine"?10:0;
   if(k!="autumn")deco.spawn-=dt;
-  if(k!="autumn"&&deco.parts.length<want&&deco.spawn<=0){
+  var falling=deco.parts.filter(function(p){return !p.rest}).length;
+  if(k!="autumn"&&falling<want&&deco.parts.length<64&&deco.spawn<=0){
     deco.spawn=k=="valentine"?0.5:0.25;
     var p={x:rnd(10,230),y:-8,ph:rnd(0,6.28),rot:rnd(0,6.28),vr:rnd(-2,2),life:99};
     if(snowy(k)){p.kind="snow";p.r=rnd(1,2.4);p.vy=rnd(14,30)}
@@ -806,7 +826,12 @@ function stepDeco(dt){
     else if(k=="valentine"){p.kind="heart";p.y=250;p.vy=-rnd(10,18);p.col=Math.random()<0.5?"#E53935":"#F48FB1";p.r=rnd(3.5,6)}
     deco.parts.push(p);
   }
-  if(k!="autumn"){
+  if(snowy(k)){
+    deco.seq=deco.seq||0;
+    deco.parts.forEach(function(q){stepSnow(q,dt)});
+    snowPile(dt);
+    deco.parts=deco.parts.filter(function(p){return !(p.rest&&p.life<=0)&&p.x>-20&&p.x<260});
+  } else if(k!="autumn"){
     deco.parts.forEach(function(p){p.ph+=dt;p.y+=p.vy*dt;p.x+=Math.sin(p.ph*1.3)*(p.kind=="snow"?8:16)*dt;p.rot+=p.vr*dt});
     deco.parts=deco.parts.filter(function(p){return p.y<250&&p.y>-20&&p.x>-20&&p.x<260});
     if(!want)deco.parts=[];
@@ -841,7 +866,7 @@ function heart(x,y,r){ctx.beginPath();ctx.arc(x-r*0.5,y,r*0.55,Math.PI,0);ctx.ar
 function drawDecoBack(){
   deco.parts.forEach(function(p){
     ctx.save();ctx.translate(p.x,p.y);
-    if(p.kind=="snow"){ctx.fillStyle="#E7EEF4";ctx.globalAlpha=0.85;ctx.beginPath();ctx.arc(0,0,p.r,0,7);ctx.fill()}
+    if(p.kind=="snow"){ctx.fillStyle="#E7EEF4";ctx.globalAlpha=0.85*(p.rest?clamp(p.life/4,0,1):1);ctx.beginPath();ctx.arc(0,0,p.r,0,7);ctx.fill()}
     else if(p.kind=="petal"){ctx.rotate(p.rot);ctx.fillStyle=p.col;ctx.beginPath();ctx.ellipse(0,0,3.6,2,0,0,7);ctx.fill()}
     else if(p.kind=="leaf"){ctx.rotate(p.rot);ctx.fillStyle=p.col;ctx.strokeStyle=p.col;ctx.beginPath();ctx.ellipse(0,0,5.5,2.8,0,0,7);ctx.fill();ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(5,0);ctx.lineTo(8,0);ctx.stroke()}
     else if(p.kind=="heart"){ctx.fillStyle=p.col;ctx.globalAlpha=clamp((p.y-10)/60,0,0.9);heart(0,0,p.r)}

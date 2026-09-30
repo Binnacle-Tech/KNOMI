@@ -1655,8 +1655,8 @@ static int hat_today(void) {
 }
 
 enum { P_SNOW, P_PETAL, P_LEAF, P_HEART };
-typedef struct { float x, y, ph, rot, vr, vy, r; uint8_t kind; uint32_t col; float vx; uint16_t seq; bool rest; } deco_part_t;
-static deco_part_t dparts[36];
+typedef struct { float x, y, ph, rot, vr, vy, r; uint8_t kind; uint32_t col; float vx; uint16_t seq; bool rest; float life; } deco_part_t;
+static deco_part_t dparts[64];   // falling snow plus the snow piled up at the bottom
 static uint8_t dparts_n = 0;
 typedef struct { float x, y, vx, vy; } spark_t;
 typedef struct { float x, y, ty, life; uint32_t col; bool burst; spark_t sp[24]; } rocket_t;
@@ -1677,10 +1677,48 @@ static float bowl_y(float x) { float dx = x - 120; return 120 + sqrtf(max(0.0f, 
 // where leaf i rests: the curve of the screen, on top of the leaves that landed under it earlier
 static float leaf_rest_y(int i) {
     const deco_part_t & q = dparts[i];
+    bool snow = q.kind == P_SNOW;
+    float w = snow ? 4 : 8, h = snow ? 1.8f : 3.5f;   // how wide a neighbor counts, how much it raises this one
     int lay = 0;
     for (int j = 0; j < dparts_n; j++)
-        if (j != i && dparts[j].rest && dparts[j].seq < q.seq && fabsf(dparts[j].x - q.x) < 8) lay++;
-    return bowl_y(q.x) - 3 - 3.5f * lay;
+        if (j != i && dparts[j].rest && dparts[j].seq < q.seq && fabsf(dparts[j].x - q.x) < w) lay++;
+    return bowl_y(q.x) - (snow ? 2 : 3) - h * lay;
+}
+/* Snow keeps falling and piles up at the bottom; each flake in the pile melts away after a while.
+ * The pile is kept as columns 3 px wide: a flake sits on the curve of the screen plus the flakes under
+ * it in its column, and slides toward a neighboring column whose top is lower (so it slumps into a
+ * mound and runs down the steep sides instead of stacking into towers). */
+#define SNOW_COLS 80
+static uint8_t snow_col_n[SNOW_COLS];
+static int snow_col(float x) { return constrain((int)(x / 3), 0, SNOW_COLS - 1); }
+static float snow_top(int c) { return bowl_y(c * 3 + 1.5f) - 2 - 1.8f * snow_col_n[c]; }   // where a new flake lands
+static void snow_pile(float dt) {
+    memset(snow_col_n, 0, sizeof(snow_col_n));
+    for (int i = 0; i < dparts_n; i++) if (dparts[i].kind == P_SNOW && dparts[i].rest) snow_col_n[snow_col(dparts[i].x)]++;
+    for (int i = 0; i < dparts_n; i++) {
+        deco_part_t & q = dparts[i];
+        if (q.kind != P_SNOW || !q.rest) continue;
+        int c = snow_col(q.x), under = 0;
+        for (int j = 0; j < dparts_n; j++)
+            if (j != i && dparts[j].rest && dparts[j].kind == P_SNOW && dparts[j].seq < q.seq && snow_col(dparts[j].x) == c) under++;
+        float y = bowl_y(q.x) - 2 - 1.8f * under;
+        q.y += (y - q.y) * (1 - expf(-dt * 8));
+        // a neighbor column whose top is clearly lower: slide over
+        float yl = c > 0 ? snow_top(c - 1) : -1e9f, yr = c < SNOW_COLS - 1 ? snow_top(c + 1) : -1e9f;
+        if (max(yl, yr) > y + 1) q.x += (yr > yl ? 1 : -1) * 40 * dt;
+    }
+}
+static void step_snow(int & i, float dt) {
+    deco_part_t & q = dparts[i];
+    if (q.rest) {
+        q.life -= dt;
+        if (q.life <= 0) dparts[i--] = dparts[--dparts_n];   // melted
+        return;
+    }
+    q.ph += dt; q.y += q.vy * dt;
+    q.x += sinf(q.ph * 1.3f) * 8 * dt;
+    if (q.x < -20 || q.x > 260) { dparts[i--] = dparts[--dparts_n]; return; }
+    if (q.y > 120 && q.y >= snow_top(snow_col(q.x))) { q.rest = true; q.seq = ++leaf_seq; q.life = frand(15, 40); }
 }
 static void step_leaf(int i, float dt) {
     deco_part_t & q = dparts[i];
@@ -1754,8 +1792,10 @@ static void step_deco(float dt) {
     bool snow = deco_snowy(k);
     int want = snow ? (k == D_WINTER ? 30 : 24) : k == D_SPRING ? 14 : k == D_VALENTINE ? 10 : 0;
     if (!want && k != D_AUTUMN) dparts_n = 0;
+    int falling = dparts_n;
+    if (snow) { falling = 0; for (int i = 0; i < dparts_n; i++) if (!dparts[i].rest) falling++; }
     if (k != D_AUTUMN) deco_spawn -= dt;
-    if (k != D_AUTUMN && dparts_n < want && deco_spawn <= 0) {
+    if (k != D_AUTUMN && falling < want && deco_spawn <= 0 && dparts_n < (int)(sizeof(dparts) / sizeof(dparts[0]))) {
         deco_spawn = k == D_VALENTINE ? 0.5f : 0.25f;
         deco_part_t q = {frand(10, 230), -8, frand(0, 6.28f), frand(0, 6.28f), frand(-2, 2), 0, 0, 0, 0};
         if (snow) { q.kind = P_SNOW; q.r = frand(1, 2.4f); q.vy = frand(14, 30); q.col = 0xE7EEF4; }
@@ -1763,7 +1803,12 @@ static void step_deco(float dt) {
         else { q.kind = P_HEART; q.y = 250; q.vy = -frand(10, 18); q.r = frand(3.5f, 6); q.col = (esp_random() & 1) ? 0xE53935 : 0xF48FB1; }
         dparts[dparts_n++] = q;
     }
-    for (int i = 0; i < dparts_n && k != D_AUTUMN; i++) {
+    if (snow) {
+        for (int i = 0; i < dparts_n; i++) step_snow(i, dt);
+        static float pile_dt = 0;   // the pile doesn't need 200 updates a second
+        if ((pile_dt += dt) >= 0.025f) { snow_pile(pile_dt); pile_dt = 0; }
+    }
+    for (int i = 0; i < dparts_n && k != D_AUTUMN && !snow; i++) {
         deco_part_t & q = dparts[i];
         q.ph += dt; q.y += q.vy * dt; q.rot += q.vr * dt;
         q.x += sinf(q.ph * (q.kind == P_LEAF ? 2.2f : 1.3f)) * (q.kind == P_SNOW ? 8 : 16) * dt;
@@ -1855,7 +1900,7 @@ static void draw_deco_back(const pen_t & p) {
         const deco_part_t & q = dparts[i];
         lv_color_t c = lv_color_hex(q.col);
         switch (q.kind) {
-            case P_SNOW: dot(p, q.x, q.y, q.r, q.r, c, 215); break;
+            case P_SNOW: dot(p, q.x, q.y, q.r, q.r, c, (lv_opa_t)(215 * (q.rest ? clampf(q.life / 4, 0, 1) : 1))); break;   // melting
             case P_PETAL: blob(p, q.x, q.y, 3.6f, 2, q.rot, c, LV_OPA_COVER); break;
             case P_LEAF:
                 blob(p, q.x, q.y, 5.5f, 2.8f, q.rot, c, LV_OPA_COVER);
