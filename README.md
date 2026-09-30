@@ -109,6 +109,7 @@ Before releasing, run the checks (GitHub Actions runs them too and won't publish
 ```
 python tools/check.py --build                       # stack per task, web routes, tables, page scripts, size
 python tools/check.py --device <knomi-ip> --soak 180   # after flashing: watches it for 3 minutes
+python tools/check.py --device <knomi-ip> --flash      # flash the build over WiFi, then watch it
 ```
 
 Output: `.pio/build/knomiv2/firmware.bin`. Flash it from `/update`, or with `pio run -e knomiv2 -t upload` over USB. Use `-e knomiv1` for the KNOMI 1.

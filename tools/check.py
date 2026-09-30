@@ -17,6 +17,8 @@ Usage (from the repo root):
   python tools/check.py --device 192.168.1.87 --soak 180
                                              after flashing: watch the KNOMI for 3 minutes
   python tools/check.py --plugin ../OctoPrint-KNOMI   also check the sidebar matches the firmware
+  python tools/check.py --device 192.168.1.87 --flash release-op32/knomiv2-octoprint-firmware.bin
+                                             flash over WiFi, then watch it (refuses if any check failed)
 
 Exit code 0 = all good, 1 = something failed. Warnings don't fail the run.
 """
@@ -378,6 +380,49 @@ def get_json(url, timeout=5):
         return json.loads(r.read().decode("utf-8", "replace"))
 
 
+def flash_device(ip, binfile):
+    """Upload firmware over WiFi (the KNOMI's /update page), then wait for it to come back."""
+    import hashlib
+    import uuid
+    base = f"http://{ip}"
+    data = open(binfile, "rb").read()
+    try:
+        before = get_json(base + "/log/info").get("fw", "?")
+    except Exception as e:
+        fail("flash", f"can't reach the KNOMI at {ip}: {e}")
+        return False
+    print(f"flashing {os.path.basename(binfile)} ({len(data) // 1024} KB) to {ip}, running {before} now...", flush=True)
+    boundary = uuid.uuid4().hex
+    md5 = hashlib.md5(data).hexdigest()
+    body = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"MD5\"\r\n\r\n{md5}\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"firmware\"; filename=\"firmware\"\r\n"
+            f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(base + "/update", data=body, method="POST",
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            reply = r.read().decode("utf-8", "replace")
+    except Exception as e:
+        fail("flash", f"upload failed: {e}")
+        return False
+    if "OK" not in reply.upper() and reply.strip():
+        fail("flash", f"the KNOMI didn't accept it: {reply.strip()[:120]}")
+        return False
+    print("uploaded, waiting for it to restart...", flush=True)
+    time.sleep(8)
+    for _ in range(60):
+        try:
+            info = get_json(base + "/log/info", timeout=3)
+            if info.get("uptime", 999) < 120:
+                ok("flash", f"{before} -> {info.get('fw')} (running from {info.get('slot', '?')})")
+                return True
+        except Exception:
+            pass
+        time.sleep(2)
+    fail("flash", "the KNOMI didn't come back within 2 minutes (if it keeps crashing, self-rescue switches back after 3 tries)")
+    return False
+
+
 def check_device(ip, soak):
     base = f"http://{ip}"
     try:
@@ -434,6 +479,8 @@ def main():
     ap.add_argument("--plugin", help="path to the OctoPrint-KNOMI repo, to check the sidebar tables too")
     ap.add_argument("--device", help="IP of a KNOMI running the new firmware")
     ap.add_argument("--soak", type=int, default=120, help="seconds to watch the device (default 120)")
+    ap.add_argument("--flash", nargs="?", const="auto", metavar="BIN",
+                    help="with --device: upload firmware over WiFi first (default: the knomiv2 build in .pio), then watch it")
     a = ap.parse_args()
     envs = a.env or ["knomiv2", "knomiv1"]
 
@@ -445,7 +492,15 @@ def main():
             build(envs, a.pio)
         for env in envs:
             check_build(env)
-    if a.device:
+    if a.device and a.flash:
+        binfile = a.flash if a.flash != "auto" else os.path.join(ROOT, ".pio", "build", "knomiv2", "firmware.bin")
+        if not os.path.exists(binfile):
+            fail("flash", f"no firmware at {binfile}")
+        elif not any(r[0] == "FAIL" for r in results) and flash_device(a.device, binfile):
+            pass
+        elif any(r[0] == "FAIL" for r in results[:-1]):
+            fail("flash", "not flashing: fix the failed checks first")
+    if a.device and not any(r[1] == "flash" and r[0] == "FAIL" for r in results):
         check_device(a.device, a.soak)
 
     width = max(len(c) for _, c, _ in results)
