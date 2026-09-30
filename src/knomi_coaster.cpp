@@ -154,6 +154,15 @@ void coaster_push_sample(float x, float y, float z) {
 /* ---------------- state ---------------- */
 
 static float frand(float a, float b) { return a + (b - a) * (esp_random() / 4294967295.0f); }
+
+/* Drawing a frame has to come out the same every time it runs within that frame: coaster_loop first runs it
+ * without drawing to find out what changed (face_measure), then LVGL runs it for real, only over that area.
+ * So the drawing code uses draw_ms instead of millis() and drand() (reseeded each frame) instead of frand(). */
+static uint32_t frame_no = 0, draw_ms = 0, draw_seed = 1, draw_rng = 1;
+static float drand(float a, float b) {
+    draw_rng = draw_rng * 1664525u + 1013904223u;
+    return a + (b - a) * ((draw_rng >> 8) / 16777215.0f);
+}
 static float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 
 enum {
@@ -1442,6 +1451,55 @@ typedef struct {
     lv_color_t fc;
 } pen_t;
 
+/* While measuring, the draw calls below only note what would be drawn (a hash) and where (a box) */
+static struct { bool on, any; lv_area_t box; uint32_t h; } M;
+static void m_hash(const void * d, size_t n) {
+    const uint8_t * b = (const uint8_t *)d;
+    for (size_t i = 0; i < n; i++) { M.h ^= b[i]; M.h *= 16777619u; }
+}
+static void m_box(int x1, int y1, int x2, int y2) {
+    if (!M.any) { M.box.x1 = x1; M.box.y1 = y1; M.box.x2 = x2; M.box.y2 = y2; M.any = true; return; }
+    if (x1 < M.box.x1) M.box.x1 = x1;
+    if (y1 < M.box.y1) M.box.y1 = y1;
+    if (x2 > M.box.x2) M.box.x2 = x2;
+    if (y2 > M.box.y2) M.box.y2 = y2;
+}
+static void k_draw_rect(lv_draw_ctx_t * ctx, const lv_draw_rect_dsc_t * d, const lv_area_t * a) {
+    if (!M.on) { lv_draw_rect(ctx, d, a); return; }
+    m_hash(d, sizeof(*d)); m_hash(a, sizeof(*a));
+    int e = 1 + LV_MAX(d->outline_width + d->outline_pad,
+                       d->shadow_width + d->shadow_spread + LV_MAX(abs(d->shadow_ofs_x), abs(d->shadow_ofs_y)));
+    m_box(a->x1 - e, a->y1 - e, a->x2 + e, a->y2 + e);
+}
+static void k_draw_arc(lv_draw_ctx_t * ctx, const lv_draw_arc_dsc_t * d, const lv_point_t * c, uint16_t r, uint16_t a0, uint16_t a1) {
+    if (!M.on) { lv_draw_arc(ctx, d, c, r, a0, a1); return; }
+    m_hash(d, sizeof(*d)); m_hash(c, sizeof(*c)); m_hash(&r, sizeof(r)); m_hash(&a0, sizeof(a0)); m_hash(&a1, sizeof(a1));
+    m_box(c->x - r - 1, c->y - r - 1, c->x + r + 1, c->y + r + 1);
+}
+static void k_draw_line(lv_draw_ctx_t * ctx, const lv_draw_line_dsc_t * d, const lv_point_t * p1, const lv_point_t * p2) {
+    if (!M.on) { lv_draw_line(ctx, d, p1, p2); return; }
+    m_hash(d, sizeof(*d)); m_hash(p1, sizeof(*p1)); m_hash(p2, sizeof(*p2));
+    int e = d->width / 2 + 2;
+    m_box(LV_MIN(p1->x, p2->x) - e, LV_MIN(p1->y, p2->y) - e, LV_MAX(p1->x, p2->x) + e, LV_MAX(p1->y, p2->y) + e);
+}
+static void k_draw_polygon(lv_draw_ctx_t * ctx, const lv_draw_rect_dsc_t * d, const lv_point_t pts[], uint16_t n) {
+    if (!M.on) { lv_draw_polygon(ctx, d, pts, n); return; }
+    m_hash(d, sizeof(*d)); m_hash(pts, n * sizeof(lv_point_t));
+    for (uint16_t i = 0; i < n; i++) m_box(pts[i].x - 1, pts[i].y - 1, pts[i].x + 1, pts[i].y + 1);
+}
+static void k_draw_label(lv_draw_ctx_t * ctx, const lv_draw_label_dsc_t * d, const lv_area_t * a, const char * txt, lv_draw_label_hint_t * hint) {
+    if (!M.on) { lv_draw_label(ctx, d, a, txt, hint); return; }
+    m_hash(d, sizeof(*d)); m_hash(a, sizeof(*a)); m_hash(txt, strlen(txt));
+    lv_point_t sz;   // text taller than its box still gets drawn below it
+    lv_txt_get_size(&sz, txt, d->font, d->letter_space, d->line_space, lv_area_get_width(a), d->flag);
+    m_box(a->x1 - 2, a->y1 - 2, LV_MAX(a->x2, a->x1 + sz.x) + 2, LV_MAX(a->y2, a->y1 + sz.y) + 2);
+}
+#define lv_draw_rect k_draw_rect
+#define lv_draw_arc k_draw_arc
+#define lv_draw_line k_draw_line
+#define lv_draw_polygon k_draw_polygon
+#define lv_draw_label k_draw_label
+
 static lv_coord_t X(const pen_t & p, float x) { return p.ox + (lv_coord_t)lroundf(x * p.s); }
 static lv_coord_t Y(const pen_t & p, float y) { return p.oy + (lv_coord_t)lroundf(y * p.s); }
 
@@ -1903,28 +1961,37 @@ static void draw_hat(const pen_t & p, float cx, float cy, float sx, float sy) {
     }
 }
 
-static void draw_face_(lv_event_t * e);
+static void draw_face_at(lv_obj_t * obj, lv_draw_ctx_t * ctx);
 static void draw_face(lv_event_t * e) {   // timed for /perf
     int64_t t0 = esp_timer_get_time();
-    draw_face_(e);
+    draw_face_at(lv_event_get_target(e), lv_event_get_draw_ctx(e));
     knomi_perf_face((uint32_t)(esp_timer_get_time() - t0));
 }
-static void draw_face_(lv_event_t * e) {
-    lv_obj_t * obj = lv_event_get_target(e);
+// What this frame of the face would draw: a hash of it and the box around it (screen coordinates)
+static bool face_measure(lv_obj_t * obj, lv_area_t * box, uint32_t * h) {
+    M.on = true; M.any = false; M.h = 2166136261u;
+    draw_face_at(obj, NULL);
+    M.on = false;
+    *box = M.box; *h = M.h;
+    return M.any;
+}
+static void draw_face_at(lv_obj_t * obj, lv_draw_ctx_t * ctx) {
     pen_t p;
-    p.ctx = lv_event_get_draw_ctx(e);
+    p.ctx = ctx;
+    draw_rng = draw_seed;
     p.ox = obj->coords.x1; p.oy = obj->coords.y1;
     p.s = lv_obj_get_width(obj) / 240.0f;
     p.fc = lv_theme_color();
 
     // speech bubble: the face drops a little to make room, and talks for the first two seconds
     // speech bubble: a printer message (M117...) wins over Coaster's own words
-    bool msg_on = (int32_t)(bubble_until - millis()) > 0 && moonraker.data.msg[0];
-    bool say_on = !msg_on && (int32_t)(say_until - millis()) > 0 && say_buf[0];
+    bool msg_on = (int32_t)(bubble_until - draw_ms) > 0 && moonraker.data.msg[0];
+    bool say_on = !msg_on && (int32_t)(say_until - draw_ms) > 0 && say_buf[0];
     bool bubble = p.s > 0.8f && (msg_on || say_on);
     const char * btext = msg_on ? moonraker.data.msg : say_buf;
     uint32_t bsince = msg_on ? bubble_since : say_since;
-    bubble_k += ((bubble ? 1.0f : 0.0f) - bubble_k) * 0.25f;
+    static uint32_t bubble_frame = 0;   // once per frame, however often the frame is drawn
+    if (bubble_frame != frame_no) { bubble_frame = frame_no; bubble_k += ((bubble ? 1.0f : 0.0f) - bubble_k) * 0.25f; }
     bool big = p.s > 0.8f;                 // decorations only on the full-size face
     if (big) draw_deco_back(p);
     float jit = min(3.0f, vib * 6) * E.zig;
@@ -1933,7 +2000,7 @@ static void draw_face_(lv_event_t * e) {
     if (mood == M_NERVOUS) jit = max(jit, 0.8f);
     if (mood == M_WINDY) jit = max(jit, 0.6f);
     float bs = BOUNCE * T.sense * SENSE_K;
-    float cx = 120 + clampf(hx - bs * bx[0], -30, 30) + frand(-jit, jit), cy = 118 + clampf(hy + bs * bx[2], -28, 28) + frand(-jit, jit);
+    float cx = 120 + clampf(hx - bs * bx[0], -30, 30) + drand(-jit, jit), cy = 118 + clampf(hy + bs * bx[2], -28, 28) + drand(-jit, jit);
     float hsq = hs + QF.sq;
     float sx = 1 - hsq * 0.5f, sy = 1 + hsq;
     cx += QF.dx; cy += QF.dy;
@@ -1965,7 +2032,7 @@ static void draw_face_(lv_event_t * e) {
     draw_eye(p, cx - 58 * sx, cy - 15 * sy + tiltL, -1, sx, clampf(open * QF.open_l, 0, 1.1f), QF.look_y);
     draw_eye(p, cx + 58 * sx, cy - 15 * sy + tiltR, 1, sx, clampf(open * QF.open_r, 0, 1.1f), QF.look_y);
     float talk = 0;
-    if (bubble && millis() - bsince < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
+    if (bubble && draw_ms - bsince < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
     E.gape = max(E.gape, talk);
     draw_mouth(p, cx, cy + 24 * sy);
     E = keep;
@@ -2095,8 +2162,8 @@ static void draw_face_(lv_event_t * e) {
     }
     if (big && weather_t > 0) draw_weather(p, cx, cy);
     // muttering to itself: small text under the face, fading in and out
-    if (big && (int32_t)(mutter_until - millis()) > 0 && !msg_on && !say_on && act == ACT_NONE && mood != M_HEATING) {
-        float left = (mutter_until - millis()) / 3000.0f;
+    if (big && (int32_t)(mutter_until - draw_ms) > 0 && !msg_on && !say_on && act == ACT_NONE && mood != M_HEATING) {
+        float left = (mutter_until - draw_ms) / 3000.0f;
         lv_draw_label_dsc_t ld; lv_draw_label_dsc_init(&ld);
         ld.color = p.fc; ld.font = &ui_font_InterSemiBold16; ld.align = LV_TEXT_ALIGN_CENTER;
         ld.opa = (lv_opa_t)(200 * clampf(min(left * 4, (1 - left) * 6), 0, 1));
@@ -2142,6 +2209,11 @@ lv_obj_t * coaster_create(lv_obj_t * parent, int size) {
     for (int i = 0; i < MAX_FACES; i++) if (!faces[i]) { faces[i] = o; break; }
     return o;
 }
+
+static lv_obj_t * face_seen[MAX_FACES];     // what face_hash/face_box below belong to
+static uint32_t face_hash[MAX_FACES];
+static lv_area_t face_box[MAX_FACES];
+static bool face_any[MAX_FACES];
 
 void coaster_forget(lv_obj_t * obj) {
     for (int i = 0; i < MAX_FACES; i++) if (faces[i] == obj) faces[i] = NULL;
@@ -2195,10 +2267,26 @@ void coaster_loop(void) {
 
     if (ms - frame_ms >= FRAME_MS && !knomi_power_screen_off()) {   // dark screen: skip drawing (/perf)
         frame_ms = ms;
+        frame_no++; draw_ms = millis(); draw_seed = esp_random() | 1;
         lv_obj_t * scr = lv_scr_act();
         for (int i = 0; i < MAX_FACES; i++) {
             lv_obj_t * f = faces[i];
-            if (f && lv_obj_get_screen(f) == scr && lv_obj_is_visible(f)) lv_obj_invalidate(f);
+            if (!f || lv_obj_get_screen(f) != scr || !lv_obj_is_visible(f)) continue;
+            // redraw only where something changes: the box around this frame plus the one around the
+            // last (to erase it); skip the frame when nothing would change at all
+            lv_area_t box; uint32_t h;
+            bool any = face_measure(f, &box, &h);
+            if (face_seen[i] == f && h == face_hash[i]) continue;
+            lv_area_t u;
+            if (any && face_seen[i] == f && face_any[i]) _lv_area_join(&u, &box, &face_box[i]);
+            else if (any) u = box;
+            else if (face_seen[i] == f && face_any[i]) u = face_box[i];
+            else { lv_obj_invalidate(f); u = f->coords; }
+            if (face_seen[i] == f || any) {
+                u.x1 -= 2; u.y1 -= 2; u.x2 += 2; u.y2 += 2;   // antialiased edges
+                lv_obj_invalidate_area(f, &u);
+            }
+            face_seen[i] = f; face_hash[i] = h; face_box[i] = box; face_any[i] = any;
         }
     }
 }

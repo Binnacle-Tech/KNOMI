@@ -178,6 +178,9 @@ void lvgl_hal_init(void) {
         }
     }
     lv_init();
+    // animations (scrolling text, sliders, screen changes) step at most 30 times a second: they ran at the
+    // 10 ms refresh rate, so one scrolling file name kept the print screen redrawing 41 times a second (/perf)
+    lv_timer_set_period(lv_anim_get_timer(), 33);
     lv_disp_draw_buf_init(&draw_buf, color_buf, flush_q ? color_buf2 : NULL, TFT_WIDTH * TFT_HEIGHT);
 
     /*Initialize the display*/
