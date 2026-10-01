@@ -7,6 +7,17 @@
 #include "config.h"
 #include "knomi_update.h"
 #include "github_roots.h"
+#include <esp_heap_caps.h>
+#include "mbedtls/platform.h"
+
+// TLS to GitHub needs ~40 KB, and mbedTLS is set to take it from internal RAM only. With Bluetooth on
+// there isn't that much left (OP42: free RAM fell to under 1 KB and GitHub "answered -1"), so updates put
+// mbedTLS's memory in PSRAM (8 MB, nearly all free). Only the updater uses TLS.
+static void * tls_calloc(size_t n, size_t size) {
+    void * p = heap_caps_calloc(n, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return p ? p : heap_caps_calloc(n, size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+static void tls_free(void * p) { heap_caps_free(p); }
 
 #ifdef KNOMIV1
 #define BOARD_ASSET "knomiv1-octoprint-firmware.bin"
@@ -46,6 +57,7 @@ static bool newer(const int a[4], const int b[4]) {
 }
 
 static void update_task(void * arg) {
+    mbedtls_platform_set_calloc_free(tls_calloc, tls_free);
     WiFiClientSecure * tls = new WiFiClientSecure();
     tls->setCACert(github_roots);
     HTTPClient http;
@@ -61,7 +73,11 @@ static void update_task(void * arg) {
     http.addHeader("Accept", "application/vnd.github+json");
     {
         int code = http.GET();
-        if (code != 200) { snprintf(msg, sizeof(msg), "GitHub answered %d", code); fail(msg); http.end(); goto out; }
+        if (code != 200) {
+            if (code < 0) snprintf(msg, sizeof(msg), "Couldn't reach GitHub (%s)", http.errorToString(code).c_str());
+            else snprintf(msg, sizeof(msg), "GitHub answered %d", code);
+            fail(msg); http.end(); goto out;
+        }
         StaticJsonDocument<256> filter;
         filter["tag_name"] = true;
         filter["assets"][0]["name"] = true;
