@@ -426,6 +426,7 @@ void MOONRAKER::octoprint_get_knomi_status(void) {
             data.runout = json_parse["runout"] | false;
             data.fan = json_parse["fan"] | 0;
             data.speed = json_parse["speed"] | 0;
+            if (json_parse.containsKey("tz")) coaster_host_tz(json_parse["tz"] | 0);
             if (json_parse.containsKey("msg_id")) moonraker_set_msg(json_parse["msg"] | "", json_parse["msg_id"] | 0L);
             JsonVariant tp = json_parse["time_progress"];
             data.progress_mode = tp.isNull() ? 0 : (tp.as<bool>() ? 2 : 1);

@@ -54,8 +54,13 @@ static const coaster_tune_t TUNE_DEF = {2.0f, 0.2f, 1.0f, 20.0f, 0.6f, 5.0f, 20.
 static coaster_tune_t T = TUNE_DEF;
 static volatile bool reload_pending = false;
 
+static volatile int16_t host_tz = 0;   // the Pi's UTC offset, from the plugin
+static bool tz_saved = false;          // a page saved one (the browser's): that wins
+
 static void load_tuning(void) {
     T = TUNE_DEF;
+    T.tz_min = host_tz;
+    tz_saved = false;
     File f = LittleFS.open(COASTER_PATH, "r");
     if (!f) return;
     DynamicJsonDocument d(1024);
@@ -80,14 +85,31 @@ static void load_tuning(void) {
         T.south  = strcmp(d["hemi"] | "n", "s") == 0;
         int bm = 0, bd = 0;
         if (sscanf(d["bday"] | "", "%d-%d", &bm, &bd) == 2 && bm >= 1 && bm <= 12 && bd >= 1 && bd <= 31) { T.bday_m = bm; T.bday_d = bd; }
-        T.tz_min = constrain((int)(d["tz"] | 0), -840, 840);
+        if (d.containsKey("tz")) { T.tz_min = constrain((int)(d["tz"] | 0), -840, 840); tz_saved = true; }
         T.talk   = constrain((int)(d["talk"] | 1), 0, 2);
         T.clock  = constrain((int)(d["clock"] | 1), 0, 2);
     }
     f.close();
 }
 
-bool coaster_idle_enabled(void) { return true; }   // every face is Coaster now
+bool coaster_idle_enabled(void) { return true; }
+
+// The clock: NTP over WiFi, or the plugin's time over Bluetooth. Until a page saves a time zone, the Pi's is used.
+void coaster_host_tz(int minutes) {
+    minutes = constrain(minutes, -840, 840);
+    host_tz = minutes;
+    if (!tz_saved) T.tz_min = minutes;
+}
+
+bool coaster_clock_text(time_t utc, char * out, size_t n) {
+    if (utc < 1700000000) return false;
+    utc += T.tz_min * 60;
+    struct tm t;
+    gmtime_r(&utc, &t);
+    if (T.clock == 2) snprintf(out, n, "%02d:%02d", t.tm_hour, t.tm_min);
+    else snprintf(out, n, "%d:%02d %s", (t.tm_hour + 11) % 12 + 1, t.tm_min, t.tm_hour < 12 ? "am" : "pm");
+    return true;
+}   // every face is Coaster now
 
 // Web task: save tuning from the /coaster page (unknown keys dropped, values clamped on load)
 const char * coaster_save_json(const char * json, size_t len) {

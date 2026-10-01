@@ -4,6 +4,8 @@
 #include "knomi.h"
 #include "moonraker.h"
 #include "knomi_ble.h"
+#include "knomi_coaster.h"
+#include <sys/time.h>
 #include <WiFi.h>
 #include <freertos/stream_buffer.h>
 #include "nimble/porting/nimble/include/os/os_mbuf.h"
@@ -78,6 +80,15 @@ bool knomi_ble_apply_status(const char *json, size_t len) {
     d.speed = doc["sp"] | 0;
     if (doc.containsKey("mi")) moonraker_set_msg(doc["m"] | "", doc["mi"] | 0L);
     if (doc["w"] | 0) wifi_request = true;
+    // the plugin's clock: with WiFi off there's no NTP (Coaster's clock, decorations, finish time)
+    if (doc.containsKey("ts")) {
+        time_t ts = (time_t)(doc["ts"] | 0L), now = time(NULL);
+        if (ts > 1700000000 && (now < ts - 2 || now > ts + 2)) {
+            struct timeval tv = {ts, 0};
+            settimeofday(&tv, NULL);
+        }
+    }
+    if (doc.containsKey("tz")) coaster_host_tz(doc["tz"] | 0);
     coaster_plugin_watched = doc["cw"] | 0;   // someone has the OctoPrint sidebar open
     moonraker.data_unlock = true;
     return true;

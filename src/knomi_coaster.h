@@ -29,6 +29,9 @@ extern bool coaster_plugin_watched;
 String coaster_album_json(void);   // the Coaster page's album  // mood, hat, last report for the OctoPrint sidebar
 const char * coaster_save_json(const char * json, size_t len);  // web task; NULL or an error
 void coaster_set_idle(bool on);    // web task
+#include <time.h>
+void coaster_host_tz(int minutes);                         // the Pi's UTC offset (used until a page saves one)
+bool coaster_clock_text(time_t utc, char * out, size_t n); // "9:40 pm" / "21:40" as Coaster's clock shows it; false if the clock isn't set
 #endif
 
 #define COASTER_PATH "/coaster.json"

@@ -134,7 +134,7 @@ static moonraker_data_t shown_data(void) {
 
 static const char * token_names[] = {
     "pct", "left", "elapsed", "total", "time", "file", "noz", "noz_t", "bed", "bed_t",
-    "z", "layer", "layers", "pos", "state", "deg", "msg",
+    "z", "layer", "layers", "pos", "state", "deg", "msg", "eta",
 };
 
 // value of one token, false if the name is unknown
@@ -150,7 +150,12 @@ static bool token_value(const moonraker_data_t &d, const char * name, size_t len
         if (d.time_left >= 0) fmt_duration(out, n, d.print_time + (uint32_t)d.time_left);
         else snprintf(out, n, "--");
     } else if (IS("time")) {
-        if (d.time_left >= 0) { fmt_duration(t, sizeof(t), (uint32_t)d.time_left); snprintf(out, n, "%s left", t); }
+        if (d.time_left >= 0) {   // "58m left, done 9:40 pm" once the clock is set (the fonts have no middle dot)
+            char at[12];
+            fmt_duration(t, sizeof(t), (uint32_t)d.time_left);
+            if (coaster_clock_text(time(NULL) + d.time_left, at, sizeof(at))) snprintf(out, n, "%s left, done %s", t, at);
+            else snprintf(out, n, "%s left", t);
+        }
         else if (d.print_time > 0) { fmt_duration(t, sizeof(t), d.print_time); snprintf(out, n, "%s elapsed", t); }
         else snprintf(out, n, "starting");
     } else if (IS("file")) strlcpy(out, d.file_path, n);
@@ -173,6 +178,9 @@ static bool token_value(const moonraker_data_t &d, const char * name, size_t len
         snprintf(out, n, "%s", !d.printing ? "Idle" : (d.pause || d.paused_ext) ? "Paused" : "Printing");
     } else if (IS("deg")) strlcpy(out, "\xe2\x84\x83", n);
     else if (IS("msg")) strlcpy(out, d.msg, n);
+    else if (IS("eta")) {   // clock time the print should finish
+        if (d.time_left < 0 || !coaster_clock_text(time(NULL) + d.time_left, out, n)) snprintf(out, n, "--");
+    }
     else return false;
     #undef IS
     return true;

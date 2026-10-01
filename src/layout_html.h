@@ -172,11 +172,11 @@ const char layout_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
 </main>
 <script>
 (function(){
-var TOKENS=[["pct","percent done"],["time","“1h 20m left”"],["left","time left"],["elapsed","elapsed"],["total","total time"],
+var TOKENS=[["pct","percent done"],["time","“58m left, done 9:40 pm”"],["left","time left"],["elapsed","elapsed"],["total","total time"],
   ["file","file name"],["noz","nozzle °"],["noz_t","nozzle target"],["bed","bed °"],["bed_t","bed target"],["deg","℃"],
-  ["z","Z height"],["layer","layer"],["layers","layer count"],["pos","Layer x/y or Z"],["state","Printing / Paused"],["msg","last M117 message"]];
-var SAMPLE={pct:"42",time:"58m left",left:"58m",elapsed:"42m",total:"1h 40m",file:"benchy_0.2mm_PLA.gcode",noz:"215",noz_t:"215",
-  bed:"60",bed_t:"60",deg:"℃",z:"8.40",layer:"42",layers:"240",pos:"Layer 42/240",state:"Printing",msg:"Heat soaking 5 min"};
+  ["z","Z height"],["layer","layer"],["layers","layer count"],["pos","Layer x/y or Z"],["state","Printing / Paused"],["msg","last M117 message"],["eta","finish time (9:40 pm)"]];
+var SAMPLE={pct:"42",time:"58m left, done 9:40 pm",left:"58m",elapsed:"42m",total:"1h 40m",file:"benchy_0.2mm_PLA.gcode",noz:"215",noz_t:"215",
+  bed:"60",bed_t:"60",deg:"℃",z:"8.40",layer:"42",layers:"240",pos:"Layer 42/240",state:"Printing",msg:"Heat soaking 5 min",eta:"9:40 pm"};
 var FONTS=[14,16,18,20,24,32,48];
 var NAMED={t:"UI color",x:"Text",m:"Muted",a:"Amber"};
 var NAMEDHEX={x:"#E7EEF4",m:"#93A4B2",a:"#FFD164"};
@@ -201,7 +201,7 @@ function starters(k){
   if(k=="blank")return{v:1,pages:[{s:10,el:[]}]};
   if(k=="face"){info.s=8;return{v:1,pages:[{s:30,el:[{t:"face",x:120,y:120,d:240},
     {t:"arc",x:120,y:120,d:236,w:4,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
-    {t:"text",x:120,y:212,f:14,c:"m",w:0,a:"c",txt:"{pct}%  ·  {left}"}]},info]}}
+    {t:"text",x:120,y:212,f:14,c:"m",w:0,a:"c",txt:"{pct}%  -  {left}"}]},info]}}
   if(k=="facepct"){var f=starters("face");f.pages[0].s=60;f.pages[1].m="e";f.pages[1].s=10;f.pages[1].tr={pe:10,lm:10,fl:1};return f}
   if(k=="big")return{v:1,pages:[{s:10,el:[{t:"arc",x:120,y:120,d:232,w:14,s:0,e:360,c:"t",b:"#1B2731",p:1,rd:1},
     {t:"text",x:120,y:76,f:14,c:"m",w:140,a:"c",sc:1,txt:"{file}"},
@@ -442,8 +442,8 @@ $("trig").addEventListener("input",readTrig);$("trig").addEventListener("change"
 var sim=null;
 function simTokens(s){var left=Math.max(0,Math.round(s.leftMin*60));
   var fmt=function(x){return x<60?"<1m":x<3600?Math.floor(x/60)+"m":Math.floor(x/3600)+"h "+String(Math.floor(x%3600/60)).padStart(2,"0")+"m"};
-  return{pct:String(Math.floor(s.pct)),left:fmt(left),time:fmt(left)+" left",elapsed:fmt(s.el),total:fmt(s.el+left),file:SAMPLE.file,
-    noz:"215",noz_t:"215",bed:"60",bed_t:"60",deg:"℃",z:(s.layer*0.2).toFixed(2),layer:String(s.layer),layers:"200",pos:"Layer "+s.layer+"/200",state:"Printing",msg:SAMPLE.msg}}
+  return{pct:String(Math.floor(s.pct)),left:fmt(left),time:fmt(left)+" left, done "+new Date(Date.now()+left*1000).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}).toLowerCase(),elapsed:fmt(s.el),total:fmt(s.el+left),file:SAMPLE.file,
+    noz:"215",noz_t:"215",bed:"60",bed_t:"60",deg:"℃",z:(s.layer*0.2).toFixed(2),layer:String(s.layer),layers:"200",pos:"Layer "+s.layer+"/200",state:"Printing",msg:SAMPLE.msg,eta:new Date(Date.now()+left*1000).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}).toLowerCase()}}
 function simCond(p,s){var t=p.tr||{};return(t.lm&&s.leftMin<t.lm)||(t.fl&&s.layer<=1)}
 function simStep(){
   var s=sim,now=performance.now(),dt=(now-s.last)/1000;s.last=now;
