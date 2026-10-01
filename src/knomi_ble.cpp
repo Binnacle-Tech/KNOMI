@@ -131,11 +131,21 @@ class StatusCB : public NimBLECharacteristicCallbacks {
     }
 };
 
+static void tunnel_frame(const uint8_t *v, size_t len, bool via_cmd);   // HTTP tunnel, below
+
 class FilesCB : public NimBLECharacteristicCallbacks {
     void onWrite(NimBLECharacteristic *c) override {
         std::string v = c->getValue();
         if (v.empty()) return;
         uint8_t flags = (uint8_t)v[0];
+        // the page tunnel can also ride on this characteristic (flag 0x80, answers come back on CMD): BlueZ
+        // remembers a paired KNOMI's characteristics, so a Pi paired before OP41 may not see the tunnel's own
+        if (flags & 0x80) {
+            std::string t = v;
+            t[0] = (char)(flags & 0x7F);
+            tunnel_frame((const uint8_t *)t.data(), t.size(), true);
+            return;
+        }
         static bool files_full = false;   // once a frame didn't fit, keep only the complete names so far
         if (flags & 1) { files_accum = ""; files_full = false; }
         if (!files_full && files_accum.length() + v.size() < 2048) files_accum += String(v.c_str() + 1);
@@ -165,14 +175,23 @@ static StreamBufferHandle_t tun_body = nullptr;
 static QueueHandle_t tun_q = nullptr;
 typedef struct { uint8_t id; char method[8]; char path[240]; char ctype[96]; uint32_t len; } tun_req_t;
 static volatile bool tun_abort = false, tun_busy = false;
+static volatile bool tun_via_cmd = false;   // the current request came over FILES: answer on CMD
 
 static void tun_notify(uint8_t flags, uint8_t id, uint8_t seq, const uint8_t *data, size_t n) {
-    uint8_t f[515];
-    f[0] = flags; f[1] = id; f[2] = seq;
-    if (n) memcpy(f + 3, data, n);
+    uint8_t f[516];
+    size_t o = tun_via_cmd ? 1 : 0;   // on CMD, a leading 0x01 tells it apart from the command paths
+    f[0] = 1;
+    f[o] = flags; f[o + 1] = id; f[o + 2] = seq;
+    if (n) memcpy(f + o + 3, data, n);
     // don't outrun the Bluetooth stack's buffers (a notify that finds none is silently dropped)
     for (int i = 0; i < 400 && os_msys_num_free() < 6; i++) delay(2);
-    ch_tun->notify(f, n + 3);
+    if (tun_via_cmd) {
+        xSemaphoreTake(cmd_lock, portMAX_DELAY);
+        ch_cmd->notify(f, n + 4);
+        xSemaphoreGive(cmd_lock);
+    } else {
+        ch_tun->notify(f, n + 3);
+    }
 }
 
 static void tunnel_task(void *) {
@@ -206,8 +225,8 @@ static void tunnel_task(void *) {
         }
         // stream the response back, sized to the connection's MTU
         uint16_t mtu = server ? server->getPeerMTU(authed_conn) : 23;
-        size_t chunk = (mtu > 30 ? mtu - 3 : 20) - 3;
-        if (chunk > 509) chunk = 509;
+        size_t chunk = (mtu > 30 ? mtu - 3 : 20) - 4;
+        if (chunk > 508) chunk = 508;
         uint8_t seq = 0;
         bool first = true;
         uint32_t idle = millis();
@@ -231,13 +250,12 @@ static void tunnel_task(void *) {
     }
 }
 
-class TunnelCB : public NimBLECharacteristicCallbacks {
-    void onWrite(NimBLECharacteristic *c) override {
-        std::string v = c->getValue();
-        if (v.size() < 3) return;
-        uint8_t flags = (uint8_t)v[0];
-        const uint8_t *d = (const uint8_t *)v.data() + 3;
-        size_t n = v.size() - 3;
+static void tunnel_frame(const uint8_t *v, size_t len, bool via_cmd) {
+    {
+        if (len < 3) return;
+        uint8_t flags = v[0];
+        const uint8_t *d = v + 3;
+        size_t n = len - 3;
         if (flags & 4) { tun_abort = true; return; }
         if (flags & 1) {
             // a new request: finish off any old one first
@@ -246,10 +264,11 @@ class TunnelCB : public NimBLECharacteristicCallbacks {
                 for (int i = 0; i < 100 && tun_busy; i++) delay(10);
             }
             tun_abort = false;
+            tun_via_cmd = via_cmd;
             xStreamBufferReset(tun_body);
             tun_req_t r;
             memset(&r, 0, sizeof(r));
-            r.id = (uint8_t)v[1];
+            r.id = v[1];
             String head((const char *)d, n);   // "METHOD path\ncontent-type\nlength"
             int a = head.indexOf(' '), b = head.indexOf('\n'), e = head.indexOf('\n', b + 1);
             if (a < 0 || b < 0 || e < 0) return;
@@ -262,6 +281,13 @@ class TunnelCB : public NimBLECharacteristicCallbacks {
         }
         // body: waits (holding up this write's reply, which paces the plugin) until the task has room
         if (n) xStreamBufferSend(tun_body, d, n, pdMS_TO_TICKS(5000));
+    }
+}
+
+class TunnelCB : public NimBLECharacteristicCallbacks {
+    void onWrite(NimBLECharacteristic *c) override {
+        std::string v = c->getValue();
+        tunnel_frame((const uint8_t *)v.data(), v.size(), false);
     }
 };
 
