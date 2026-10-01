@@ -5,6 +5,7 @@
 #include "knomi_health.h"
 #include "knomi_perf.h"
 const char * knomi_wifi_policy(void);   // wifi_setup.cpp
+String knomi_settings_schema(void);     // settings_schema.cpp
 #include <ESPmDNS.h>
 
 #include "knomi.h"
@@ -437,6 +438,36 @@ static long int_param(AsyncWebServerRequest *request, const char *name, long lo,
     return v;
 }
 
+// The OctoPrint plugin's own settings tab posts the same forms with "quiet": it gets a small JSON answer
+// instead of a redirect or a page (over Bluetooth a whole page takes seconds to come back).
+static bool quiet(AsyncWebServerRequest *r) { return r->hasParam("quiet", true) || r->hasParam("quiet"); }
+
+static String strip_tags(const String &html) {
+    String out;
+    bool tag = false;
+    for (size_t i = 0; i < html.length(); i++) {
+        char c = html[i];
+        if (c == '<') { tag = true; if (html.startsWith("</p>", i) && out.length()) out += ' '; continue; }
+        if (c == '>') { tag = false; continue; }
+        if (!tag) out += c;
+    }
+    out.replace("&rsaquo;", ">");
+    out.replace("&amp;", "&");
+    out.replace("&times;", "x");
+    out.trim();
+    return out;
+}
+
+static void quiet_reply(AsyncWebServerRequest *r, const String &title, const String &note_html = String(), int code = 200) {
+    DynamicJsonDocument d(1024);
+    d["ok"] = code < 400;
+    d["title"] = title;
+    d["note"] = strip_tags(note_html);
+    String out;
+    serializeJson(d, out);
+    r->send(code, "application/json", out);
+}
+
 // ESPAsyncWebServer matches "/log" for "/log/info" too (any "/log/..." path), and the first
 // handler registered wins. Pages that have sub-paths only answer their exact URL.
 static ArRequestFilterFunction exact(const char * uri) {
@@ -472,6 +503,7 @@ static void bluetooth_routes(void) {
                     "stops loading. It comes back if Bluetooth is disconnected for " + String(fallback) +
                     " seconds, or when you press <b>Turn KNOMI WiFi on</b> in the plugin settings.</p>";
         }
+        if (quiet(request)) { quiet_reply(request, "Bluetooth saved", note); return; }
         if (note.isEmpty()) {
             request->redirect("./#bluetooth");
             return;
@@ -480,6 +512,7 @@ static void bluetooth_routes(void) {
     }).setFilter(exact("/bluetooth"));
     server.on("/bluetooth/forget", HTTP_POST, [](AsyncWebServerRequest *request){
         knomi_ble_forget_bonds();
+        if (quiet(request)) { quiet_reply(request, "Paired devices forgotten", "Pair the Pi again."); return; }
         request->send(200, "text/html", message_page("Paired devices forgotten",
             "<p>Pair the Pi again with <span class='mono'>bluetoothctl</span>. Remove the old pairing there first "
             "(<span class='mono'>remove " + html_escape(knomi_ble_address()) + "</span>).</p>", "../"));
@@ -497,6 +530,7 @@ static void display_routes(void) {
         knomi_config.gif_tint = int_param(request, "gif_tint", 0, GIF_TINT_ALL, knomi_config.gif_tint);
         knomi_config_require_change(LOCAL_POST_SETTINGS);  // save to EEPROM (WiFi task)
         knomi_display_settings_dirty = true;               // apply on screen (LVGL task)
+        if (quiet(request)) { quiet_reply(request, "Saved"); return; }
         request->redirect("./#display");
     });
 }
@@ -534,6 +568,7 @@ static void screen_routes(void) {
         knomi_config_sanitize_screen();
         knomi_config_require_change(LOCAL_POST_SETTINGS);
         knomi_display_settings_dirty = true;
+        if (quiet(request)) { quiet_reply(request, "Saved"); return; }
         request->redirect("./#screen");
     });
     server.on("/presets", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -562,6 +597,7 @@ static void screen_routes(void) {
         knomi_config_sanitize_screen();
         knomi_config_require_change(LOCAL_POST_SETTINGS);
         knomi_display_settings_dirty = true;
+        if (quiet(request)) { quiet_reply(request, "Saved"); return; }
         request->redirect("./#presets");
     });
 }
@@ -672,7 +708,15 @@ static void log_routes(void) {
         request->send_P(200, "text/html", log_html);
     }).setFilter(exact("/log"));
     server.on("/log.txt", HTTP_GET, [](AsyncWebServerRequest *request){
-        AsyncWebServerResponse *r = request->beginResponse(200, "text/plain; charset=utf-8", knomi_log_text());
+        String text = knomi_log_text();
+        if (request->hasParam("tail")) {   // the plugin's settings tab: just the end (it may come over Bluetooth)
+            long n = request->getParam("tail")->value().toInt();
+            if (n > 0 && (long)text.length() > n) {
+                int cut = text.indexOf('\n', text.length() - n);
+                text = text.substring(cut >= 0 ? cut + 1 : text.length() - n);
+            }
+        }
+        AsyncWebServerResponse *r = request->beginResponse(200, "text/plain; charset=utf-8", text);
         r->addHeader("Cache-Control", "no-store");
         if (request->hasParam("dl")) {
             r->addHeader("Content-Disposition", String("attachment; filename=\"knomi-") + knomi_config.hostname + "-log.txt\"");
@@ -795,8 +839,17 @@ static void gif_routes(void) {
     });
     server.on("/gif/upload", HTTP_POST, [](AsyncWebServerRequest *request){
         gif_upload_state_t *st = (gif_upload_state_t *)request->_tempObject;
-        if (!st) { request->send(400, "text/html", upload_error_page("No file received")); return; }
-        if (st->error) { request->send(400, "text/html", upload_error_page(st->msg)); return; }
+        if (!st) {
+            if (quiet(request)) quiet_reply(request, "Upload failed", "No file received", 400);
+            else request->send(400, "text/html", upload_error_page("No file received"));
+            return;
+        }
+        if (st->error) {
+            if (quiet(request)) quiet_reply(request, "Upload failed", st->msg, 400);
+            else request->send(400, "text/html", upload_error_page(st->msg));
+            return;
+        }
+        if (quiet(request)) { quiet_reply(request, "Uploaded"); return; }
         request->redirect("../gifs");
     }, gif_upload_chunk);
     server.on("/gif/delete", HTTP_POST, [](AsyncWebServerRequest *request){
@@ -805,6 +858,7 @@ static void gif_routes(void) {
             LittleFS.remove(knomi_gif_path((knomi_gif_slot_t)slot));
             knomi_gif_request_reload((knomi_gif_slot_t)slot);
         }
+        if (quiet(request)) { quiet_reply(request, "Removed"); return; }
         request->redirect("../gifs");
     });
     server.on("/discover", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -842,6 +896,12 @@ void webserver_setup(void) {
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send_P(200, "text/html", index_html, knomi_html_processor);
     });
+    // the settings page as data: the OctoPrint plugin builds its own settings tab from it (settings_schema.cpp)
+    server.on("/settings.json", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncWebServerResponse *r = request->beginResponse(200, "application/json", knomi_settings_schema());
+        r->addHeader("Cache-Control", "no-store");
+        request->send(r);
+    });
 
     server.on("/", HTTP_POST, [](AsyncWebServerRequest *request){
         uint8_t post_require = WEB_POST_NULL;
@@ -877,6 +937,15 @@ void webserver_setup(void) {
 
         knomi_config_require_change(post_require);
 
+        if (quiet(request)) {
+            if (post_require & WEB_POST_WIFI_CONFIG_STA)
+                quiet_reply(request, "Connecting", "KNOMI is joining " + String(knomi_config.sta_ssid) + " now. If that fails within 15 seconds, it brings its own access point back up.");
+            else if (post_require & WEB_POST_LOCAL_HOSTNAME) quiet_reply(request, "Saved", "The new hostname takes effect after a restart.");
+            else if (post_require & WEB_POST_RESTART) quiet_reply(request, "Restarting", "Back in 10 to 20 seconds.");
+            else if (post_require & WEB_POST_WIFI_REFRESH) quiet_reply(request, "Scanning", "Looking for WiFi networks.");
+            else quiet_reply(request, "Saved");
+            return;
+        }
         if (post_require & WEB_POST_WIFI_CONFIG_STA) {
             request->send(200, "text/html", message_page("Connecting",
                 "<dl class='kv'><dt>Network</dt><dd>" + html_escape(knomi_config.sta_ssid) + "</dd></dl>"

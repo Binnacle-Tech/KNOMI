@@ -183,15 +183,20 @@ static void tun_notify(uint8_t flags, uint8_t id, uint8_t seq, const uint8_t *da
     f[0] = 1;
     f[o] = flags; f[o + 1] = id; f[o + 2] = seq;
     if (n) memcpy(f + o + 3, data, n);
-    // don't outrun the Bluetooth stack's buffers (a notify that finds none is silently dropped)
-    for (int i = 0; i < 400 && os_msys_num_free() < 6; i++) delay(2);
-    if (tun_via_cmd) {
-        xSemaphoreTake(cmd_lock, portMAX_DELAY);
-        ch_cmd->notify(f, n + 4);
-        xSemaphoreGive(cmd_lock);
-    } else {
-        ch_tun->notify(f, n + 3);
+    // NimBLE's notify() drops a notification silently when its buffers are full ("part of the answer got
+    // lost"), so send it here and wait and retry until the stack takes it. Leave buffers spare for the
+    // Pi's own writes, which otherwise fail with "Insufficient Resource".
+    NimBLECharacteristic *ch = tun_via_cmd ? ch_cmd : ch_tun;
+    size_t len = n + 3 + o;
+    if (tun_via_cmd) xSemaphoreTake(cmd_lock, portMAX_DELAY);
+    for (int i = 0; i < 1500 && authed_conn != 0xFFFF; i++) {   // up to ~3 s
+        if (os_msys_num_free() >= 12) {
+            os_mbuf *om = ble_hs_mbuf_from_flat(f, len);
+            if (om && ble_gattc_notify_custom(authed_conn, ch->getHandle(), om) == 0) break;   // om is freed on error
+        }
+        delay(2);
     }
+    if (tun_via_cmd) xSemaphoreGive(cmd_lock);
 }
 
 static void tunnel_task(void *) {

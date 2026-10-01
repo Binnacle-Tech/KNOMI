@@ -25,6 +25,7 @@ Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print
 - **Live updates** over OctoPrint's websocket (push, not polling), with an HTTP fallback.
 - **Find OctoPrint on network.** One click on the settings page finds OctoPrint over mDNS.
 - **Bluetooth LE link** to the plugin (optional). No API key needed. WiFi can switch off while Bluetooth is connected and comes back automatically if the link drops.
+- **All settings from OctoPrint**, even with WiFi off: the KNOMI describes its settings (`/settings.json`, see `src/settings_schema.cpp`) and the plugin builds its settings tab from that. Add a setting there and it shows up in OctoPrint with no plugin change.
 - **Custom GIF animations without reflashing.** Upload a GIF to any slot from the web page (homing, probing, QGL, printing, done and more), stored on the KNOMI's flash.
 - **More animation states:** input shaper calibration, PID tuning, nozzle cleaning, filament load/unload and **paused** (M600, PAUSE, MMU/ERCF).
 - **Printing screen with useful info:** time left, nozzle/bed temps, Z height and layer (on OctoPrint the plugin works the layer out from the file, like the G-code viewer), file name.
