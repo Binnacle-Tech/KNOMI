@@ -247,7 +247,15 @@ static void tunnel_task(void *) {
         while (left && !tun_abort) {
             size_t n = xStreamBufferReceive(tun_body, buf, left < sizeof(buf) ? left : sizeof(buf), pdMS_TO_TICKS(15000));
             if (!n) break;   // the plugin stopped sending
-            c.write(buf, n);
+            // the web server can fall behind (flash writes during a firmware upload): a short write used to drop
+            // the rest of the piece silently, and the upload then failed its checksum
+            size_t done = 0;
+            uint32_t t0 = millis();
+            while (done < n && !tun_abort && millis() - t0 < 15000) {
+                size_t w = c.write(buf + done, n - done);
+                if (w) { done += w; t0 = millis(); } else delay(5);
+            }
+            if (done < n) { Serial.printf("tunnel: the web server stopped taking the request (%u of %u)\r\n", (unsigned)done, (unsigned)n); break; }
             left -= n;
         }
         if (left || tun_abort) {
