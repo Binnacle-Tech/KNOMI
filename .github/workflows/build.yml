@@ -2,8 +2,7 @@ name: Build firmware
 
 on:
   push:
-    branches: [octoprint]
-    tags: ["v*"]
+    tags: ["v*"]   # only releases (a branch push too built every commit twice: once for the push, once for its tag)
   pull_request:
   workflow_dispatch:
 
