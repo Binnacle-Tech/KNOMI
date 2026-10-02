@@ -293,10 +293,12 @@ void lv_loop_moonraker_change_screen_value(void) {
         lv_label_set_text(ui_label_printing_progress, string_buffer);
     }
 #ifdef LIS2DW_SUPPORT
-    // accelerometer
-    lv_slider_set_value(ui_slider_printing_acc_x, abs(lis2dw12_acc[0]) / 10, LV_ANIM_ON);
-    lv_slider_set_value(ui_slider_printing_acc_y, abs(lis2dw12_acc[1]) / 10, LV_ANIM_ON);
-    lv_slider_set_value(ui_slider_printing_acc_z, abs(lis2dw12_acc[2]) / 10, LV_ANIM_ON); // gravity already removed
+    // accelerometer (only while that screen shows: it was animating hidden sliders ~180 times a second)
+    if (lv_scr_act() == ui_ScreenPrinting) {
+        lv_slider_set_value(ui_slider_printing_acc_x, abs(lis2dw12_acc[0]) / 10, LV_ANIM_ON);
+        lv_slider_set_value(ui_slider_printing_acc_y, abs(lis2dw12_acc[1]) / 10, LV_ANIM_ON);
+        lv_slider_set_value(ui_slider_printing_acc_z, abs(lis2dw12_acc[2]) / 10, LV_ANIM_ON); // gravity already removed
+    }
 #endif
 
     lv_print_info_update();

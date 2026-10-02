@@ -1511,18 +1511,27 @@ typedef struct {
     lv_color_t fc;
 } pen_t;
 
-/* While measuring, the draw calls below only note what would be drawn (a hash) and where (a box) */
-static struct { bool on, any; lv_area_t box; uint32_t h; } M;
+/* While measuring, the draw calls below only note what would be drawn (a hash) and where (a box), per part of
+ * the face: a blink then redraws around the eye, not around everything from the leaves on the ground to the clock.
+ * (Every pixel a changed part touches is inside its box, and the redraw paints the whole face clipped to it in the
+ * same order, so the result is the same as redrawing everything.) */
+#define FACE_GROUPS 5   // decorations behind, left eye, right eye, mouth and everything on top, idle clock
+typedef struct { bool any; lv_area_t box; uint32_t h; } mgroup_t;
+static struct { bool on; int g; mgroup_t G[FACE_GROUPS]; } M;
+static inline void m_group(int g) { M.g = g; }
 static void m_hash(const void * d, size_t n) {
     const uint8_t * b = (const uint8_t *)d;
-    for (size_t i = 0; i < n; i++) { M.h ^= b[i]; M.h *= 16777619u; }
+    uint32_t h = M.G[M.g].h;
+    for (size_t i = 0; i < n; i++) { h ^= b[i]; h *= 16777619u; }
+    M.G[M.g].h = h;
 }
 static void m_box(int x1, int y1, int x2, int y2) {
-    if (!M.any) { M.box.x1 = x1; M.box.y1 = y1; M.box.x2 = x2; M.box.y2 = y2; M.any = true; return; }
-    if (x1 < M.box.x1) M.box.x1 = x1;
-    if (y1 < M.box.y1) M.box.y1 = y1;
-    if (x2 > M.box.x2) M.box.x2 = x2;
-    if (y2 > M.box.y2) M.box.y2 = y2;
+    mgroup_t & G = M.G[M.g];
+    if (!G.any) { G.box.x1 = x1; G.box.y1 = y1; G.box.x2 = x2; G.box.y2 = y2; G.any = true; return; }
+    if (x1 < G.box.x1) G.box.x1 = x1;
+    if (y1 < G.box.y1) G.box.y1 = y1;
+    if (x2 > G.box.x2) G.box.x2 = x2;
+    if (y2 > G.box.y2) G.box.y2 = y2;
 }
 static void k_draw_rect(lv_draw_ctx_t * ctx, const lv_draw_rect_dsc_t * d, const lv_area_t * a) {
     if (!M.on) { lv_draw_rect(ctx, d, a); return; }
@@ -2149,13 +2158,13 @@ static void draw_face(lv_event_t * e) {   // timed for /perf
     draw_face_at(lv_event_get_target(e), lv_event_get_draw_ctx(e));
     knomi_perf_face((uint32_t)(esp_timer_get_time() - t0));
 }
-// What this frame of the face would draw: a hash of it and the box around it (screen coordinates)
-static bool face_measure(lv_obj_t * obj, lv_area_t * box, uint32_t * h) {
-    M.on = true; M.any = false; M.h = 2166136261u;
+// What this frame of the face would draw, per part: a hash of it and the box around it (screen coordinates)
+static void face_measure(lv_obj_t * obj, mgroup_t * out) {
+    M.on = true; M.g = 0;
+    for (int g = 0; g < FACE_GROUPS; g++) { M.G[g].any = false; M.G[g].h = 2166136261u; }
     draw_face_at(obj, NULL);
-    M.on = false;
-    *box = M.box; *h = M.h;
-    return M.any;
+    M.on = false; M.g = 0;
+    memcpy(out, M.G, sizeof(M.G));
 }
 static void draw_face_at(lv_obj_t * obj, lv_draw_ctx_t * ctx) {
     pen_t p;
@@ -2175,6 +2184,7 @@ static void draw_face_at(lv_obj_t * obj, lv_draw_ctx_t * ctx) {
     static uint32_t bubble_frame = 0;   // once per frame, however often the frame is drawn
     if (bubble_frame != frame_no) { bubble_frame = frame_no; bubble_k += ((bubble ? 1.0f : 0.0f) - bubble_k) * 0.25f; }
     bool big = p.s > 0.8f;                 // decorations only on the full-size face
+    m_group(0);
     if (big) draw_deco_back(p);
     float jit = min(3.0f, vib * 6) * E.zig;
     if (mood == M_ERROR) jit = 1.5f;                  // trembling
@@ -2211,8 +2221,11 @@ static void draw_face_at(lv_obj_t * obj, lv_draw_ctx_t * ctx) {
     E.gape = max(E.gape, QF.gape);
     E.zig = max(E.zig, QF.zig);
     E.omega *= 1 - clampf(QF.gape / 0.4f, 0, 1);   // an open "o" mouth, not the cat "w"
+    m_group(1);
     draw_eye(p, cx - 58 * sx, cy - 15 * sy + tiltL, -1, sx, clampf(open * QF.open_l, 0, 1.1f), QF.look_y);
+    m_group(2);
     draw_eye(p, cx + 58 * sx, cy - 15 * sy + tiltR, 1, sx, clampf(open * QF.open_r, 0, 1.1f), QF.look_y);
+    m_group(3);
     float talk = 0;
     if (bubble && draw_ms - bsince < 2000) talk = 0.6f * fabsf(sinf(now_s * 11));
     E.gape = max(E.gape, talk);
@@ -2353,6 +2366,7 @@ static void draw_face_at(lv_obj_t * obj, lv_draw_ctx_t * ctx) {
         lv_draw_label(p.ctx, &ld, &a, mutter_buf, NULL);
     }
     // idle clock under the face
+    m_group(4);
     if (big && T.clock && !d.printing && act == ACT_NONE && mood != M_HEATING && bubble_k < 0.3f) {
         time_t now = time(NULL);
         if (now > 1700000000) {
@@ -2392,10 +2406,8 @@ lv_obj_t * coaster_create(lv_obj_t * parent, int size) {
     return o;
 }
 
-static lv_obj_t * face_seen[MAX_FACES];     // what face_hash/face_box below belong to
-static uint32_t face_hash[MAX_FACES];
-static lv_area_t face_box[MAX_FACES];
-static bool face_any[MAX_FACES];
+static lv_obj_t * face_seen[MAX_FACES];     // what face_parts below belong to
+static mgroup_t face_parts[MAX_FACES][FACE_GROUPS];
 
 void coaster_forget(lv_obj_t * obj) {
     for (int i = 0; i < MAX_FACES; i++) if (faces[i] == obj) faces[i] = NULL;
@@ -2461,21 +2473,27 @@ void coaster_loop(void) {
         for (int i = 0; i < MAX_FACES; i++) {
             lv_obj_t * f = faces[i];
             if (!f || lv_obj_get_screen(f) != scr || !lv_obj_is_visible(f)) continue;
-            // redraw only where something changes: the box around this frame plus the one around the
-            // last (to erase it); skip the frame when nothing would change at all
-            lv_area_t box; uint32_t h;
-            bool any = face_measure(f, &box, &h);
-            if (face_seen[i] == f && h == face_hash[i]) continue;
-            lv_area_t u;
-            if (any && face_seen[i] == f && face_any[i]) _lv_area_join(&u, &box, &face_box[i]);
-            else if (any) u = box;
-            else if (face_seen[i] == f && face_any[i]) u = face_box[i];
-            else { lv_obj_invalidate(f); u = f->coords; }
-            if (face_seen[i] == f || any) {
-                u.x1 -= 2; u.y1 -= 2; u.x2 += 2; u.y2 += 2;   // antialiased edges
-                lv_obj_invalidate_area(f, &u);
+            // redraw only where something changes: for each part that changed, the box around it this frame plus
+            // the one around it last frame (to erase it); nothing at all when no part changed
+            mgroup_t now[FACE_GROUPS];
+            face_measure(f, now);
+            if (face_seen[i] != f) {   // new face (or screen): draw all of it once
+                lv_obj_invalidate(f);
+            } else {
+                for (int g = 0; g < FACE_GROUPS; g++) {
+                    const mgroup_t & a = now[g], & b = face_parts[i][g];
+                    if (a.h == b.h && a.any == b.any) continue;
+                    lv_area_t u;
+                    if (a.any && b.any) _lv_area_join(&u, &a.box, &b.box);
+                    else if (a.any) u = a.box;
+                    else if (b.any) u = b.box;
+                    else continue;
+                    u.x1 -= 2; u.y1 -= 2; u.x2 += 2; u.y2 += 2;   // antialiased edges
+                    lv_obj_invalidate_area(f, &u);
+                }
             }
-            face_seen[i] = f; face_hash[i] = h; face_box[i] = box; face_any[i] = any;
+            face_seen[i] = f;
+            memcpy(face_parts[i], now, sizeof(now));
         }
     }
 }

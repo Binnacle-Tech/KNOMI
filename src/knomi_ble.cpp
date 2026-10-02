@@ -244,14 +244,20 @@ static void tunnel_task(void *) {
         if (r.ctype[0]) c.printf("Content-Type: %s\r\n", r.ctype);
         c.print("\r\n");
         uint32_t left = r.len;
+        uint32_t body_t = millis();
         while (left && !tun_abort) {
-            size_t n = xStreamBufferReceive(tun_body, buf, left < sizeof(buf) ? left : sizeof(buf), pdMS_TO_TICKS(15000));
-            if (!n) break;   // the plugin stopped sending
+            // short waits, so an abort (or a new request) is noticed within 100 ms
+            size_t n = xStreamBufferReceive(tun_body, buf, left < sizeof(buf) ? left : sizeof(buf), pdMS_TO_TICKS(100));
+            if (!n) {
+                if (millis() - body_t > 15000) break;   // the plugin stopped sending
+                continue;
+            }
+            body_t = millis();
             // the web server can fall behind (flash writes during a firmware upload): a short write used to drop
             // the rest of the piece silently, and the upload then failed its checksum
             size_t done = 0;
             uint32_t t0 = millis();
-            while (done < n && !tun_abort && millis() - t0 < 15000) {
+            while (done < n && !tun_abort && c.connected() && millis() - t0 < 15000) {
                 size_t w = c.write(buf + done, n - done);
                 if (w) { done += w; t0 = millis(); } else delay(5);
             }
@@ -309,6 +315,11 @@ static void tunnel_frame(const uint8_t *v, size_t len, bool via_cmd) {
             if (tun_busy) {
                 tun_abort = true;
                 for (int i = 0; i < 100 && tun_busy; i++) delay(10);
+                if (tun_busy) {   // still finishing the old one: refuse this one rather than mix them up
+                    tun_via_cmd = via_cmd;
+                    tun_notify(1 | 2 | 4, v[1], 0, (const uint8_t *)"busy, try again", 15);
+                    return;
+                }
             }
             tun_abort = false;
             tun_via_cmd = via_cmd;

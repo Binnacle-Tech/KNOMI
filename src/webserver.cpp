@@ -695,29 +695,34 @@ static const char * reset_reason_text(void) {
 /* Firmware upload (POST /update: "MD5" field first, then the file). Same as AsyncElegantOTA's, which this
  * replaces, except: it says why an upload failed, logs it, and only restarts when the new firmware is in.
  * AsyncElegantOTA restarted either way, so over Bluetooth a failed upload just looked like "stopped answering". */
-typedef struct { bool begun, error; char msg[96]; } ota_state_t;
-static volatile bool ota_restart = false;
+typedef struct { bool begun, error, done; char msg[96]; } ota_state_t;
+static AsyncWebServerRequest * volatile ota_owner = nullptr;   // the upload that has the flash (one at a time)
 
-static void ota_fail(ota_state_t *st, const char *what) {
+bool knomi_ota_upload_busy(void) { return ota_owner != nullptr; }   // the GitHub updater checks this
+
+static void ota_fail(AsyncWebServerRequest *request, ota_state_t *st, const char *what) {
     if (st->error) return;
     st->error = true;
-    snprintf(st->msg, sizeof(st->msg), "%s (%s)", what, Update.errorString());
+    if (st->begun || Update.hasError()) snprintf(st->msg, sizeof(st->msg), "%s (%s)", what, Update.errorString());
+    else strlcpy(st->msg, what, sizeof(st->msg));
     Serial.printf("update: %s\r\n", st->msg);
-    if (st->begun) Update.abort();
+    if (st->begun && ota_owner == request) { Update.abort(); ota_owner = nullptr; }
 }
 
 static void ota_upload_route(void) {
     server.on("/update", HTTP_POST, [](AsyncWebServerRequest *request){
         ota_state_t *st = (ota_state_t *)request->_tempObject;
-        bool ok = st && st->begun && !st->error && Update.isFinished();
+        bool ok = st && st->done;
         const char *why = !st ? "No file received" : st->error ? st->msg : "The upload was incomplete";
-        if (!ok && st && st->begun && !st->error) Update.abort();
+        if (!ok && st && !st->error && ota_owner == request) { if (Update.isRunning()) Update.abort(); ota_owner = nullptr; }
         if (ok) Serial.println("update: firmware uploaded and checked, restarting");
         else Serial.printf("update: not installed: %s\r\n", why);
         AsyncWebServerResponse *r = request->beginResponse(ok ? 200 : 500, "text/plain", ok ? "OK" : why);
         r->addHeader("Connection", "close");
         request->send(r);
-        if (ok) ota_restart = true;   // the restart task waits a moment so the answer gets out (also over Bluetooth)
+        if (ok) {   // restart in a moment, once the answer is out (also over Bluetooth)
+            xTaskCreate([](void *) { delay(2500); ESP.restart(); }, "ota restart", 2048, NULL, 1, NULL);
+        }
     }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
         ota_state_t *st = (ota_state_t *)request->_tempObject;
         if (!index) {
@@ -726,26 +731,27 @@ static void ota_upload_route(void) {
                 request->_tempObject = st;
                 if (!st) return;
             }
-            if (!request->hasParam("MD5", true)) { ota_fail(st, "MD5 missing"); return; }
-            if (!Update.setMD5(request->getParam("MD5", true)->value().c_str())) { ota_fail(st, "MD5 not valid"); return; }
+            if (knomi_update_busy() || ota_owner) { ota_fail(request, st, "Another update is running"); return; }
+            if (!request->hasParam("MD5", true)) { ota_fail(request, st, "MD5 missing"); return; }
             int cmd = (filename == "filesystem") ? U_SPIFFS : U_FLASH;
-            if (Update.isRunning()) Update.abort();   // one left over from an upload that broke off
-            if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd)) { ota_fail(st, "Couldn't start the update"); return; }
-            // an upload that breaks off (the browser or Bluetooth goes away) mustn't leave the update open
-            request->onDisconnect([]() { if (Update.isRunning() && !Update.isFinished()) Update.abort(); });
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd)) { ota_fail(request, st, "Couldn't start the update"); return; }
+            ota_owner = request;
             st->begun = true;
+            // after begin(), which clears it (set before, the checksum was never checked)
+            if (!Update.setMD5(request->getParam("MD5", true)->value().c_str())) { ota_fail(request, st, "MD5 not valid"); return; }
+            // an upload that breaks off (the browser or Bluetooth goes away) mustn't leave the flash taken
+            request->onDisconnect([request]() {
+                if (ota_owner == request) { if (Update.isRunning()) Update.abort(); ota_owner = nullptr; }
+            });
             Serial.printf("update: receiving %s\r\n", filename.c_str());
         }
-        if (!st || st->error) return;
-        if (len && Update.write(data, len) != len) { ota_fail(st, "Writing to flash failed"); return; }
-        if (final && !Update.end(true)) ota_fail(st, "Checksum or image check failed");
-    }).setFilter(exact("/update"));
-    xTaskCreate([](void *) {
-        for (;;) {
-            if (ota_restart) { delay(2500); ESP.restart(); }
-            delay(200);
+        if (!st || st->error || ota_owner != request) return;
+        if (len && Update.write(data, len) != len) { ota_fail(request, st, "Writing to flash failed"); return; }
+        if (final) {
+            if (Update.end(true)) { st->done = true; ota_owner = nullptr; }
+            else ota_fail(request, st, "Checksum or image check failed");
         }
-    }, "ota restart", 2048, NULL, 1, NULL);
+    }).setFilter(exact("/update"));
 }
 
 static void update_routes(void) {

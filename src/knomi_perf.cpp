@@ -89,12 +89,11 @@ String knomi_perf_json(void) {
         o += ",\"flush_ms\":" + String(flushes ? flush_us_sum / 1000.0f / flushes : 0, 2) + ",\"flush_ms_max\":" + String(flush_us_max / 1000.0f, 2);
         if (win > 25) o += ",\"cpu_note\":\"CPU numbers are only exact when /perf is read every few seconds\"";
         o += ",\"cpu\":[" + String(100 - min(100.0f, idle_us[0] / 1e4f / win), 0) + "," + String(100 - min(100.0f, idle_us[1] / 1e4f / win), 0) + "]";
-        o += ",\"tasks\":{";
+        o += ",\"tasks_note\":\"% of the time each task is between delays (waiting included, not pure CPU)\",\"tasks\":{";
         bool first = true;
         portENTER_CRITICAL(&mux);
         task_perf_t snap[PERF_TASKS];
         memcpy(snap, tasks, sizeof(snap));
-        for (int i = 0; i < PERF_TASKS; i++) tasks[i].busy_us = 0;
         portEXIT_CRITICAL(&mux);
         for (int i = 0; i < PERF_TASKS; i++) if (snap[i].h) {
             o += String(first ? "" : ",") + "\"" + pcTaskGetName(snap[i].h) + "\":" + String(snap[i].busy_us / 1e4f / win, 1);
@@ -108,6 +107,9 @@ String knomi_perf_json(void) {
     logic_us_sum = logic_us_max = 0;
     acc_ok = acc_err = acc_used = 0;
     idle_us[0] = idle_us[1] = 0;
+    portENTER_CRITICAL(&mux);   // every read, or a short first window carried all the time since boot
+    for (int i = 0; i < PERF_TASKS; i++) tasks[i].busy_us = 0;
+    portEXIT_CRITICAL(&mux);
     size_t free_int = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     size_t big_int = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     o += ",\"heap\":" + String(free_int) + ",\"heap_min\":" + String(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
