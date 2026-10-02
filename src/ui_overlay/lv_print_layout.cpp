@@ -150,10 +150,10 @@ static bool token_value(const moonraker_data_t &d, const char * name, size_t len
         if (d.time_left >= 0) fmt_duration(out, n, d.print_time + (uint32_t)d.time_left);
         else snprintf(out, n, "--");
     } else if (IS("time")) {
-        if (d.time_left >= 0) {   // "58m left, done 9:40 pm" once the clock is set (the fonts have no middle dot)
+        if (d.time_left >= 0) {   // "58m left, 9:40pm" once the clock is set (short: it has to fit the round screen)
             char at[12];
             fmt_duration(t, sizeof(t), (uint32_t)d.time_left);
-            if (coaster_clock_text(time(NULL) + d.time_left, at, sizeof(at))) snprintf(out, n, "%s left, done %s", t, at);
+            if (coaster_clock_text(time(NULL) + d.time_left, at, sizeof(at), true)) snprintf(out, n, "%s left, %s", t, at);
             else snprintf(out, n, "%s left", t);
         }
         else if (d.print_time > 0) { fmt_duration(t, sizeof(t), d.print_time); snprintf(out, n, "%s elapsed", t); }

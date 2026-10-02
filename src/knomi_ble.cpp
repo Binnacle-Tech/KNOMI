@@ -198,26 +198,33 @@ typedef struct { uint8_t id; char method[8]; char path[240]; char ctype[96]; uin
 static volatile bool tun_abort = false, tun_busy = false;
 static volatile bool tun_via_cmd = false;   // the current request came over FILES: answer on CMD
 
-static void tun_notify(uint8_t flags, uint8_t id, uint8_t seq, const uint8_t *data, size_t n) {
+// false if it couldn't be sent (no buffers for ~3 s, the link went, or the request was aborted)
+static bool tun_notify(uint8_t flags, uint8_t id, uint8_t seq, const uint8_t *data, size_t n) {
     uint8_t f[516];
-    size_t o = tun_via_cmd ? 1 : 0;   // on CMD, a leading 0x01 tells it apart from the command paths
+    const bool via = tun_via_cmd;   // read once: a new request can change it meanwhile
+    size_t o = via ? 1 : 0;   // on CMD, a leading 0x01 tells it apart from the command paths
     f[0] = 1;
     f[o] = flags; f[o + 1] = id; f[o + 2] = seq;
     if (n) memcpy(f + o + 3, data, n);
     // NimBLE's notify() drops a notification silently when its buffers are full ("part of the answer got
     // lost"), so send it here and wait and retry until the stack takes it. Leave buffers spare for the
     // Pi's own writes, which otherwise fail with "Insufficient Resource".
-    NimBLECharacteristic *ch = tun_via_cmd ? ch_cmd : ch_tun;
+    NimBLECharacteristic *ch = via ? ch_cmd : ch_tun;
     size_t len = n + 3 + o;
-    if (tun_via_cmd) xSemaphoreTake(cmd_lock, portMAX_DELAY);
-    for (int i = 0; i < 1500 && authed_conn != 0xFFFF; i++) {   // up to ~3 s
+    bool abortable = !(flags & 4);   // an error/abort frame itself still goes out
+    for (int i = 0; i < 1500; i++) {   // up to ~3 s
+        if (authed_conn == 0xFFFF || (abortable && tun_abort)) return false;
         if (os_msys_num_free() >= 12) {
+            // the lock (shared with the commands on CMD) only around the send itself, not the wait
+            if (via) xSemaphoreTake(cmd_lock, portMAX_DELAY);
             os_mbuf *om = ble_hs_mbuf_from_flat(f, len);
-            if (om && ble_gattc_notify_custom(authed_conn, ch->getHandle(), om) == 0) break;   // om is freed on error
+            int rc = om ? ble_gattc_notify_custom(authed_conn, ch->getHandle(), om) : -1;   // om is freed on error
+            if (via) xSemaphoreGive(cmd_lock);
+            if (rc == 0) return true;
         }
         delay(2);
     }
-    if (tun_via_cmd) xSemaphoreGive(cmd_lock);
+    return false;
 }
 
 static void tunnel_task(void *) {
@@ -256,10 +263,16 @@ static void tunnel_task(void *) {
         uint8_t seq = 0;
         bool first = true;
         uint32_t idle = millis();
+        bool failed = false;
         while (!tun_abort) {
             int n = c.available() ? c.read(buf, chunk) : 0;
             if (n > 0) {
-                tun_notify(first ? 1 : 0, r.id, seq++, buf, n);
+                if (!tun_notify(first ? 1 : 0, r.id, seq++, buf, n)) {
+                    // a frame that didn't go out: stop here and say so (a gap would just garble the page)
+                    if (!tun_abort) tun_notify(1 | 2 | 4, r.id, 0, (const uint8_t *)"Bluetooth too busy", 18);
+                    failed = true;
+                    break;
+                }
                 first = false;
                 idle = millis();
             } else if (!c.connected()) {
@@ -271,7 +284,7 @@ static void tunnel_task(void *) {
             }
         }
         c.stop();
-        if (!tun_abort) tun_notify((first ? 1 : 0) | 2, r.id, seq, nullptr, 0);
+        if (!tun_abort && !failed) tun_notify((first ? 1 : 0) | 2, r.id, seq, nullptr, 0);
         tun_busy = false;
     }
 }

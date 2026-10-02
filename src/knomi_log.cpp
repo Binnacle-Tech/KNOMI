@@ -12,7 +12,7 @@ static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void ring_put(char c) {
     if (!ring) {
-        ring = (char *)ps_malloc(LOG_SIZE);
+        ring = (char *)ps_malloc(LOG_SIZE + 1);   // +1: String::concat reads one past what it copies
         if (!ring) return;
     }
     ring[head++] = c;

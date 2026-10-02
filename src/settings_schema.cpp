@@ -92,7 +92,7 @@ String knomi_settings_schema(void) {
     d["fw"] = FW_VERSION;
     d["board"] = SCHEMA_BOARD;
     JsonArray secs = d.createNestedArray("sections");
-    char buf[96];
+    char buf[160];
 
     // ---- printer connection ----
     {
@@ -281,7 +281,6 @@ String knomi_settings_schema(void) {
         f = field(s, "clock", "select", "Clock when idle");
         opt(f, "1", "12 hour"); opt(f, "2", "24 hour"); opt(f, "0", "Off");
         f["v"] = t["clock"].as<int>(); f["g"] = "talk";
-        field(s, "tz", "tz", "Time zone");
         field(s, "idle", "hidden", "")["v"] = t["idle"];
     }
 
