@@ -5,7 +5,7 @@
 
 // common i2c
 #define I2C0_SUPPORT
-#define I2C0_SPEED   100000
+#define I2C0_SPEED   400000   // fast mode (LIS2DW12, SHT4x): each accelerometer read used to take ~1 ms of the bus
 #define I2C0_SCL_PIN 1
 #define I2C0_SDA_PIN 2
 // #define I2C1_SPEED   100000

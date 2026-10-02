@@ -60,9 +60,10 @@ int knomi_gif_slot_by_name(const char * name) {
 }
 
 // LittleFS.usedBytes() walks the whole filesystem (slow with big GIFs on it): pages ask often, so keep it 20 s
+static volatile uint32_t fs_used_at = 0;
 size_t knomi_fs_used(void) {
     static size_t used = 0;
-    static uint32_t at = 0;
+    uint32_t &at = (uint32_t &)fs_used_at;
     if (!fs_ok) return 0;
     if (!at || millis() - at > 20000) { used = LittleFS.usedBytes(); at = millis() | 1; }
     return used;
@@ -295,7 +296,14 @@ int knomi_gif_shown_slot(lv_obj_t * obj) {
     return -1;
 }
 
+// size of each slot's custom GIF on flash, -1 = not looked yet (pages ask for every slot each time; each look
+// is an exists + open on LittleFS). A slot's entry is dropped when its file changes (upload, delete).
+static volatile int32_t custom_bytes[GIF_SLOT_NUM];
+static bool custom_bytes_init = false;
+
 void knomi_gif_request_reload(knomi_gif_slot_t slot) {
+    if (slot < GIF_SLOT_NUM) custom_bytes[slot] = -1;
+    fs_used_at = 0;
     __atomic_fetch_or(&pending_reload, (uint32_t)1 << slot, __ATOMIC_SEQ_CST);
 }
 
@@ -321,11 +329,20 @@ void knomi_gif_get_info(knomi_gif_slot_t slot, knomi_gif_info_t * info) {
     info->loaded = custom[slot] != NULL;
     info->has_custom = false;
     info->custom_size = 0;
-    if (fs_ok) {
+    if (!fs_ok) return;
+    if (!custom_bytes_init) {
+        for (int i = 0; i < GIF_SLOT_NUM; i++) custom_bytes[i] = -1;
+        custom_bytes_init = true;
+    }
+    int32_t n = custom_bytes[slot];
+    if (n < 0) {
+        n = 0;
         String path = knomi_gif_path(slot);
         if (LittleFS.exists(path)) {
             File f = LittleFS.open(path, "r");
-            if (f) { info->has_custom = true; info->custom_size = f.size(); f.close(); }
+            if (f) { n = (int32_t)f.size() + 1; f.close(); }   // +1: a file, even an empty one
         }
+        custom_bytes[slot] = n;
     }
+    if (n > 0) { info->has_custom = true; info->custom_size = n - 1; }
 }
