@@ -2579,8 +2579,10 @@ String coaster_album_json(void) {
 // For the OctoPrint sidebar. The first part changes rarely (mood, quirk, feeling, decorations);
 // with motion it also carries where the head and pupils are, so the sidebar can follow along.
 bool coaster_plugin_watched = false;   // someone has the sidebar open (the plugin says so)
-String coaster_plugin_json(bool motion) {
+String coaster_plugin_json(bool motion, size_t max) {
     char buf[640];
+    char part[200];
+    if (max > sizeof(buf)) max = sizeof(buf);
     lv_color32_t c32; c32.full = lv_color_to32(lv_theme_color());
     int n = snprintf(buf, sizeof(buf),
                      "{\"mood\":\"%s\",\"feel\":\"%s\",\"h\":%.2f,\"hat\":%d,\"q\":\"%s\",\"qs\":%d,\"deco\":\"%s\",\"lights\":\"%s\",\"anim\":\"%s\","
@@ -2589,6 +2591,9 @@ String coaster_plugin_json(bool motion) {
                      DECO_KEYS[deco_kind > 0 ? deco_kind : 0], LIGHT_KEYS[T.lights], ANIM_KEYS[T.anim],
                      shades_on ? 1 : 0, act, c32.ch.red, c32.ch.green, c32.ch.blue, T.south ? 1 : 0,
                      moonraker.data.printing ? 1 : 0, heat_effort);
+    // optional parts go in only while they fit (one Bluetooth notification holds 512 bytes; an update that
+    // didn't fit used to fail, and the plugin got the previous one again)
+    auto add = [&](int k) { if (k > 0 && (size_t)(n + k) + 2 < max) { memcpy(buf + n, part, k + 1); n += k; } };
     n += snprintf(buf + n, sizeof(buf) - n, ",\"hf\":%.2f", heat_frac);
     if (weather_t > 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"wx\":%d", weather > 0 ? 1 : -1);
     n += snprintf(buf + n, sizeof(buf) - n, ",\"sig\":%d", signature);
@@ -2596,18 +2601,18 @@ String coaster_plugin_json(bool motion) {
     if (WiFi.status() == WL_CONNECTED)   // so the plugin can open the KNOMI's pages over WiFi even when it talks over Bluetooth
         n += snprintf(buf + n, sizeof(buf) - n, ",\"ip\":\"%s\"", WiFi.localIP().toString().c_str());
     if (cur_mat >= 0) n += snprintf(buf + n, sizeof(buf) - n, ",\"mat\":\"%s\"", MAT_NAMES[cur_mat]);
-    if ((int32_t)(mutter_until - millis()) > 0 && mutter_buf[0]) n += snprintf(buf + n, sizeof(buf) - n, ",\"mu\":\"%s\"", mutter_buf);
+    if ((int32_t)(mutter_until - millis()) > 0 && mutter_buf[0]) add(snprintf(part, sizeof(part), ",\"mu\":\"%s\"", mutter_buf));
     if ((int32_t)(say_until - millis()) > 0 && say_buf[0]) {   // what it's saying (no quotes or backslashes in its lines)
-        n += snprintf(buf + n, sizeof(buf) - n, ",\"say\":\"%s\"", say_buf);
+        add(snprintf(part, sizeof(part), ",\"say\":\"%s\"", say_buf));
     }
     if (motion) {
         float bs = BOUNCE * T.sense * SENSE_K;
-        n += snprintf(buf + n, sizeof(buf) - n, ",\"hx\":%.1f,\"hy\":%.1f,\"hs\":%.3f,\"px\":%.1f,\"py\":%.1f,\"look\":%.1f",
-                      clampf(hx - bs * bx[0], -30, 30), clampf(hy + bs * bx[2], -28, 28), hs, px_, py_, look);
+        add(snprintf(part, sizeof(part), ",\"hx\":%.1f,\"hy\":%.1f,\"hs\":%.3f,\"px\":%.1f,\"py\":%.1f,\"look\":%.1f",
+                      clampf(hx - bs * bx[0], -30, 30), clampf(hy + bs * bx[2], -28, 28), hs, px_, py_, look));
     }
     if (report.valid)
-        n += snprintf(buf + n, sizeof(buf) - n, ",\"report\":{\"done\":%s,\"progress\":%u,\"screams\":%u,\"dizzies\":%u,\"jolts\":%u,\"peak\":%.2f,\"secs\":%u}",
-                      report.done ? "true" : "false", report.progress, report.screams, report.dizzies, report.jolts, report.peak, (unsigned)report.secs);
+        add(snprintf(part, sizeof(part), ",\"report\":{\"done\":%s,\"progress\":%u,\"screams\":%u,\"dizzies\":%u,\"jolts\":%u,\"peak\":%.2f,\"secs\":%u}",
+                      report.done ? "true" : "false", report.progress, report.screams, report.dizzies, report.jolts, report.peak, (unsigned)report.secs));
     snprintf(buf + n, sizeof(buf) - n, "}");
     return String(buf);
 }

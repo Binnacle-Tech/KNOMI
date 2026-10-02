@@ -16,7 +16,7 @@ public:
     operator bool() const { return true; }
 };
 extern KnomiLog knomi_log;
-String knomi_log_text(void);   // the ring buffer, oldest first
+String knomi_log_text(size_t tail = 0);   // the ring buffer, oldest first (tail: only about the last N bytes, whole lines)
 void knomi_log_clear(void);
 
 #define Serial knomi_log

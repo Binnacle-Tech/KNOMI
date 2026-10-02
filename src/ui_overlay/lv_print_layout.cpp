@@ -209,7 +209,9 @@ static void expand(const moonraker_data_t &d, const char * tpl, char * out, size
 // {"printing":true,"preview":false,"tokens":{"pct":"42",...}} for the designer's live preview
 String print_layout_status_json(void) {
     moonraker_data_t d = moonraker.data;
-    String s = "{\"printing\":";
+    String s;
+    s.reserve(1024);
+    s += "{\"printing\":";
     s += d.printing ? "true" : "false";
     s += ",\"tokens\":{";
     for (size_t i = 0; i < sizeof(token_names) / sizeof(token_names[0]); i++) {

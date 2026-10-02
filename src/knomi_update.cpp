@@ -111,7 +111,11 @@ static void update_task(void * arg) {
         if (total <= 0) { fail("Download has no size"); http.end(); goto out; }
         if (!Update.begin(total, U_FLASH)) { fail("Not enough room for the update"); http.end(); goto out; }
         WiFiClient * stream = http.getStreamPtr();
-        static uint8_t buf[4096];
+        // in PSRAM (it used to take 4 KB of internal RAM for good)
+        static uint8_t *buf = nullptr;
+        const size_t buf_n = 4096;
+        if (!buf) buf = (uint8_t *)heap_caps_malloc(buf_n, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!buf) { Update.abort(); fail("Out of memory"); http.end(); goto out; }
         int got = 0;
         uint32_t last_data = millis();
         while (got < total) {
@@ -121,7 +125,7 @@ static void update_task(void * arg) {
                 delay(2);
                 continue;
             }
-            int n = stream->readBytes(buf, min(avail, sizeof(buf)));
+            int n = stream->readBytes(buf, min(avail, buf_n));
             if (n <= 0) continue;
             if (Update.write(buf, n) != (size_t)n) { Update.abort(); fail("Writing to flash failed"); http.end(); goto out; }
             got += n;

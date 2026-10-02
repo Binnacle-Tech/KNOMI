@@ -596,9 +596,10 @@ static void coaster_sync_plugin(void) {
     String key = coaster_plugin_json(false);
     bool live = coaster_plugin_watched && millis() - last_ms >= 300;
     if (key == last && millis() - last_ms < 15000 && !live) return;
-    String s = coaster_plugin_json(coaster_plugin_watched);
+    bool ble = knomi_ble_link_active();
+    String s = coaster_plugin_json(coaster_plugin_watched, ble ? 512 - 9 : 640);   // "/coaster?" + JSON in one notification
     bool ok = false;
-    if (knomi_ble_link_active()) {
+    if (ble) {
         ok = knomi_ble_send_command("/coaster?" + s);
     } else if (knomi_backend_is_octoprint() && !moonraker.unconnected && WiFi.status() == WL_CONNECTED) {
         HTTPClient client;

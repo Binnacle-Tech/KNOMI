@@ -59,6 +59,15 @@ int knomi_gif_slot_by_name(const char * name) {
     return -1;
 }
 
+// LittleFS.usedBytes() walks the whole filesystem (slow with big GIFs on it): pages ask often, so keep it 20 s
+size_t knomi_fs_used(void) {
+    static size_t used = 0;
+    static uint32_t at = 0;
+    if (!fs_ok) return 0;
+    if (!at || millis() - at > 20000) { used = LittleFS.usedBytes(); at = millis() | 1; }
+    return used;
+}
+
 void knomi_fs_init(void) {
     // "spiffs" partition in spiffs_16MB.csv (~7MB), formatted as LittleFS on first boot
     fs_ok = LittleFS.begin(true, "/littlefs", 10, "spiffs");

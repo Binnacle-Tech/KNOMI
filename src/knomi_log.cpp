@@ -48,7 +48,7 @@ size_t KnomiLog::write(const uint8_t * buf, size_t n) {
 
 void KnomiLog::flush(void) { Serial.flush(); }
 
-String knomi_log_text(void) {
+String knomi_log_text(size_t tail) {
     String out;
     if (!ring) return out;
     portENTER_CRITICAL(&mux);
@@ -56,14 +56,20 @@ String knomi_log_text(void) {
     portEXIT_CRITICAL(&mux);
     // copy outside the lock (a concurrent write can tear one line, which is fine for a log)
     size_t len = w ? LOG_SIZE : h;
-    out.reserve(len + 1);
-    if (w) {
-        size_t start = h;
-        // start at the next full line
-        while (start < LOG_SIZE && ring[start] != '\n') start++;
-        if (start + 1 < LOG_SIZE) out.concat(ring + start + 1, LOG_SIZE - start - 1);
+    if (tail && tail < len) len = tail;
+    // the text is the last len bytes before head (wrapping), starting at the next full line
+    size_t start = (h + LOG_SIZE - len) % LOG_SIZE, n = len;
+    if (w || len < h) {
+        while (n && ring[start] != '\n') { start = (start + 1) % LOG_SIZE; n--; }
+        if (n) { start = (start + 1) % LOG_SIZE; n--; }
     }
-    out.concat(ring, h);
+    out.reserve(n + 1);
+    if (start + n > LOG_SIZE) {
+        out.concat(ring + start, LOG_SIZE - start);
+        out.concat(ring, n - (LOG_SIZE - start));
+    } else {
+        out.concat(ring + start, n);
+    }
     return out;
 }
 

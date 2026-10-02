@@ -3,6 +3,7 @@
 #include <AsyncElegantOTA.h>
 #include <esp_ota_ops.h>
 #include "knomi_health.h"
+#include "psram_json.h"
 #include "knomi_perf.h"
 const char * knomi_wifi_policy(void);   // wifi_setup.cpp
 String knomi_settings_schema(void);     // settings_schema.cpp
@@ -330,7 +331,7 @@ static String gifs_page(void) {
         "<section class='mast'><span class='label'>Animations</span><h1>Animations<span class='dot'>.</span></h1>"
         "<p class='lede'>Coaster acts out every state live. Upload a GIF to a slot to play your own animation there instead; it shows on the display right away. "
         "The screen is a 240&times;240 circle, so keep the subject centered.</p>";
-    size_t used = LittleFS.usedBytes(), total = LittleFS.totalBytes();
+    size_t used = knomi_fs_used(), total = LittleFS.totalBytes();
     unsigned pct = total ? (unsigned)(used * 100 / total) : 0;
     page += "<div class='strip'><span class='pill'>" + String((unsigned)(used / 1024)) + " / " +
             String((unsigned)(total / 1024)) + " KB used</span><span class='pill'>max 1.5 MB per GIF</span>"
@@ -708,14 +709,9 @@ static void log_routes(void) {
         request->send_P(200, "text/html", log_html);
     }).setFilter(exact("/log"));
     server.on("/log.txt", HTTP_GET, [](AsyncWebServerRequest *request){
-        String text = knomi_log_text();
-        if (request->hasParam("tail")) {   // the plugin's settings tab: just the end (it may come over Bluetooth)
-            long n = request->getParam("tail")->value().toInt();
-            if (n > 0 && (long)text.length() > n) {
-                int cut = text.indexOf('\n', text.length() - n);
-                text = text.substring(cut >= 0 ? cut + 1 : text.length() - n);
-            }
-        }
+        // ?tail=N: just the end (the plugin's settings tab; it may come over Bluetooth)
+        long tail = request->hasParam("tail") ? request->getParam("tail")->value().toInt() : 0;
+        String text = knomi_log_text(tail > 0 ? (size_t)tail : 0);
         AsyncWebServerResponse *r = request->beginResponse(200, "text/plain; charset=utf-8", text);
         r->addHeader("Cache-Control", "no-store");
         if (request->hasParam("dl")) {
@@ -728,7 +724,7 @@ static void log_routes(void) {
         request->send(200, "text/plain", "ok");
     });
     server.on("/log/info", HTTP_GET, [](AsyncWebServerRequest *request){
-        DynamicJsonDocument d(1536);
+        PsJsonDocument d(1536);
         d["fw"] = FW_VERSION;
 #ifdef KNOMIV1
         d["board"] = "KNOMI 1";
@@ -746,7 +742,7 @@ static void log_routes(void) {
         d["backend"] = knomi_config.backend;
         d["host"] = String(knomi_config.moonraker_ip) + ":" + knomi_config.moonraker_port;
         String st = coaster_state_json();
-        DynamicJsonDocument cs(3072);
+        PsJsonDocument cs(3072);
         deserializeJson(cs, st);
         d["mood"] = cs["mood"] | "?";
         // free stack per task (bytes never used so far): tools/check.py warns when one runs low
@@ -757,7 +753,7 @@ static void log_routes(void) {
         d["slot"] = run ? run->label : "?";
         d["ble"] = knomi_ble_link_active() ? "link up" : knomi_ble_connected() ? "connected, no status" : knomi_ble_running() ? "not connected" : "off";
         d["wifi_policy"] = knomi_wifi_policy();
-        d["fs_used"] = LittleFS.usedBytes();
+        d["fs_used"] = knomi_fs_used();
         d["fs_total"] = LittleFS.totalBytes();
         String out;
         serializeJson(d, out);

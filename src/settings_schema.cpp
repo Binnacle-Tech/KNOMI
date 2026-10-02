@@ -25,6 +25,7 @@
 #include "knomi_gif.h"
 #include "knomi_coaster.h"
 #include "config.h"
+#include "psram_json.h"
 
 const char * knomi_wifi_policy(void);   // wifi_setup.cpp
 
@@ -86,7 +87,7 @@ static JsonObject action(JsonObject s, const char * l, const char * post, const 
 
 String knomi_settings_schema(void) {
     const knomi_config_t & c = knomi_config;
-    DynamicJsonDocument d(49152);   // in PSRAM (malloc above 4 KB); about 20 KB used
+    PsJsonDocument d(49152);   // in PSRAM (malloc above 4 KB); about 20 KB used
     d["v"] = 1;
     d["fw"] = FW_VERSION;
     d["board"] = SCHEMA_BOARD;
@@ -241,7 +242,7 @@ String knomi_settings_schema(void) {
     {
         JsonObject s = section(secs, "coaster", "Coaster", "coaster.json", "Save Coaster");
         s["json"] = true;
-        DynamicJsonDocument t(1024);
+        PsJsonDocument t(1024);
         deserializeJson(t, coaster_tuning_json());
         static const struct { const char * n, * l, * h; double lo, hi, step; } tune[] = {
             {"wobble", "Wobble (Hz)", "How fast the head bounces back. Low is floppy, high is stiff.", 0.8, 6, 0.1},
@@ -287,7 +288,7 @@ String knomi_settings_schema(void) {
     // ---- animations ----
     {
         JsonObject s = section(secs, "gifs", "Animations", "", nullptr);
-        size_t used = LittleFS.usedBytes(), total = LittleFS.totalBytes();
+        size_t used = knomi_fs_used(), total = LittleFS.totalBytes();
         snprintf(buf, sizeof(buf), "Upload a GIF to play it there instead of Coaster acting it out. %u / %u KB of flash used, 1.5 MB max per GIF.",
                  (unsigned)(used / 1024), (unsigned)(total / 1024));
         s["h"] = buf;
@@ -339,7 +340,5 @@ String knomi_settings_schema(void) {
         action(s, "Clear log", "log/clear");
     }
 
-    String out;
-    serializeJson(d, out);
-    return out;
+    return json_string(d);
 }

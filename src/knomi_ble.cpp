@@ -94,6 +94,13 @@ bool knomi_ble_apply_status(const char *json, size_t len) {
     return true;
 }
 
+static void s_server_link(uint16_t conn) {
+    NimBLEServer *s = NimBLEDevice::getServer();
+    if (!s) return;
+    s->setDataLen(conn, 251);
+    s->updateConnParams(conn, 6, 12, 0, 400);   // 7.5-15 ms interval, 4 s supervision timeout
+}
+
 class ServerCB : public NimBLEServerCallbacks {
     void onConnect(NimBLEServer *s, ble_gap_conn_desc *desc) override {
         Serial.println("ble: central connected");
@@ -120,6 +127,9 @@ class ServerCB : public NimBLEServerCallbacks {
         if (ok) {
             authed = true;
             authed_conn = desc->conn_handle;
+            // bigger link-layer packets and a short connection interval: a 512-byte page frame goes out in ~3
+            // packets instead of ~20, so pages over Bluetooth come several times faster and buffers free sooner
+            s_server_link(desc->conn_handle);
             // tell the Pi our services may have changed: BlueZ caches a bonded device's services, so after a
             // firmware update that adds one (the page tunnel, OP41) it wouldn't see it until it looks again
             ble_svc_gatt_changed(0x0001, 0xFFFF);
@@ -332,7 +342,12 @@ void knomi_ble_init(void) {
     ch_tun = svc->createCharacteristic(KNOMI_BLE_TUNNEL_UUID, secure_write |
         NIMBLE_PROPERTY::NOTIFY | NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN, 512);
     ch_tun->setCallbacks(new TunnelCB());
-    tun_body = xStreamBufferCreate(4096, 1);
+    // the request body waits here while the task forwards it: big (fewer stalls in the Bluetooth host's write
+    // callback, which blocks while it's full) and in PSRAM (internal RAM is short with Bluetooth on)
+    static StaticStreamBuffer_t tun_body_s;
+    const size_t tun_body_n = 32 * 1024;
+    uint8_t *tun_body_mem = (uint8_t *)heap_caps_malloc(tun_body_n + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    tun_body = tun_body_mem ? xStreamBufferCreateStatic(tun_body_n, 1, tun_body_mem, &tun_body_s) : xStreamBufferCreate(4096, 1);
     tun_q = xQueueCreate(1, sizeof(tun_req_t));
     xTaskCreate(tunnel_task, "ble tunnel", 4096, NULL, 4, NULL);
     NimBLECharacteristic *info = svc->createCharacteristic(KNOMI_BLE_INFO_UUID, NIMBLE_PROPERTY::READ);
