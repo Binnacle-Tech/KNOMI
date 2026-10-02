@@ -67,26 +67,21 @@ static void update_task(void * arg) {
     http.useHTTP10(true);   // no chunked replies: the JSON is parsed straight off the stream
     String url;
 
-    // 1. latest release
+    // 1. latest release. Not through api.github.com: that allows 60 requests an hour per home IP (shared with
+    // OctoPrint's own update checks) and then answers 403. github.com/.../releases/latest just redirects to the tag.
     Serial.printf("update: checking GitHub for the latest release (free RAM %u)\r\n", ESP.getFreeHeap());
-    if (!http.begin(*tls, "https://api.github.com/repos/" UPDATE_REPO "/releases/latest")) { fail("Couldn't reach GitHub"); goto out; }
-    http.addHeader("Accept", "application/vnd.github+json");
+    http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    if (!http.begin(*tls, "https://github.com/" UPDATE_REPO "/releases/latest")) { fail("Couldn't reach GitHub"); goto out; }
     {
+        const char * keep[] = {"Location"};
+        http.collectHeaders(keep, 1);
         int code = http.GET();
-        if (code != 200) {
-            if (code < 0) snprintf(msg, sizeof(msg), "Couldn't reach GitHub (%s)", http.errorToString(code).c_str());
-            else snprintf(msg, sizeof(msg), "GitHub answered %d", code);
-            fail(msg); http.end(); goto out;
-        }
-        StaticJsonDocument<256> filter;
-        filter["tag_name"] = true;
-        filter["assets"][0]["name"] = true;
-        filter["assets"][0]["browser_download_url"] = true;
-        DynamicJsonDocument rel(8192);
-        DeserializationError err = deserializeJson(rel, http.getStream(), DeserializationOption::Filter(filter));
+        String loc = http.header("Location");
         http.end();
-        if (err) { fail("Couldn't read the release info"); goto out; }
-        strlcpy(tag, rel["tag_name"] | "", sizeof(tag));
+        if (code < 0) { snprintf(msg, sizeof(msg), "Couldn't reach GitHub (%s)", http.errorToString(code).c_str()); fail(msg); goto out; }
+        int at = loc.indexOf("/releases/tag/");
+        if (code / 100 != 3 || at < 0) { snprintf(msg, sizeof(msg), "GitHub answered %d", code); fail(msg); goto out; }
+        strlcpy(tag, loc.substring(at + 14).c_str(), sizeof(tag));
         int latest[4], current[4];
         if (!parse_ver(tag, latest) || !parse_ver(FW_VERSION, current)) { fail("Unknown version on GitHub"); goto out; }
         if (!newer(latest, current) && !force_flag) {
@@ -94,12 +89,10 @@ static void update_task(void * arg) {
             state = UP_CURRENT;
             goto out;
         }
-        for (JsonObject a : rel["assets"].as<JsonArray>()) {
-            if (strcmp(a["name"] | "", BOARD_ASSET) == 0) url = a["browser_download_url"].as<String>();
-        }
-        if (url.isEmpty()) { fail("The release has no " BOARD_ASSET); goto out; }
+        url = "https://github.com/" UPDATE_REPO "/releases/download/" + String(tag) + "/" BOARD_ASSET;
         Serial.printf("update: latest is %s, this is %s\r\n", tag, FW_VERSION);
     }
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);   // the download hops to GitHub's file host
 
     // 2. download straight into the other OTA partition
     snprintf(msg, sizeof(msg), "Downloading %s", tag);
@@ -109,7 +102,10 @@ static void update_task(void * arg) {
     if (!http.begin(*tls, url)) { fail("Couldn't start the download"); goto out; }
     {
         int code = http.GET();
-        if (code != 200) { snprintf(msg, sizeof(msg), "Download failed (%d)", code); fail(msg); http.end(); goto out; }
+        if (code != 200) {
+            snprintf(msg, sizeof(msg), code == 404 ? "The release has no " BOARD_ASSET : "Download failed (%d)", code);
+            fail(msg); http.end(); goto out;
+        }
         int total = http.getSize();
         Serial.printf("update: %d bytes\r\n", total);
         if (total <= 0) { fail("Download has no size"); http.end(); goto out; }
