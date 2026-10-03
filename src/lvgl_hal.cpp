@@ -30,6 +30,7 @@ static void push_area(const lv_area_t *area, lv_color_t *color_p) {
     tft_gc9a01.pushColors((uint16_t *)&color_p->full, w * h, true);
     tft_gc9a01.endWrite();
     knomi_perf_flush((uint32_t)(esp_timer_get_time() - t0));
+    knomi_perf_flush_area(area->x1, area->y1, area->x2, area->y2);
 }
 
 static void flush_task(void *) {

@@ -495,6 +495,41 @@ static void feel(float delta, const char * why, bool speak = false) {
 // the ritual, hobby, signature, layer tally, ratings and milestones got shuffled on every restart). "v":2 marks
 // files written this way. Written to a temp file first, so a restart mid-write can't lose it.
 #define FEEL_TMP "/coaster_feel.tmp"
+// Background writer for the feelings file: the LVGL task hands over the JSON, this task writes it (tmp + rename).
+static SemaphoreHandle_t feel_lock = nullptr;
+static TaskHandle_t feel_task = nullptr;
+static String feel_pending;
+static volatile bool feel_write_failed = false;
+
+static void feel_writer(void *) {
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        xSemaphoreTake(feel_lock, portMAX_DELAY);
+        String js = feel_pending;   // the newest one; older ones it replaced never get written
+        feel_pending = String();
+        xSemaphoreGive(feel_lock);
+        if (js.isEmpty()) continue;
+        File f = LittleFS.open(FEEL_TMP, "w");
+        size_t n = f ? f.print(js) : 0;
+        if (f) f.close();
+        if (n != js.length() || !LittleFS.rename(FEEL_TMP, FEEL_PATH)) {
+            Serial.println("coaster: couldn't save feelings");
+            feel_write_failed = true;   // coaster_loop marks them unsaved and tries again later
+        }
+    }
+}
+
+static void feel_queue(const String & js) {
+    if (!feel_lock) {
+        feel_lock = xSemaphoreCreateMutex();
+        xTaskCreate(feel_writer, "coaster save", 5120, NULL, 2, &feel_task);
+    }
+    xSemaphoreTake(feel_lock, portMAX_DELAY);
+    feel_pending = js;
+    xSemaphoreGive(feel_lock);
+    xTaskNotifyGive(feel_task);
+}
+
 static void feel_save(void) {
     time_t now = time(NULL);
     if (now > 1700000000) last_seen = now;
@@ -522,11 +557,12 @@ static void feel_save(void) {
     d["born"] = born; d["total"] = total_s; d["longest"] = longest_s; d["failed"] = prints_failed;
     d["screams"] = screams_total; d["dizzies"] = dizzies_total; d["wildest"] = wildest_cg; d["best"] = best_streak;
     if (d.overflowed()) { Serial.println("coaster: feelings didn't fit in memory, not saved"); return; }
-    File f = LittleFS.open(FEEL_TMP, "w");
-    if (!f) return;
-    size_t n = serializeJson(d, f);
-    f.close();
-    if (!n || !LittleFS.rename(FEEL_TMP, FEEL_PATH)) { Serial.println("coaster: couldn't save feelings"); return; }
+    // Writing the file takes 60-250 ms of flash time (/perf during a print: logic_ms_max spikes every 20 s, the
+    // face frozen meanwhile). Serialize here and let a background task write it.
+    String js;
+    js.reserve(measureJson(d) + 1);
+    serializeJson(d, js);
+    feel_queue(js);
     feel_dirty = false;
     feel_save_ms = millis();
 }
@@ -888,6 +924,7 @@ static void feel_tick(const moonraker_data_t & d) {
         }
         if (t[0] && strcmp(t, "Hmm.") != 0) say(t, 0);
     }
+    if (feel_write_failed) { feel_write_failed = false; feel_dirty = true; }
     if ((feel_dirty && millis() - feel_save_ms > 20000) || millis() - feel_save_ms > 600000UL) feel_save();
 }
 

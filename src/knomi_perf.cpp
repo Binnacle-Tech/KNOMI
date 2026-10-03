@@ -57,6 +57,21 @@ void knomi_perf_logic(uint32_t us) { logic_us_sum += us; if (us > logic_us_max) 
 void knomi_perf_flush(uint32_t us) {
     flushes++; flush_us_sum += us; if (us > flush_us_max) flush_us_max = us;
 }
+// the screen areas sent most in this window: shows what keeps redrawing (an animation, a label being set...)
+#define AREA_SLOTS 6
+static struct { int16_t x1, y1, x2, y2; uint32_t n; } areas[AREA_SLOTS];
+void knomi_perf_flush_area(int x1, int y1, int x2, int y2) {
+    if ((int32_t)(millis() - measuring_until) > 0) return;   // only while someone reads /perf
+    int free_i = -1, min_i = 0;
+    for (int i = 0; i < AREA_SLOTS; i++) {
+        if (areas[i].n && areas[i].x1 == x1 && areas[i].y1 == y1 && areas[i].x2 == x2 && areas[i].y2 == y2) { areas[i].n++; return; }
+        if (!areas[i].n && free_i < 0) free_i = i;
+        if (areas[i].n < areas[min_i].n) min_i = i;
+    }
+    int i = free_i >= 0 ? free_i : min_i;
+    areas[i].x1 = x1; areas[i].y1 = y1; areas[i].x2 = x2; areas[i].y2 = y2; areas[i].n = 1;
+}
+
 void knomi_perf_frame(uint32_t render_ms, uint32_t px) {
     frames++; frame_ms_sum += render_ms; if (render_ms > frame_ms_max) frame_ms_max = render_ms; px_sum += px;
 }
@@ -100,6 +115,14 @@ String knomi_perf_json(void) {
             first = false;
         }
         o += "}";
+        // areas redrawn most often in this window, [x1,y1,x2,y2,times]
+        o += ",\"areas\":[";
+        bool f2 = true;
+        for (int i = 0; i < AREA_SLOTS; i++) if (areas[i].n) {
+            o += String(f2 ? "" : ",") + "[" + areas[i].x1 + "," + areas[i].y1 + "," + areas[i].x2 + "," + areas[i].y2 + "," + areas[i].n + "]";
+            f2 = false;
+        }
+        o += "]";
     }
     frames = frame_ms_sum = frame_ms_max = px_sum = 0;
     faces = face_us_sum = face_us_max = 0;
@@ -107,6 +130,7 @@ String knomi_perf_json(void) {
     logic_us_sum = logic_us_max = 0;
     acc_ok = acc_err = acc_used = 0;
     idle_us[0] = idle_us[1] = 0;
+    memset(areas, 0, sizeof(areas));
     portENTER_CRITICAL(&mux);   // every read, or a short first window carried all the time since boot
     for (int i = 0; i < PERF_TASKS; i++) tasks[i].busy_us = 0;
     portEXIT_CRITICAL(&mux);
