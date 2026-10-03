@@ -2510,21 +2510,27 @@ void coaster_loop(void) {
         for (int i = 0; i < MAX_FACES; i++) {
             lv_obj_t * f = faces[i];
             if (!f || lv_obj_get_screen(f) != scr || !lv_obj_is_visible(f)) continue;
-            // redraw only where something changes: for each part that changed, the box around it this frame plus
-            // the one around it last frame (to erase it); nothing at all when no part changed
+            // redraw only where something changes: one box around the parts that changed, where they are this
+            // frame and where they were last frame (to erase them); nothing at all when no part changed. One box,
+            // not one per part: LVGL draws the whole face (clipped) once per box, so several small boxes cost more
+            // (/perf: 40-75 face draws a second at 25 fps) than one that leaves out the parts that stayed put.
             mgroup_t now[FACE_GROUPS];
             face_measure(f, now);
             if (face_seen[i] != f) {   // new face (or screen): draw all of it once
                 lv_obj_invalidate(f);
             } else {
+                lv_area_t u;
+                bool any = false;
                 for (int g = 0; g < FACE_GROUPS; g++) {
                     const mgroup_t & a = now[g], & b = face_parts[i][g];
                     if (a.h == b.h && a.any == b.any) continue;
-                    lv_area_t u;
-                    if (a.any && b.any) _lv_area_join(&u, &a.box, &b.box);
-                    else if (a.any) u = a.box;
-                    else if (b.any) u = b.box;
-                    else continue;
+                    const lv_area_t * boxes[2] = {a.any ? &a.box : nullptr, b.any ? &b.box : nullptr};
+                    for (const lv_area_t * bx : boxes) {
+                        if (!bx) continue;
+                        if (any) _lv_area_join(&u, &u, bx); else { u = *bx; any = true; }
+                    }
+                }
+                if (any) {
                     u.x1 -= 2; u.y1 -= 2; u.x2 += 2; u.y2 += 2;   // antialiased edges
                     lv_obj_invalidate_area(f, &u);
                 }

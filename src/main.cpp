@@ -96,12 +96,14 @@ void setup() {
         1);    // core 1; frames are sent to the screen from core 0 (lvgl_hal.cpp)
 
 #ifdef LIS2DW_SUPPORT
-    xTaskCreate(lis2dw12_task, "lis2dw12",
+    // on core 0: left to float it often waited behind the screen work on core 1 (/perf during a print with
+    // Coaster on screen: 40-54 readings a second instead of 140)
+    xTaskCreatePinnedToCore(lis2dw12_task, "lis2dw12",
         4096,  // Stack size (bytes)
         NULL,  // Parameter to pass
         9,     // Task priority
-        &knomi_tasks[KT_ACCEL]   // Task handle
-        );
+        &knomi_tasks[KT_ACCEL],  // Task handle
+        0);
 #endif
 
     xTaskCreate(wifi_task, "wifi",
