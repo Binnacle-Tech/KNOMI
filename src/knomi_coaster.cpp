@@ -474,9 +474,18 @@ static const char * feel_name(void) {
     return H > 0.6f ? "happy" : H > 0.25f ? "content" : H > -0.15f ? "okay" : H > -0.45f ? "down" : H > -0.75f ? "unhappy" : "miserable";
 }
 
+// While printing, the things it doesn't like (a disliked filament, getting dizzy, screaming when it hates speed)
+// don't pull its mood down: they add up here and make the print's lift smaller. A print always cheers it up some.
+static float print_grumble = 0;
+static bool printing_now(void) {
+    const moonraker_data_t & d = moonraker.data;
+    return d.printing && !(d.pause || d.paused_ext);
+}
+
 static void feel(float delta, const char * why, bool speak = false) {
     float before = H;
-    H = clampf(H + delta, -1, 1);
+    if (delta < 0 && printing_now()) print_grumble += -delta;   // noted (and said), but no loss now
+    else H = clampf(H + delta, -1, 1);
     feel_dirty = true;
     if (!why) return;
     memmove(fnotes + 1, fnotes, sizeof(fnotes) - sizeof(fnotes[0]));
@@ -821,12 +830,16 @@ static void feel_tick(const moonraker_data_t & d) {
         }
     }
     if (night) base_h += 0.1f * L(LK_NIGHT);
-    H += (base_h - H) / 21600;                     // drifts toward its baseline over ~6 h
     bool fans = d.printing && d.fan >= 60;
-    if (d.printing && !(d.pause || d.paused_ext)) {
-        H = min(1.0f, H + (0.1f + (fans ? 0.05f * L(LK_FANS) : 0)) / 3600);   // printing is fun
+    if (printing_now()) {
+        if (base_h > H) H += (base_h - H) / 21600;   // printing: only drifts up
+        // printing is fun: +0.1 an hour (a bit more with fans it likes), less the more it has put up with this print
+        // (down to a quarter), but never a loss
+        float lift = (0.1f + (fans ? 0.05f * L(LK_FANS) : 0)) * max(0.25f, 1.0f - 2.0f * print_grumble);
+        H = min(1.0f, H + max(0.02f, lift) / 3600);
         idle_s = 0;
     } else {
+        H += (base_h - H) / 21600;                 // drifts toward its baseline over ~6 h
         idle_s++;
         if (idle_s == 1800) react(LK_QUIET, eff(LK_QUIET));   // half an hour of peace and quiet: bliss, or boredom
         // left alone: some like the quiet, most get bored after a while
@@ -1461,6 +1474,7 @@ static void watch_printer(const moonraker_data_t & d) {
     if (d.printing) last_progress = d.progress;
     if (!was_printing && d.printing) {
         stats = {}; novelty_pending = true; cur_file = -1;
+        print_grumble = 0;
         // its pre-print ritual, the same every time
         static const uint8_t rit[RIT_COUNT][3] = {{Q_SLOWBLINK, Q_NOD, 0}, {Q_HUFF, Q_HUFF, Q_CHEER}, {Q_ROLL, Q_NOD, 0}, {Q_STRETCH, 0, 0}};
         if (ritual >= 0 && ritual < RIT_COUNT) quirk_queue(rit[ritual][0], rit[ritual][1], rit[ritual][2]);
