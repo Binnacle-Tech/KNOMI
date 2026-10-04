@@ -5,6 +5,7 @@
 #include "moonraker.h"
 #include "knomi_ble.h"
 #include "knomi_coaster.h"
+#include "knomi_health.h"
 #include <sys/time.h>
 #include <WiFi.h>
 #include <freertos/stream_buffer.h>
@@ -149,6 +150,7 @@ class StatusCB : public NimBLECharacteristicCallbacks {
         status_new = true;
         xSemaphoreGive(lock);
         last_status_ms = millis();
+        if (knomi_tasks[KT_PRINTER]) xTaskNotifyGive(knomi_tasks[KT_PRINTER]);   // the printer task applies it now
     }
 };
 

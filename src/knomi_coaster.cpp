@@ -191,6 +191,7 @@ static float frand(float a, float b) { return a + (b - a) * (esp_random() / 4294
  * without drawing to find out what changed (face_measure), then LVGL runs it for real, only over that area.
  * So the drawing code uses draw_ms instead of millis() and drand() (reseeded each frame) instead of frand(). */
 static uint32_t frame_no = 0, draw_ms = 0, draw_seed = 1, draw_rng = 1;
+static uint32_t frame_ms = 0;   // when the last frame started (coaster_loop)
 static float drand(float a, float b) {
     draw_rng = draw_rng * 1664525u + 1013904223u;
     return a + (b - a) * ((draw_rng >> 8) / 16777215.0f);
@@ -1831,15 +1832,19 @@ static void step_leaf(int i, float dt) {
         }
         float dx = q.x - 120;
         float slope = atan2f(dx, sqrtf(max(1.0f, 112.0f * 112.0f - dx * dx)));   // lies along the curve
-        if (fabsf(dx) > 25) q.x -= (dx > 0 ? 1 : -1) * 45 * sinf(fabsf(slope)) * dt;   // slides down the curve
         int lay = 0; float mx = 0;
         for (int j = 0; j < dparts_n; j++)
             if (j != i && dparts[j].rest && dparts[j].seq < q.seq && fabsf(dparts[j].x - q.x) < 8) { lay++; mx += dparts[j].x; }
+        // slides down the bare curve; one lying on other leaves stays put (it used to slide in, land on a stack,
+        // slump back out and slide in again forever, so the bottom of the screen was redrawn every frame)
+        if (lay == 0 && fabsf(dx) > 25) q.x -= (dx > 0 ? 1 : -1) * 45 * sinf(fabsf(slope)) * dt;
         if (lay >= 3) q.x += (q.x >= mx / lay ? 1 : -1) * 8 * dt;   // too tall a stack: slumps sideways
         float ty = leaf_rest_y(i);
         q.y += (ty - q.y) * (1 - expf(-dt * 10));             // settles (and drops when a leaf under it flies off)
+        if (fabsf(ty - q.y) < 0.2f) q.y = ty;                 // and then lies still (not creeping by fractions)
         float target = slope + PI * roundf((q.rot - slope) / PI);
         q.rot += (target - q.rot) * (1 - expf(-dt * 6));
+        if (fabsf(target - q.rot) < 0.01f) q.rot = target;
         return;
     }
     // in the air: gravity, then fluttering down slowly; loose, so it lags whatever the toolhead does
@@ -2486,7 +2491,7 @@ void coaster_loop(void) {
         configTime(0, 0, "pool.ntp.org", "time.google.com");
         ntp_started = true;
     }
-    static uint32_t last_ms = 0, frame_ms = 0;
+    static uint32_t last_ms = 0;
     uint32_t ms = millis();
     const moonraker_data_t & d = moonraker.data;
     watch_printer(d);
@@ -2562,6 +2567,13 @@ void coaster_loop(void) {
             memcpy(face_parts[i], now, sizeof(now));
         }
     }
+}
+
+// ms until Coaster's next frame is due (the UI loop sleeps until then or LVGL's next job, whichever is first)
+uint32_t coaster_ms_to_frame(void) {
+    if (knomi_power_screen_off()) return FRAME_MS;   // no frames while dark: don't spin waiting for one
+    uint32_t since = millis() - frame_ms;
+    return since >= FRAME_MS ? 0 : FRAME_MS - since;
 }
 
 String coaster_state_json(void) {

@@ -23,6 +23,7 @@ void coaster_set_act(int slot);                           // LVGL task: busy sta
 #ifdef __cplusplus
 }
 String coaster_state_json(void);   // live mood + meters for the web page
+uint32_t coaster_ms_to_frame(void);
 String coaster_tuning_json(void);  // current tuning (defaults if never saved)
 String coaster_plugin_json(bool motion = false, size_t max = 640);   // max: keep the JSON under this many bytes
 extern bool coaster_plugin_watched;

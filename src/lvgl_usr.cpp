@@ -198,8 +198,9 @@ void lvgl_ui_task(void * parameter) {
     lv_btn_set_extrude(NULL);
 
     for(;;) {
-        // lvgl task, must run in loop first.
-        lv_timer_handler();
+        // lvgl task, must run in loop first. It says how long until its next job (screen refresh, touch read,
+        // animation): the loop sleeps until then instead of going round every 5 ms
+        uint32_t lv_next = lv_timer_handler();
 
         wifi_status_t status = wifi_get_connect_status();
         // a live Bluetooth link to the plugin counts as connected (WiFi may be off)
@@ -249,6 +250,9 @@ void lvgl_ui_task(void * parameter) {
             apply_display_settings();
         }
 
-        delay(5);
+        // sleep until LVGL's next job or Coaster's next frame (it was a fixed 5 ms: 200 passes a second of
+        // screen checks for a screen drawn ~28 times a second)
+        uint32_t nap = min(lv_next, coaster_ms_to_frame());
+        delay(nap < 2 ? 2 : nap > 15 ? 15 : nap);
     }
 }

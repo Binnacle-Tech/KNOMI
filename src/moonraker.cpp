@@ -597,7 +597,8 @@ static void coaster_sync_plugin(void) {
     bool live = coaster_plugin_watched && millis() - last_ms >= 300;
     if (key == last && millis() - last_ms < 15000 && !live) return;
     bool ble = knomi_ble_link_active();
-    String s = coaster_plugin_json(coaster_plugin_watched, ble ? 512 - 9 : 640);   // "/coaster?" + JSON in one notification
+    // "/coaster?" + JSON in one notification; without head motion it's the key itself (no second build)
+    String s = (coaster_plugin_watched || ble) ? coaster_plugin_json(coaster_plugin_watched, ble ? 512 - 9 : 640) : key;
     bool ok = false;
     if (ble) {
         ok = knomi_ble_send_command("/coaster?" + s);
@@ -627,7 +628,7 @@ void moonraker_post_task(void * parameter) {
     for(;;) {
         moonraker.http_post_loop();
         coaster_sync_plugin();
-        delay(coaster_plugin_watched ? 100 : 500);
+        delay(coaster_plugin_watched ? 300 : 500);   // it sends at most ~3 a second anyway
     }
 }
 
@@ -650,7 +651,7 @@ void moonraker_task(void * parameter) {
         knomi_ble_process();
         if (knomi_ble_link_active()) {
             octoprint_ws_loop(); // closes the websocket if it was open
-            delay(20);
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(250));   // woken when a status arrives (was a 20 ms poll)
             continue;
         }
         if (wifi_get_connect_status() != WIFI_STATUS_CONNECTED) {
