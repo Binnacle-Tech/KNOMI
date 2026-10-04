@@ -844,7 +844,13 @@ static void feel_tick(const moonraker_data_t & d) {
         if (idle_s == 1800) react(LK_QUIET, eff(LK_QUIET));   // half an hour of peace and quiet: bliss, or boredom
         // left alone: some like the quiet, most get bored after a while
         float per_h = L(LK_QUIET) > 0.3f ? 0 : L(LK_QUIET) < -0.3f && idle_s > 2 * 3600UL ? 0.05f : idle_s > 12 * 3600UL ? 0.02f : 0;
-        H = max(-1.0f, H - per_h / 3600);
+        bool asleep = mood == M_SLEEPY || knomi_power_screen_off();
+        if (asleep) {
+            // sleeping soothes it a little (and it isn't bored while asleep), but only back up to neutral
+            if (H < 0) H = min(0.0f, H + 0.05f / 3600);
+        } else {
+            H = max(-1.0f, H - per_h / 3600);
+        }
     }
     // heated up and then nothing happened
     bool at_temp = (d.nozzle_target > 0 && d.nozzle_actual >= d.nozzle_target - 3) || (d.bed_target > 0 && d.bed_actual >= d.bed_target - 2);
