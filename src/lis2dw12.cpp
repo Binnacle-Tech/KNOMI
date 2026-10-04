@@ -25,7 +25,10 @@ int32_t lis2dw12_acc[3];
  *  - the axis gravity pulls on is the printer's Z; the axis through the screen is
  *    Y (the KNOMI faces the front); the remaining in-plane axis is X.
  */
-#define SAMPLE_MS     5       // 200 Hz (the coaster face wants the motion, not just peaks)
+// 50 Hz: two readings per screen frame. The accelerometer only drives Coaster, and the chip filters its
+// output to its rate, so nothing fast gets aliased into fake wobble. (It was 200 Hz, read one at a time:
+// /perf showed ~176 reads and ~350 physics steps a second for a face drawn 25 times a second.)
+#define SAMPLE_MS     20
 #define GRAVITY_ALPHA 0.0025f // ~2 s time constant for the gravity estimate
 #define PEAK_DECAY    0.96f   // per 5 ms (same fall-off as 0.85 at 50 Hz)
 
@@ -38,7 +41,7 @@ void lis2dw12_task(void * parameter) {
         }
     }
     Serial.println("LIS2DW12 found!");
-    lis2dw12.Set_X_ODR(200.0f);
+    lis2dw12.Set_X_ODR(50.0f);
     lis2dw12.Set_X_FS(4.0f);
     lis2dw12.Enable_X();
     Serial.println("\r\n******** LIS2DW12 init ok *****\r\n");
@@ -64,9 +67,9 @@ void lis2dw12_task(void * parameter) {
         else knomi_perf_accel(false, raw);
         // exactly the same reading for 2 s is a sensor that stopped measuring: wake it up again
         if (raw[0] == last_raw[0] && raw[1] == last_raw[1] && raw[2] == last_raw[2]) {
-            if (++same_n == 400) {
+            if (++same_n == 100) {   // 2 s
                 Serial.println("LIS2DW12: readings stopped changing, restarting it");
-                lis2dw12.Disable_X(); lis2dw12.Set_X_ODR(200.0f); lis2dw12.Set_X_FS(4.0f); lis2dw12.Enable_X();
+                lis2dw12.Disable_X(); lis2dw12.Set_X_ODR(50.0f); lis2dw12.Set_X_FS(4.0f); lis2dw12.Enable_X();
                 same_n = 0;
             }
         } else same_n = 0;
@@ -104,7 +107,7 @@ void lis2dw12_task(void * parameter) {
         Serial.printf("raw %d %d %d  g-axis %d  xyz %d %d %d\r\n", raw[0], raw[1], raw[2], z_axis,
                       lis2dw12_acc[0], lis2dw12_acc[1], lis2dw12_acc[2]);
 #endif
-        // aim for a sample every 5 ms: the read itself takes a few (3 I2C transactions at 100 kHz)
+        // aim for a sample every SAMPLE_MS (the read itself takes about a millisecond)
         uint32_t spent = millis() - t0;
         delay(spent >= SAMPLE_MS ? 1 : SAMPLE_MS - spent);
     }

@@ -17,7 +17,7 @@
 #include "ui_overlay/lv_overlay.h"
 #include "ui/ui.h"
 
-#define SAMPLE_DT   0.005f   // sensor runs at 200 Hz
+#define SAMPLE_DT   0.01f    // physics step (the sensor gives 50 Hz; each sample is held over two steps)
 #define FRAME_MS    33       // redraw ~30 fps
 #define MAX_FACES   6
 
@@ -171,7 +171,7 @@ static uint32_t ring_r = 0;
 
 // The sensor task doesn't manage a steady 200 a second (/perf OP39: 27-74 during a print), and the
 // physics used to assume it did, so Coaster ran in slow motion. Each sample now carries its real
-// spacing and the physics steps through it in 5 ms pieces.
+// spacing and the physics steps through it in SAMPLE_DT pieces.
 void coaster_push_sample(float x, float y, float z) {
     static int64_t last_us = 0;
     int64_t now = esp_timer_get_time();
@@ -216,7 +216,8 @@ static const char * MOOD_NAMES[M_COUNT] = {
 };
 
 // sensing
-static float lp[3], mfl[3], hist[6][3];
+#define HIST_N 3   // steps in the ~25 ms the startle check looks back over
+static float lp[3], mfl[3], hist[HIST_N][3];
 static uint8_t hist_i = 0;
 static float env = 0, base = 0, vib = 0, step = 0, thrill = 0, scream_t = 0, dizzy_meter = 0, still_t = 0;
 static bool from_rest = false;
@@ -331,11 +332,11 @@ static void sense(const float a[3], float dt) {
     // sudden step: change of the 40 Hz signal over 25 ms, starting from rest (endstop hits)
     float k40 = 1 - expf(-2 * PI * 40 * dt);
     for (int i = 0; i < 3; i++) mfl[i] += (a[i] - mfl[i]) * k40;
-    const float * o = hist[hist_i];   // oldest of the last 6 samples
+    const float * o = hist[hist_i];   // oldest of the last HIST_N steps
     step = sqrtf(sq(mfl[0] - o[0]) + sq(mfl[1] - o[1]) + sq(mfl[2] - o[2]));
     from_rest = sqrtf(o[0] * o[0] + o[1] * o[1] + o[2] * o[2]) < 0.3f;
     memcpy(hist[hist_i], mfl, sizeof(mfl));
-    hist_i = (hist_i + 1) % 6;
+    hist_i = (hist_i + 1) % HIST_N;
     base += (motion - base) * (1 - expf(-dt / max(1.0f, T.habit)));
     // a burst of motion after a pause (a travel, a new perimeter): "whee!"
     t_whee = max(0.0f, t_whee - dt);
@@ -2498,8 +2499,8 @@ void coaster_loop(void) {
         const float * r = ring[ring_r % RING];
         float a[3] = {r[0], r[1], r[2]}, dt = r[3];
         ring_r++;
-        int sub = (int)ceilf(dt / SAMPLE_DT - 0.01f);   // same sample held over each 5 ms piece
-        if (sub < 1) sub = 1;
+        int sub = (int)lroundf(dt / SAMPLE_DT);   // same sample held over each step (rounded: a sample a bit
+        if (sub < 1) sub = 1;                     // late no longer gets a whole extra step)
         float h = dt / sub;
         for (int k = 0; k < sub; k++) {
             now_s += h;
