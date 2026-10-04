@@ -200,7 +200,10 @@ void lvgl_ui_task(void * parameter) {
     for(;;) {
         // lvgl task, must run in loop first. It says how long until its next job (screen refresh, touch read,
         // animation): the loop sleeps until then instead of going round every 5 ms
+        int64_t lv_t0 = esp_timer_get_time();
         uint32_t lv_next = lv_timer_handler();
+        int64_t lv_t1 = esp_timer_get_time();
+        knomi_perf_part(PP_LVGL, lv_t1 - lv_t0);
 
         wifi_status_t status = wifi_get_connect_status();
         // a live Bluetooth link to the plugin counts as connected (WiFi may be off)
@@ -241,7 +244,8 @@ void lvgl_ui_task(void * parameter) {
         knomi_gif_process();
         int64_t logic_t0 = esp_timer_get_time();
         coaster_loop();   // Coaster's thinking (moods, springs, deciding what to redraw); timed for /perf
-        knomi_perf_logic((uint32_t)(esp_timer_get_time() - logic_t0));
+        uint32_t logic_us = (uint32_t)(esp_timer_get_time() - logic_t0);
+        knomi_perf_logic(logic_us);
         idle_face_sync();
         knomi_power_loop();
         lv_setup_screens_loop();
@@ -252,6 +256,7 @@ void lvgl_ui_task(void * parameter) {
 
         // sleep until LVGL's next job or Coaster's next frame (it was a fixed 5 ms: 200 passes a second of
         // screen checks for a screen drawn ~28 times a second)
+        knomi_perf_part(PP_LOOP, (uint32_t)(esp_timer_get_time() - lv_t1) - logic_us);   // screen checks, popups...
         uint32_t nap = min(lv_next, coaster_ms_to_frame());
         delay(nap < 2 ? 2 : nap > 15 ? 15 : nap);
     }

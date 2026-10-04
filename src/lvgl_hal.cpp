@@ -55,13 +55,21 @@ void usr_disp_flush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *colo
 
 // LVGL waits here instead of spinning while the other buffer is still being sent
 static void usr_disp_wait(lv_disp_drv_t *) {
+    int64_t t0 = esp_timer_get_time();
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(4));
+    knomi_perf_part(PP_WAIT, esp_timer_get_time() - t0);
 }
 
 #ifdef CST816S_SUPPORT
 void touch_idle_time_clear(void);
 bool knomi_power_filter_touch(bool pressed);
-void usr_touchpad_read(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
+static void usr_touchpad_read_(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data);
+void usr_touchpad_read(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {   // timed: shares I2C with the accelerometer
+    int64_t t0 = esp_timer_get_time();
+    usr_touchpad_read_(indev_drv, data);
+    knomi_perf_part(PP_TOUCH, esp_timer_get_time() - t0);
+}
+static void usr_touchpad_read_(struct _lv_indev_drv_t * indev_drv, lv_indev_data_t * data) {
     static touch_event_t event;
     if(ts_cst816s.ready()) {
         ts_cst816s.getTouch(&event);
@@ -201,7 +209,8 @@ void lvgl_hal_init(void) {
     disp_drv.wait_cb = usr_disp_wait;
     disp_drv.monitor_cb = [](lv_disp_drv_t *, uint32_t ms, uint32_t px) { knomi_perf_frame(ms, px); };   // /perf
     disp_drv.draw_buf = &draw_buf;
-    lv_disp_drv_register(&disp_drv);
+    lv_disp_t * disp = lv_disp_drv_register(&disp_drv);
+    knomi_perf_draw_hooks(disp->driver->draw_ctx);   // /perf parts_pct: drawing by kind
     // lv_disp_set_rotation(NULL, LV_DISP_ROT_180);
 
 #ifdef CST816S_SUPPORT

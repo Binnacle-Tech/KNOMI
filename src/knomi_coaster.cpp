@@ -2218,7 +2218,9 @@ static void draw_hat(const pen_t & p, float cx, float cy, float sx, float sy) {
 static void draw_face_at(lv_obj_t * obj, lv_draw_ctx_t * ctx);
 static void draw_face(lv_event_t * e) {   // timed for /perf
     int64_t t0 = esp_timer_get_time();
+    knomi_perf_in_face = true;
     draw_face_at(lv_event_get_target(e), lv_event_get_draw_ctx(e));
+    knomi_perf_in_face = false;
     knomi_perf_face((uint32_t)(esp_timer_get_time() - t0));
 }
 // What this frame of the face would draw, per part: a hash of it and the box around it (screen coordinates)
@@ -2485,6 +2487,16 @@ void coaster_init(void) {
     feel_load();
 }
 
+// one physics step, each stage timed for /perf parts_pct
+static void sim_step(const float a[3], float h, const moonraker_data_t & d) {
+    int64_t t0 = esp_timer_get_time(), t1;
+    sense(a, h);       t1 = esp_timer_get_time(); knomi_perf_part(PP_SENSE, t1 - t0); t0 = t1;
+    pick_mood(h, d);   t1 = esp_timer_get_time(); knomi_perf_part(PP_MOOD, t1 - t0); t0 = t1;
+    step_body(h);      t1 = esp_timer_get_time(); knomi_perf_part(PP_BODY, t1 - t0); t0 = t1;
+    step_expr(h);      t1 = esp_timer_get_time(); knomi_perf_part(PP_EXPR, t1 - t0); t0 = t1;
+    step_deco(h);      knomi_perf_part(PP_DECO, esp_timer_get_time() - t0);
+}
+
 void coaster_loop(void) {
     if (reload_pending) { reload_pending = false; load_tuning(); }
     if (!ntp_started && WiFi.status() == WL_CONNECTED) {   // the date, for seasonal hats
@@ -2509,7 +2521,7 @@ void coaster_loop(void) {
         float h = dt / sub;
         for (int k = 0; k < sub; k++) {
             now_s += h;
-            sense(a, h); pick_mood(h, d); step_body(h); step_expr(h); step_deco(h);
+            sim_step(a, h, d);
         }
         steps++;
     }
@@ -2521,7 +2533,7 @@ void coaster_loop(void) {
         if (n > 0 && (ms - last_ms) > 30) {   // no sensor (KNOMI 1) or it stalled
             for (int i = 0; i < n; i++) {
                 now_s += SAMPLE_DT;
-                sense(zero, SAMPLE_DT); pick_mood(SAMPLE_DT, d); step_body(SAMPLE_DT); step_expr(SAMPLE_DT); step_deco(SAMPLE_DT);
+                sim_step(zero, SAMPLE_DT, d);
             }
             last_ms = ms;
         }
@@ -2543,7 +2555,9 @@ void coaster_loop(void) {
             // not one per part: LVGL draws the whole face (clipped) once per box, so several small boxes cost more
             // (/perf: 40-75 face draws a second at 25 fps) than one that leaves out the parts that stayed put.
             mgroup_t now[FACE_GROUPS];
+            int64_t tm = esp_timer_get_time();
             face_measure(f, now);
+            knomi_perf_part(PP_MEASURE, esp_timer_get_time() - tm);
             if (face_seen[i] != f) {   // new face (or screen): draw all of it once
                 lv_obj_invalidate(f);
             } else {

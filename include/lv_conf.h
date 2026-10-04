@@ -123,7 +123,7 @@
     * The circumference of 1/4 circle are saved for anti-aliasing
     * radius * 4 bytes are used per circle (the most often used radiuses are saved)
     * 0: to disable caching */
-    #define LV_CIRCLE_CACHE_SIZE 4
+    /* (LV_CIRCLE_CACHE_SIZE is set above: this default of 4 used to sit here and quietly win over the 32) */
 #endif /*LV_DRAW_COMPLEX*/
 
 /**

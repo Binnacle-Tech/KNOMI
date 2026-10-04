@@ -1,3 +1,4 @@
+#include <lvgl.h>
 #include "knomi_perf.h"
 #include <esp_freertos_hooks.h>
 #include <esp_heap_caps.h>
@@ -72,6 +73,45 @@ void knomi_perf_flush_area(int x1, int y1, int x2, int y2) {
     areas[i].x1 = x1; areas[i].y1 = y1; areas[i].x2 = x2; areas[i].y2 = y2; areas[i].n = 1;
 }
 
+static const char * const PART_NAMES[PP_COUNT] = {"sense", "mood", "body", "expr", "deco", "measure", "lvgl", "loop_other",
+    "draw_rect", "draw_arc", "draw_text", "draw_img", "draw_line", "draw_poly", "touch", "wait_screen"};
+static volatile uint32_t part_us[PP_COUNT];
+volatile bool knomi_perf_in_face = false;
+void knomi_perf_part(int id, uint32_t us) { if (id >= 0 && id < PP_COUNT) part_us[id] += us; }
+
+// LVGL's drawing by kind. Only the outermost call is timed (an arc draws rects, text draws images...), and
+// nothing inside Coaster's face (that's face_ms).
+static lv_draw_ctx_t * hooked = NULL;
+static void (*o_rect)(lv_draw_ctx_t *, const lv_draw_rect_dsc_t *, const lv_area_t *);
+static void (*o_arc)(lv_draw_ctx_t *, const lv_draw_arc_dsc_t *, const lv_point_t *, uint16_t, uint16_t, uint16_t);
+static void (*o_letter)(lv_draw_ctx_t *, const lv_draw_label_dsc_t *, const lv_point_t *, uint32_t);
+static void (*o_img)(lv_draw_ctx_t *, const lv_draw_img_dsc_t *, const lv_area_t *, const uint8_t *, lv_img_cf_t);
+static void (*o_line)(lv_draw_ctx_t *, const lv_draw_line_dsc_t *, const lv_point_t *, const lv_point_t *);
+static void (*o_poly)(lv_draw_ctx_t *, const lv_draw_rect_dsc_t *, const lv_point_t *, uint16_t);
+static int draw_depth = 0;
+struct draw_timer {
+    int id; int64_t t0;
+    draw_timer(int i) : id(i), t0(0) { if (draw_depth++ == 0 && !knomi_perf_in_face) t0 = esp_timer_get_time(); }
+    ~draw_timer() { if (--draw_depth == 0 && t0) part_us[id] += (uint32_t)(esp_timer_get_time() - t0); }
+};
+static void h_rect(lv_draw_ctx_t * c, const lv_draw_rect_dsc_t * d, const lv_area_t * a) { draw_timer t(PP_RECT); o_rect(c, d, a); }
+static void h_arc(lv_draw_ctx_t * c, const lv_draw_arc_dsc_t * d, const lv_point_t * p, uint16_t r, uint16_t s, uint16_t e) { draw_timer t(PP_ARC); o_arc(c, d, p, r, s, e); }
+static void h_letter(lv_draw_ctx_t * c, const lv_draw_label_dsc_t * d, const lv_point_t * p, uint32_t l) { draw_timer t(PP_TEXT); o_letter(c, d, p, l); }
+static void h_img(lv_draw_ctx_t * c, const lv_draw_img_dsc_t * d, const lv_area_t * a, const uint8_t * m, lv_img_cf_t f) { draw_timer t(PP_IMG); o_img(c, d, a, m, f); }
+static void h_line(lv_draw_ctx_t * c, const lv_draw_line_dsc_t * d, const lv_point_t * a, const lv_point_t * b) { draw_timer t(PP_LINE); o_line(c, d, a, b); }
+static void h_poly(lv_draw_ctx_t * c, const lv_draw_rect_dsc_t * d, const lv_point_t * p, uint16_t n) { draw_timer t(PP_POLY); o_poly(c, d, p, n); }
+void knomi_perf_draw_hooks(void * ctx_v) {
+    lv_draw_ctx_t * c = (lv_draw_ctx_t *)ctx_v;
+    if (!c || hooked) return;
+    hooked = c;
+    if (c->draw_rect) { o_rect = c->draw_rect; c->draw_rect = h_rect; }
+    if (c->draw_arc) { o_arc = c->draw_arc; c->draw_arc = h_arc; }
+    if (c->draw_letter) { o_letter = c->draw_letter; c->draw_letter = h_letter; }
+    if (c->draw_img_decoded) { o_img = c->draw_img_decoded; c->draw_img_decoded = h_img; }
+    if (c->draw_line) { o_line = c->draw_line; c->draw_line = h_line; }
+    if (c->draw_polygon) { o_poly = c->draw_polygon; c->draw_polygon = h_poly; }
+}
+
 void knomi_perf_frame(uint32_t render_ms, uint32_t px) {
     frames++; frame_ms_sum += render_ms; if (render_ms > frame_ms_max) frame_ms_max = render_ms; px_sum += px;
 }
@@ -123,7 +163,16 @@ String knomi_perf_json(void) {
             f2 = false;
         }
         o += "]";
+        // UI task by part, % of wall time (draw_* = outside Coaster's face)
+        o += ",\"parts_pct\":{";
+        for (int i = 0; i < PP_COUNT; i++) o += String(i ? "," : "") + "\"" + PART_NAMES[i] + "\":" + String(part_us[i] / 1e4f / win, 1);
+        o += "}";
+        // the UI task's own CPU (all its parts, less waiting for the screen); core 1 minus this = other tasks there
+        float ui = (float)part_us[PP_LVGL] + part_us[PP_LOOP] + logic_us_sum - part_us[PP_WAIT];
+        o += ",\"ui_cpu_pct\":" + String(ui / 1e4f / win, 1);
+        o += ",\"parts_note\":\"% of wall time. lvgl includes face, draw_*, touch and wait_screen; logic_pct = sense..measure + printer checks\"";
     }
+    for (int i = 0; i < PP_COUNT; i++) part_us[i] = 0;
     frames = frame_ms_sum = frame_ms_max = px_sum = 0;
     faces = face_us_sum = face_us_max = 0;
     flushes = flush_us_sum = flush_us_max = 0;
