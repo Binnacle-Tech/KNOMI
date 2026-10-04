@@ -190,13 +190,11 @@ void lvgl_hal_init(void) {
     // animations (scrolling text, sliders, screen changes) step at most 30 times a second: they ran at the
     // 10 ms refresh rate, so one scrolling file name kept the print screen redrawing 41 times a second (/perf)
     lv_timer_set_period(lv_anim_get_timer(), 33);
-    // one line short of the whole screen on purpose: with two full-size buffers LVGL waits for the previous
-    // send before it starts drawing each area, so a frame with the face plus a clock or ring update drew
-    // them one after another with a send in between (/perf OP35: 17 ms frames). A hair smaller and it
-    // draws the next area while the last one is being sent. A full-height area is drawn in two parts;
-    // Coaster's face draws the same both times (see face_measure).
-    lv_disp_draw_buf_init(&draw_buf, color_buf, flush_q ? color_buf2 : NULL,
-                          flush_q ? TFT_WIDTH * (TFT_HEIGHT - 1) : TFT_WIDTH * TFT_HEIGHT);
+    // Full-size buffers (OP56 trial). They were one line short (OP35: with full-size ones a frame with the face plus a
+    // clock or ring update drew the areas one after another with a send in between, 17 ms frames), but then a
+    // full-screen redraw (Coaster trembling: heating, nervous) was split in two and the whole face drawn for each
+    // part, the second only the bottom row (/perf OP55: 38 faces a second at 19 fps, core 1 87%).
+    lv_disp_draw_buf_init(&draw_buf, color_buf, flush_q ? color_buf2 : NULL, TFT_WIDTH * TFT_HEIGHT);
 
     /*Initialize the display*/
     // must static
