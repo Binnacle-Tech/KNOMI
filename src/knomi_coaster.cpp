@@ -2510,6 +2510,8 @@ void coaster_loop(void) {
         for (int i = 0; i < MAX_FACES; i++) {
             lv_obj_t * f = faces[i];
             if (!f || lv_obj_get_screen(f) != scr || !lv_obj_is_visible(f)) continue;
+            // NOTE: redrawing only some parts of the face (per-part boxes, smaller boxes) has been tried several
+            // times (OP35, OP50, OP51) and measured on the KNOMI: it is NOT faster. Don't try it again.
             // redraw only where something changes: one box around the parts that changed, where they are this
             // frame and where they were last frame (to erase them); nothing at all when no part changed. One box,
             // not one per part: LVGL draws the whole face (clipped) once per box, so several small boxes cost more
