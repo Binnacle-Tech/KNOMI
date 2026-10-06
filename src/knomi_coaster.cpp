@@ -1579,9 +1579,14 @@ typedef struct { bool any; lv_area_t box; uint32_t h; } mgroup_t;
 static struct { bool on; int g; mgroup_t G[FACE_GROUPS]; } M;
 static inline void m_group(int g) { M.g = g; }
 static void m_hash(const void * d, size_t n) {
+    // FNV-style, a word at a time (was a byte at a time: the draw descriptors are ~100 bytes each, hashed for every
+    // shape every frame). Each step is reversible, so any changed word still changes the hash.
     const uint8_t * b = (const uint8_t *)d;
     uint32_t h = M.G[M.g].h;
-    for (size_t i = 0; i < n; i++) { h ^= b[i]; h *= 16777619u; }
+    size_t i = 0;
+    if (((uintptr_t)b & 3) == 0)
+        for (const uint32_t * w = (const uint32_t *)b; i + 4 <= n; i += 4) { h ^= *w++; h *= 16777619u; }
+    for (; i < n; i++) { h ^= b[i]; h *= 16777619u; }
     M.G[M.g].h = h;
 }
 static void m_box(int x1, int y1, int x2, int y2) {
@@ -1755,7 +1760,7 @@ static int hat_today(void) {
 }
 
 enum { P_SNOW, P_PETAL, P_LEAF, P_HEART };
-typedef struct { float x, y, ph, rot, vr, vy, r; uint8_t kind; uint32_t col; float vx; uint16_t seq; bool rest; float life; } deco_part_t;
+typedef struct { float x, y, ph, rot, vr, vy, r; uint8_t kind; uint32_t col; float vx; uint16_t seq; bool rest; float life; uint32_t still; } deco_part_t;
 static deco_part_t dparts[64];   // falling snow plus the snow piled up at the bottom
 static uint8_t dparts_n = 0;
 typedef struct { float x, y, vx, vy; } spark_t;
@@ -1820,6 +1825,8 @@ static void step_snow(int & i, float dt) {
     if (q.x < -20 || q.x > 260) { dparts[i--] = dparts[--dparts_n]; return; }
     if (q.y > 120 && q.y >= snow_top(snow_col(q.x))) { q.rest = true; q.seq = ++leaf_seq; q.life = frand(15, 40); }
 }
+static uint32_t pile_ver = 1;     // changes whenever a leaf lands, flies off or moves on the pile
+static bool pile_moved = false;
 static void step_leaf(int i, float dt) {
     deco_part_t & q = dparts[i];
     float jolt = sqrtf(lp[0] * lp[0] + lp[2] * lp[2]);   // g, in the screen's plane (printer X and Z)
@@ -1828,8 +1835,12 @@ static void step_leaf(int i, float dt) {
         if (jolt > 0.12f && frand(0, 1) < (jolt - 0.12f) * 8 * dt) {
             float k = min(1.6f, jolt / 0.3f);
             q.rest = false; q.vy = -frand(50, 110) * k; q.vx = -lp[0] * 260 + frand(-25, 25); q.vr = frand(-8, 8);
+            pile_moved = true;
             return;
         }
+        // lying still and nothing in the pile has moved since: the sums below would come out the same again
+        if (q.still == pile_ver) return;
+        float ox = q.x, oy = q.y, orot = q.rot;
         float dx = q.x - 120;
         float slope = atan2f(dx, sqrtf(max(1.0f, 112.0f * 112.0f - dx * dx)));   // lies along the curve
         int lay = 0; float mx = 0;
@@ -1845,6 +1856,7 @@ static void step_leaf(int i, float dt) {
         float target = slope + PI * roundf((q.rot - slope) / PI);
         q.rot += (target - q.rot) * (1 - expf(-dt * 6));
         if (fabsf(target - q.rot) < 0.01f) q.rot = target;
+        if (q.x == ox && q.y == oy && q.rot == orot) q.still = pile_ver; else pile_moved = true;
         return;
     }
     // in the air: gravity, then fluttering down slowly; loose, so it lags whatever the toolhead does
@@ -1872,6 +1884,7 @@ static void step_leaf(int i, float dt) {
         if (q.y >= fy) {
             for (int t = 0; t < 4 && bowl_y(q.x) - 3 - fy > 10; t++) { q.x += (esp_random() & 1) ? 6 : -6; fy = leaf_rest_y(i); }
             q.rest = true; q.seq = ++leaf_seq; q.vx = q.vy = 0; q.y = min(q.y, fy);
+            pile_moved = true;
         }
     }
 }
@@ -1890,7 +1903,9 @@ static void step_deco(float dt) {
             dparts[dparts_n++] = q;
             leaves_made++;
         }
+        pile_moved = false;
         for (int i = 0; i < dparts_n; i++) step_leaf(i, dt);
+        if (pile_moved) pile_ver++;   // the others check again next step
     }
     // falling / floating things
     bool snow = deco_snowy(k);
