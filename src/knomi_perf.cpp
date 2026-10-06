@@ -1,4 +1,5 @@
 #include <lvgl.h>
+#include <src/draw/sw/lv_draw_sw.h>
 #include "knomi_perf.h"
 #include <esp_freertos_hooks.h>
 #include <esp_heap_caps.h>
@@ -74,13 +75,14 @@ void knomi_perf_flush_area(int x1, int y1, int x2, int y2) {
 }
 
 static const char * const PART_NAMES[PP_COUNT] = {"sense", "mood", "body", "expr", "deco", "measure", "lvgl", "loop_other",
-    "draw_rect", "draw_arc", "draw_text", "draw_img", "draw_line", "draw_poly", "touch", "wait_screen"};
+    "draw_rect", "draw_arc", "draw_text", "draw_img", "draw_line", "draw_poly", "touch", "wait_screen",
+    "face_rect", "face_arc", "face_text", "face_img", "face_line", "face_poly"};
 static volatile uint32_t part_us[PP_COUNT];
 volatile bool knomi_perf_in_face = false;
 void knomi_perf_part(int id, uint32_t us) { if (id >= 0 && id < PP_COUNT) part_us[id] += us; }
 
-// LVGL's drawing by kind. Only the outermost call is timed (an arc draws rects, text draws images...), and
-// nothing inside Coaster's face (that's face_ms).
+// LVGL's drawing by kind. Only the outermost call is timed (an arc draws rects, text draws images...); inside
+// Coaster's face it goes to the face_* parts.
 static lv_draw_ctx_t * hooked = NULL;
 static void (*o_rect)(lv_draw_ctx_t *, const lv_draw_rect_dsc_t *, const lv_area_t *);
 static void (*o_arc)(lv_draw_ctx_t *, const lv_draw_arc_dsc_t *, const lv_point_t *, uint16_t, uint16_t, uint16_t);
@@ -91,7 +93,8 @@ static void (*o_poly)(lv_draw_ctx_t *, const lv_draw_rect_dsc_t *, const lv_poin
 static int draw_depth = 0;
 struct draw_timer {
     int id; int64_t t0;
-    draw_timer(int i) : id(i), t0(0) { if (draw_depth++ == 0 && !knomi_perf_in_face) t0 = esp_timer_get_time(); }
+    // inside Coaster's face: same kinds, counted separately (PP_F_RECT.. follow the same order as PP_RECT..)
+    draw_timer(int i) : id(knomi_perf_in_face ? i - PP_RECT + PP_F_RECT : i), t0(0) { if (draw_depth++ == 0) t0 = esp_timer_get_time(); }
     ~draw_timer() { if (--draw_depth == 0 && t0) part_us[id] += (uint32_t)(esp_timer_get_time() - t0); }
 };
 static void h_rect(lv_draw_ctx_t * c, const lv_draw_rect_dsc_t * d, const lv_area_t * a) { draw_timer t(PP_RECT); o_rect(c, d, a); }
@@ -110,6 +113,49 @@ void knomi_perf_draw_hooks(void * ctx_v) {
     if (c->draw_img_decoded) { o_img = c->draw_img_decoded; c->draw_img_decoded = h_img; }
     if (c->draw_line) { o_line = c->draw_line; c->draw_line = h_line; }
     if (c->draw_polygon) { o_poly = c->draw_polygon; c->draw_polygon = h_poly; }
+}
+
+/* Drawing speed in internal RAM vs PSRAM: the screen buffers are in PSRAM (no room inside). Measured once at
+ * start with LVGL's own drawing into a 240x60 strip in each: a plain fill, and antialiased circles like Coaster's. */
+static uint32_t mb_us[2][3];   // [internal, psram][fill, circles, blended fill]
+static bool mb_done = false;
+void knomi_perf_membench(void * disp_v) {
+    lv_disp_t * disp = (lv_disp_t *)disp_v;
+    lv_disp_drv_t * drv = disp ? disp->driver : NULL;
+    const int W = 240, H = 60;
+    lv_color_t * bufs[2] = {
+        (lv_color_t *)heap_caps_malloc(W * H * sizeof(lv_color_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (lv_color_t *)heap_caps_malloc(W * H * sizeof(lv_color_t), MALLOC_CAP_SPIRAM),
+    };
+    lv_draw_sw_ctx_t * ctx = (lv_draw_sw_ctx_t *)heap_caps_calloc(1, sizeof(lv_draw_sw_ctx_t), MALLOC_CAP_INTERNAL);
+    if (bufs[0] && bufs[1] && ctx && drv) {
+        lv_disp_t * was = _lv_refr_get_disp_refreshing();
+        _lv_refr_set_disp_refreshing(disp);   // LVGL's drawing looks up the screen being refreshed
+        lv_draw_sw_init_ctx(drv, (lv_draw_ctx_t *)ctx);
+        lv_draw_ctx_t * c = (lv_draw_ctx_t *)ctx;
+        lv_area_t all = {0, 0, W - 1, H - 1};
+        for (int m = 0; m < 2; m++) {
+            c->buf = bufs[m]; c->buf_area = &all; c->clip_area = &all;
+            lv_draw_rect_dsc_t d; lv_draw_rect_dsc_init(&d);
+            d.bg_color = lv_color_hex(0x203040);
+            int64_t t0 = esp_timer_get_time();
+            for (int i = 0; i < 20; i++) lv_draw_rect(c, &d, &all);
+            mb_us[m][0] = (uint32_t)(esp_timer_get_time() - t0) / 20;
+            d.radius = LV_RADIUS_CIRCLE; d.bg_color = lv_color_hex(0xFFD164);
+            t0 = esp_timer_get_time();
+            for (int i = 0; i < 20; i++)
+                for (int k = 0; k < 6; k++) { lv_area_t a = {(lv_coord_t)(k * 38 + 2), 4, (lv_coord_t)(k * 38 + 2 + 26 + k * 2), (lv_coord_t)(4 + 26 + k * 2)}; lv_draw_rect(c, &d, &a); }
+            mb_us[m][1] = (uint32_t)(esp_timer_get_time() - t0) / 20;
+            d.radius = 0; d.bg_opa = LV_OPA_50;
+            t0 = esp_timer_get_time();
+            for (int i = 0; i < 20; i++) lv_draw_rect(c, &d, &all);
+            mb_us[m][2] = (uint32_t)(esp_timer_get_time() - t0) / 20;
+        }
+        lv_draw_sw_deinit_ctx(drv, (lv_draw_ctx_t *)ctx);
+        _lv_refr_set_disp_refreshing(was);
+        mb_done = true;
+    }
+    free(bufs[0]); free(bufs[1]); free(ctx);
 }
 
 void knomi_perf_frame(uint32_t render_ms, uint32_t px) {
@@ -170,6 +216,9 @@ String knomi_perf_json(void) {
         // the UI task's own CPU (all its parts, less waiting for the screen); core 1 minus this = other tasks there
         float ui = (float)part_us[PP_LVGL] + part_us[PP_LOOP] + logic_us_sum - part_us[PP_WAIT];
         o += ",\"ui_cpu_pct\":" + String(ui / 1e4f / win, 1);
+        if (mb_done) o += ",\"membench_us\":{\"internal\":[" + String(mb_us[0][0]) + "," + String(mb_us[0][1]) + "," + String(mb_us[0][2]) +
+                          "],\"psram\":[" + String(mb_us[1][0]) + "," + String(mb_us[1][1]) + "," + String(mb_us[1][2]) +
+                          "],\"note\":\"240x60 strip: fill, 6 antialiased circles, 50% blended fill\"}";
         o += ",\"parts_note\":\"% of wall time. lvgl includes face, draw_*, touch and wait_screen; logic_pct = sense..measure + printer checks\"";
     }
     for (int i = 0; i < PP_COUNT; i++) part_us[i] = 0;

@@ -208,6 +208,7 @@ void lvgl_hal_init(void) {
     disp_drv.monitor_cb = [](lv_disp_drv_t *, uint32_t ms, uint32_t px) { knomi_perf_frame(ms, px); };   // /perf
     disp_drv.draw_buf = &draw_buf;
     lv_disp_t * disp = lv_disp_drv_register(&disp_drv);
+    knomi_perf_membench(disp);                 // /perf membench_us (before the timing hooks)
     knomi_perf_draw_hooks(disp->driver->draw_ctx);   // /perf parts_pct: drawing by kind
     // lv_disp_set_rotation(NULL, LV_DISP_ROT_180);
 
