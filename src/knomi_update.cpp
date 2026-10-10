@@ -6,6 +6,9 @@
 #include <ArduinoJson.h>
 #include "config.h"
 #include "knomi_update.h"
+#include "knomi_ble.h"
+#include "moonraker.h"
+#include "knomi_flavor.h"
 #include "github_roots.h"
 #include <esp_heap_caps.h>
 #include "mbedtls/platform.h"
@@ -30,7 +33,10 @@ static char msg[120] = "";
 static char tag[32] = "";
 static bool force_flag = false;
 
-bool knomi_update_busy(void) { return state == UP_CHECKING || state == UP_DOWNLOADING; }
+static volatile bool checking = false;   // the Moonraker build asking GitHub what's out
+static bool remote = false;            // OctoPrint build: the plugin is doing the install (state mirrors it)
+static uint32_t remote_since = 0;
+bool knomi_update_busy(void) { return ((state == UP_CHECKING || state == UP_DOWNLOADING) && !remote) || checking; }
 
 static void fail(const char * m) {
     strlcpy(msg, m, sizeof(msg));
@@ -53,6 +59,52 @@ static bool newer(const int a[4], const int b[4]) {
     return false;
 }
 
+// the newest release's tag ("v1.0.2-op59"). Not through api.github.com: that allows 60 requests an hour per home IP
+// (shared with OctoPrint's own update checks) and then answers 403. github.com/.../releases/latest just redirects.
+static bool fetch_latest(WiFiClientSecure * tls, HTTPClient & http, char * out, size_t n, char * err, size_t en) {
+    http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    if (!http.begin(*tls, "https://github.com/" UPDATE_REPO "/releases/latest")) { strlcpy(err, "Couldn't reach GitHub", en); return false; }
+    const char * keep[] = {"Location"};
+    http.collectHeaders(keep, 1);
+    int code = http.GET();
+    String loc = http.header("Location");
+    http.end();
+    if (code < 0) { snprintf(err, en, "Couldn't reach GitHub (%s)", http.errorToString(code).c_str()); return false; }
+    int at = loc.indexOf("/releases/tag/");
+    if (code / 100 != 3 || at < 0) { snprintf(err, en, "GitHub answered %d", code); return false; }
+    strlcpy(out, loc.substring(at + 14).c_str(), n);
+    return true;
+}
+
+/* ---- what's out: for the pages, /log/info and Coaster ----
+ * Moonraker build: the KNOMI asks GitHub itself, 2 minutes after starting and then every 6 hours.
+ * OctoPrint build: it isn't on the internet; the plugin tells it (status "fl"). */
+static char latest_tag[32] = "";
+static portMUX_TYPE latest_mux = portMUX_INITIALIZER_UNLOCKED;
+static void set_latest(const char * t) {
+    portENTER_CRITICAL(&latest_mux);
+    strlcpy(latest_tag, t, sizeof(latest_tag));
+    portEXIT_CRITICAL(&latest_mux);
+}
+String knomi_update_latest(void) {
+    char b[32];
+    portENTER_CRITICAL(&latest_mux);
+    strlcpy(b, latest_tag, sizeof(b));
+    portEXIT_CRITICAL(&latest_mux);
+    return String(b);
+}
+static bool parse_ver(const char * s, int v[4]);
+static bool newer(const int a[4], const int b[4]);
+bool knomi_update_newer_out(void) {
+    String t = knomi_update_latest();
+    int l[4], c[4];
+    return t.length() && parse_ver(t.c_str(), l) && parse_ver(FW_VERSION, c) && newer(l, c);
+}
+void knomi_update_set_latest(const char * tag) {
+    int v[4];
+    if (tag && *tag && strlen(tag) < sizeof(latest_tag) && parse_ver(tag, v)) set_latest(tag);
+}
+
 static void update_task(void * arg) {
     mbedtls_platform_set_calloc_free(tls_calloc, tls_free);
     WiFiClientSecure * tls = new WiFiClientSecure();
@@ -64,21 +116,12 @@ static void update_task(void * arg) {
     http.useHTTP10(true);   // no chunked replies: the JSON is parsed straight off the stream
     String url;
 
-    // 1. latest release. Not through api.github.com: that allows 60 requests an hour per home IP (shared with
-    // OctoPrint's own update checks) and then answers 403. github.com/.../releases/latest just redirects to the tag.
+    // 1. latest release
     Serial.printf("update: checking GitHub for the latest release (free RAM %u)\r\n", ESP.getFreeHeap());
-    http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-    if (!http.begin(*tls, "https://github.com/" UPDATE_REPO "/releases/latest")) { fail("Couldn't reach GitHub"); goto out; }
     {
-        const char * keep[] = {"Location"};
-        http.collectHeaders(keep, 1);
-        int code = http.GET();
-        String loc = http.header("Location");
-        http.end();
-        if (code < 0) { snprintf(msg, sizeof(msg), "Couldn't reach GitHub (%s)", http.errorToString(code).c_str()); fail(msg); goto out; }
-        int at = loc.indexOf("/releases/tag/");
-        if (code / 100 != 3 || at < 0) { snprintf(msg, sizeof(msg), "GitHub answered %d", code); fail(msg); goto out; }
-        strlcpy(tag, loc.substring(at + 14).c_str(), sizeof(tag));
+        char err[96];
+        if (!fetch_latest(tls, http, tag, sizeof(tag), err, sizeof(err))) { fail(err); goto out; }
+        set_latest(tag);
         int latest[4], current[4];
         if (!parse_ver(tag, latest) || !parse_ver(FW_VERSION, current)) { fail("Unknown version on GitHub"); goto out; }
         if (!newer(latest, current) && !force_flag) {
@@ -150,7 +193,16 @@ bool knomi_ota_upload_busy(void);   // webserver.cpp: a firmware upload has the 
 bool knomi_update_start(bool force) {
     if (knomi_ota_upload_busy()) return false;
     if (knomi_update_busy() || state == UP_DONE) return false;
-    if (KNOMI_OCTOPRINT) { fail("The KNOMI isn't on the internet: update it from OctoPrint, Settings > KNOMI"); return false; }
+#if KNOMI_OCTOPRINT
+    // not on the internet: the plugin downloads the release on the Pi and sends it over (the KNOMI network or Bluetooth)
+    if (remote && (state == UP_CHECKING || state == UP_DOWNLOADING)) return false;
+    if (!knomi_ble_link_active()) { fail("No Bluetooth link to OctoPrint right now"); return false; }
+    remote = true; remote_since = millis();
+    state = UP_CHECKING; pct = 0; tag[0] = 0;
+    strlcpy(msg, "Asking OctoPrint to install the latest release…", sizeof(msg));
+    knomi_ble_send_command(String("/knomi/fw_install?asset=") + BOARD_ASSET + (force ? "&force=1" : ""));
+    return true;
+#endif
     if (WiFi.status() != WL_CONNECTED) { fail("The KNOMI isn't on WiFi"); return false; }
     force_flag = force;
     state = UP_CHECKING;
@@ -161,7 +213,25 @@ bool knomi_update_start(bool force) {
     return true;
 }
 
+#if KNOMI_OCTOPRINT
+// the plugin's install, as it goes (BLE status "fu": [state, pct, message])
+void knomi_update_remote(const char * st, int p, const char * m) {
+    if (!st || !*st) return;
+    if (!strcmp(st, "downloading") || !strcmp(st, "sending")) state = UP_DOWNLOADING;
+    else if (!strcmp(st, "done")) state = UP_DONE;
+    else if (!strcmp(st, "error")) state = UP_ERROR;
+    else return;
+    remote = true; remote_since = millis();
+    pct = constrain(p, 0, 100);
+    if (m && *m) strlcpy(msg, m, sizeof(msg));
+}
+#endif
+
 String knomi_update_status_json(void) {
+#if KNOMI_OCTOPRINT
+    if (remote && state == UP_CHECKING && millis() - remote_since > 30000)
+        fail("OctoPrint didn't start the install (needs plugin 0.15 or newer)");
+#endif
     StaticJsonDocument<256> d;
     d["state"] = STATE_NAMES[state];
     d["pct"] = pct;
@@ -170,4 +240,46 @@ String knomi_update_status_json(void) {
     String out;
     serializeJson(d, out);
     return out;
+}
+
+#if !KNOMI_OCTOPRINT
+static void check_task(void *) {
+    mbedtls_platform_set_calloc_free(tls_calloc, tls_free);
+    WiFiClientSecure * tls = new WiFiClientSecure();
+    tls->setCACert(github_roots);
+    HTTPClient http;
+    http.setUserAgent("KNOMI-" FW_VERSION);
+    http.setTimeout(15000);
+    char t[32], err[96];
+    if (fetch_latest(tls, http, t, sizeof(t), err, sizeof(err))) {
+        set_latest(t);
+        Serial.printf("update: latest release is %s (this is %s)\r\n", t, FW_VERSION);
+    } else Serial.printf("update: couldn't check for a new release: %s\r\n", err);
+    delete tls;
+    checking = false;
+    vTaskDelete(NULL);
+}
+#endif
+
+// WiFi task: the Moonraker build checks GitHub now and then and has Coaster mention a new release (once, not mid-print)
+void knomi_update_loop(void) {
+#if !KNOMI_OCTOPRINT
+    static uint32_t next = 120000;
+    static char told[32] = "";
+    if (!checking && knomi_update_newer_out() && !moonraker.data.printing) {
+        String t = knomi_update_latest();
+        if (strcmp(told, t.c_str()) != 0) {
+            strlcpy(told, t.c_str(), sizeof(told));
+            int v[4];
+            parse_ver(t.c_str(), v);
+            char m[96];
+            snprintf(m, sizeof(m), "KNOMI firmware OP%d is out. Update it on the KNOMI's settings page", v[3]);
+            moonraker_set_msg(m, (long)millis() | 1);
+        }
+    }
+    if ((int32_t)(millis() - next) < 0 || checking || knomi_update_busy() || WiFi.status() != WL_CONNECTED) return;
+    next = millis() + 6 * 3600 * 1000UL;
+    checking = true;
+    if (xTaskCreate(check_task, "update check", 12288, NULL, 3, NULL) != pdPASS) { checking = false; next = millis() + 600000; }
+#endif
 }

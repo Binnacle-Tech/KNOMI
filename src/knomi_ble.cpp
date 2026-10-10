@@ -9,6 +9,7 @@
 #include "knomi_coaster.h"
 #include "knomi_health.h"
 #include "knomi_link.h"
+#include "knomi_update.h"
 #include <sys/time.h>
 #include <WiFi.h>
 #include <freertos/stream_buffer.h>
@@ -94,6 +95,9 @@ bool knomi_ble_apply_status(const char *json, size_t len) {
     }
     if (doc.containsKey("tz")) coaster_host_tz(doc["tz"] | 0);
     coaster_plugin_watched = doc["cw"] | 0;   // someone has the OctoPrint sidebar open
+    if (doc.containsKey("fl")) knomi_update_set_latest(doc["fl"] | "");   // newest release (the KNOMI isn't online)
+    if (doc.containsKey("fu"))   // the plugin installing firmware for the KNOMI: [state, pct, message]
+        knomi_update_remote(doc["fu"][0] | "", doc["fu"][1] | 0, doc["fu"][2] | "");
     moonraker.data_unlock = true;
     return true;
 }

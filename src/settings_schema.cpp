@@ -23,6 +23,7 @@
 #include "knomi.h"
 #include "knomi_ble.h"
 #include "knomi_link.h"
+#include "knomi_update.h"
 #include "knomi_gif.h"
 #include "knomi_coaster.h"
 #include "config.h"
@@ -324,10 +325,17 @@ String knomi_settings_schema(void) {
     {
         JsonObject s = section(secs, "system", "System", "", nullptr);
         JsonObject f = field(s, "fw", "info", "Firmware"); f["v"] = FW_VERSION;
-        f = field(s, "update", "firmware", "Update", "Installs the latest release from GitHub; settings stay.");
+        {   // what's out: the KNOMI checks GitHub (Moonraker build) or the plugin tells it (OctoPrint build)
+            String l = knomi_update_latest();
+            f = field(s, "fw_latest", "info", "Latest release");
+            f["v"] = l.isEmpty() ? String("not checked yet") : knomi_update_newer_out() ? l + " is out" : l + ", up to date";
+        }
+        f = field(s, "update", "firmware", "Update", KNOMI_OCTOPRINT ? "OctoPrint downloads the latest release and sends it to the KNOMI; settings stay."
+                                                                     : "Installs the latest release from GitHub; settings stay.");
         f["repo"] = UPDATE_REPO;
         f["asset"] = KNOMI_ASSET;   // this board and build flavour
-        f = field(s, "backup", "link", "Download backup", "Holds all settings and custom animations, including your WiFi password and API key. Keep it private.");
+        f = field(s, "backup", "link", "Download backup", KNOMI_OCTOPRINT ? "Holds all settings and custom animations (and any WiFi password or API key older firmware saved). Keep it private."
+                                                    : "Holds all settings and custom animations, including your WiFi password. Keep it private.");
         f["src"] = "backup";
         f = field(s, "backup", "file", "Restore a backup", "Replaces all settings and custom animations, then restarts.");
         f["accept"] = ".knomi"; f["post"] = "restore"; f["confirm"] = "Restore this backup? It replaces all settings and custom animations, then restarts the KNOMI.";

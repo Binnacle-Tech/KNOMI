@@ -236,7 +236,13 @@ release for the KNOMI's board and build, and send it over (the KNOMI network if 
 **Install this .bin** sends a file you pick. Coaster mentions it when a new release is out. Settings, animations and
 layouts stay. If it fails, the old firmware keeps running and the reason is shown.
 
-The Moonraker build updates itself from its own settings page (**Update from GitHub**), since it's on the internet.
+**Knowing what's out:** the KNOMI isn't on the internet, so the plugin checks GitHub (every 6 hours) and tells it over
+Bluetooth. The KNOMI's own pages and settings show the latest release, Coaster mentions a new one, and **Check and
+install** on the KNOMI's Firmware page asks OctoPrint to do the install (plugin 0.15+).
+
+The Moonraker build is on the internet, so it does all of that itself: it checks GitHub 2 minutes after starting and
+then every 6 hours, Coaster mentions a new release (not mid-print), and **Update from GitHub** on its settings page
+downloads and installs it.
 
 The KNOMI checks which build an upload is: the OctoPrint build won't install a Moonraker `.bin` and the other way round.
 Firmware from before OP58 has no marker and is accepted, so going back to an older release works.

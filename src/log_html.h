@@ -50,7 +50,7 @@ function fmtUp(s){var d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.fl
 function kb(b){return Math.round(b/1024)+" KB"}
 function info(){fetch("log/info").then(function(r){return r.json()}).then(function(j){
   var rows=[["Firmware",j.fw],["Board",j.board],["Uptime",fmtUp(j.uptime)],["Last restart",j.reset],["Free RAM",kb(j.heap)+" (low "+kb(j.heap_min)+")"],
-    ["Free PSRAM",kb(j.psram)],["WiFi",j.wifi],["Printer",j.backend+" "+j.host],["Coaster",j.mood],["Flash used",kb(j.fs_used)+" of "+kb(j.fs_total)]];
+    ["Free PSRAM",kb(j.psram)],["Network",j.wifi],["Latest release",j.fw_latest||"not checked yet"],["Printer",j.backend+" "+j.host],["Coaster",j.mood],["Flash used",kb(j.fs_used)+" of "+kb(j.fs_total)]];
   $("info").innerHTML=rows.map(function(r){return'<div><span>'+r[0]+'</span><b>'+String(r[1]).replace(/[&<>]/g,"")+'</b></div>'}).join("");
 }).catch(function(){})}
 function show(){var f=$("filter").value.toLowerCase(),t=f?text.split("\n").filter(function(l){return l.toLowerCase().indexOf(f)>=0}).join("\n"):text;

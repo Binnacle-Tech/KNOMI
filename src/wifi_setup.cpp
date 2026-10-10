@@ -4,6 +4,7 @@
 #include "discover.h"
 #include "knomi_ble.h"
 #include "knomi_link.h"
+#include "knomi_update.h"
 #include <ESPmDNS.h>
 
 #define DEFAULT_KLIPPER_PORT "80"
@@ -692,6 +693,7 @@ void wifi_task(void * parameter) {
             continue;
         }
         sta_fallback_loop();
+        knomi_update_loop();   // is there a newer release? (GitHub, now and then)
         wifi_scan_refresh();
         wifi_config_loop(false);
         octoprint_discover_loop();

@@ -78,15 +78,23 @@ function installUpdate(bid, pid){
 }
 function checkUpdate(){
   var cur = fwParse("$fw$");
-  if (!cur || !window.fetch) return;
+  if (!cur) return;
+  function show(tag, url){
+    var latest = fwParse(tag);
+    if (!latest || !fwNewer(latest, cur)) return;
+    document.getElementById("update-ver").textContent = tag + " available";
+    document.getElementById("update-dl").href = url;
+    document.getElementById("update-note").style.display = "";
+  }
+  // the KNOMI knows (it checks GitHub itself, or the OctoPrint plugin tells it); else ask GitHub from this browser
+  var known = "$latest$";
+  if (known) { show(known, "https://github.com/$repo$/releases/download/" + known + "/$asset$"); return; }
+  if (!window.fetch) return;
   fetch("https://api.github.com/repos/$repo$/releases/latest").then(function(r){ return r.ok ? r.json() : null; }).then(function(rel){
     if (!rel) return;
-    var latest = fwParse(rel.tag_name);
-    if (!latest || !fwNewer(latest, cur)) return;
-    var asset = (rel.assets || []).filter(function(a){ return a.name.indexOf("$board$") >= 0 && a.name.slice(-4) === ".bin"; })[0];
-    document.getElementById("update-ver").textContent = rel.tag_name + " available";
-    document.getElementById("update-dl").href = asset ? asset.browser_download_url : rel.html_url;
-    document.getElementById("update-note").style.display = "";
+    // this board AND build: a release has both the OctoPrint and the Moonraker file
+    var asset = (rel.assets || []).filter(function(a){ return a.name === "$asset$"; })[0];
+    show(rel.tag_name, asset ? asset.browser_download_url : rel.html_url);
   }).catch(function(){});
 }
 function popupConfirm(){ popup_clicked = true; popup_btn = true; }

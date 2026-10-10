@@ -208,6 +208,12 @@ String knomi_html_processor(const String& var){
 #endif
     } else if (var == "fw") {
         value = FW_VERSION;
+    } else if (var == "via_note") {
+        value = KNOMI_OCTOPRINT ? " (OctoPrint downloads it and sends it over: the KNOMI isn't on the internet)" : "";
+    } else if (var == "asset") {
+        value = KNOMI_ASSET;   // this board and build's file in a release
+    } else if (var == "latest") {
+        value = knomi_update_latest();   // what the KNOMI knows is out ("" = not yet)
     } else if (var == "sta_ip") {
         value = (WiFi.status() == WL_CONNECTED) ? WiFi.localIP().toString() : String("not on WiFi");
     } else if (var == "ap_ssid") {
@@ -807,6 +813,7 @@ static void log_routes(void) {
     server.on("/log/info", HTTP_GET, [](AsyncWebServerRequest *request){
         PsJsonDocument d(1536);
         d["fw"] = FW_VERSION;
+        d["fw_latest"] = knomi_update_latest();   // newest release it knows of
 #ifdef KNOMIV1
         d["board"] = "KNOMI 1";
 #else

@@ -1,3 +1,8 @@
+#include "../knomi_flavor.h"
+#include "../knomi_ble.h"
+#if KNOMI_OCTOPRINT
+#include "../knomi_link.h"
+#endif
 #include "ui/ui.h"
 #include "knomi.h"
 #include "moonraker.h"
@@ -261,10 +266,22 @@ void lv_roller_setting_clicked(lv_event_t * e, uint16_t opt_id) {
             break;
         case 5:
         {
+#if KNOMI_OCTOPRINT
+            // no WiFi of its own to show: the Bluetooth link, its network, and who's on it
+            lv_label_set_text(ui_label_sta_ip_name, "Link:");
+            lv_label_set_text(ui_label_sta_ip, knomi_ble_link_active() ? "OctoPrint (Bluetooth)" : "waiting");
+            lv_label_set_text(ui_label_ap_ip_name, "Net:");
+            lv_label_set_text_fmt(ui_label_ap_ip, "%s", knomi_link_ssid());
+            lv_label_set_text(ui_label_local_name, "IP:");
+            lv_label_set_text(ui_label_local, WiFi.softAPIP().toString().c_str());
+            lv_label_set_text(ui_label_host_name, "On it:");
+            lv_label_set_text_fmt(ui_label_host, "%d device(s)", knomi_link_clients());
+#else
             lv_label_set_text(ui_label_sta_ip, WiFi.localIP().toString().c_str());
             lv_label_set_text(ui_label_ap_ip, WiFi.softAPIP().toString().c_str());
             lv_label_set_text_fmt(ui_label_local, "%s.local", knomi_config.hostname);
             lv_label_set_text_fmt(ui_label_host, "%s:%s", knomi_config.moonraker_ip, knomi_config.moonraker_port);
+#endif
 
             _ui_screen_change(&ui_ScreenInfo, LV_SCR_LOAD_ANIM_FADE_ON, 500, 0, NULL);
             break;

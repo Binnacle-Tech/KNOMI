@@ -20,7 +20,7 @@ const char update_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
   <section class="mast">
     <span class="label">Firmware</span>
     <h1>Firmware<span class="dot">.</span></h1>
-    <p class="lede">Install a new version of the KNOMI's firmware over WiFi. Settings, Coaster's memories and custom animations stay.
+    <p class="lede">Install a new version of the KNOMI's firmware. Settings, Coaster's memories and custom animations stay.
     If a new version keeps crashing, the KNOMI goes back to the one before by itself.</p>
     <div class="strip"><span class="pill">$fw$</span><span class="pill">$board$</span><span class="pill" id="slot">slot …</span></div>
     <div class="rule"></div>
@@ -29,7 +29,7 @@ const char update_html[] PROGMEM = R"rawliteral(<!DOCTYPE html><html lang="en"><
   <section class="card">
     <div class="card-h"><span class="idx">01</span><span class="k">From GitHub</span></div>
     <div class="card-b">
-      <p>Checks <a href="https://github.com/$repo$/releases" target="_blank" rel="noopener">$repo$</a> for a newer release and installs it.</p>
+      <p>Checks <a href="https://github.com/$repo$/releases" target="_blank" rel="noopener">$repo$</a> for a newer release and installs it$via_note$.</p>
       <div class="act"><button type="button" class="btn-primary" id="gh-go" onclick="installUpdate()">Check and install</button><span class="pill" id="gh-latest" style="display:none"></span></div>
       <div class="meter"><i id="gh-bar" style="width:0"></i></div>
       <div class="status" id="gh-status"></div>
@@ -121,12 +121,16 @@ function upload(){
 }
 fetch("log/info").then(function(r){ return r.json(); }).then(function(i){ if (i.slot) el("slot").textContent = "running from " + i.slot; }).catch(function(){ el("slot").style.display = "none"; });
 // newest release, if this browser can reach GitHub (not over the KNOMI's own access point)
-fetch("https://api.github.com/repos/$repo$/releases/latest").then(function(r){ return r.ok ? r.json() : null; }).then(function(rel){
-  if (!rel) return;
-  var l = fwParse(rel.tag_name), c = fwParse("$fw$"), p = el("gh-latest");
+function showLatest(tag){
+  var l = fwParse(tag), c = fwParse("$fw$"), p = el("gh-latest");
   if (!l || !c) return;
-  p.style.display = ""; p.textContent = fwNewer(l, c) ? rel.tag_name + " available" : "up to date";
+  p.style.display = ""; p.textContent = fwNewer(l, c) ? tag + " available" : "up to date";
   p.className = "pill " + (fwNewer(l, c) ? "now" : "ok");
+}
+// the KNOMI knows (it checks GitHub itself, or the OctoPrint plugin tells it); else ask GitHub from this browser
+if ("$latest$") showLatest("$latest$");
+else fetch("https://api.github.com/repos/$repo$/releases/latest").then(function(r){ return r.ok ? r.json() : null; }).then(function(rel){
+  if (rel) showLatest(rel.tag_name);
 }).catch(function(){});
 </script>
 </body></html>)rawliteral";
