@@ -22,6 +22,7 @@
 #include <LittleFS.h>
 #include "knomi.h"
 #include "knomi_ble.h"
+#include "knomi_link.h"
 #include "knomi_gif.h"
 #include "knomi_coaster.h"
 #include "config.h"
@@ -100,11 +101,8 @@ String knomi_settings_schema(void) {
         // the backend is fixed by the build (OctoPrint or Moonraker firmware), not a setting
         JsonObject f = field(s, "flavor", "info", "Firmware for"); f["v"] = KNOMI_FLAVOR_NAME;
 #if KNOMI_OCTOPRINT
-        s["h"] = "Over Bluetooth the plugin sends the KNOMI everything; these are for its WiFi connection.";
-        f = field(s, "ip", "text", "Host"); f["v"] = c.moonraker_ip; f["max"] = 64; f["ph"] = "192.168.1.20 or octopi.local"; f["g"] = "host";
-        f = field(s, "port", "text", "Port"); f["v"] = c.moonraker_port; f["max"] = 5; f["ph"] = "80"; f["g"] = "host";
-        f = field(s, "api_key", "password", "OctoPrint API key", "OctoPrint > User Settings > Application Keys");
-        f["set"] = c.api_key[0] != 0; f["max"] = 64;
+        s["h"] = "The plugin sends the KNOMI everything over Bluetooth; nothing to set here.";
+        s.remove("save");
 #else
         f = field(s, "ip", "text", "Host"); f["v"] = c.moonraker_ip; f["max"] = 64; f["ph"] = "192.168.1.20 or mainsailos.local"; f["g"] = "host";
         f = field(s, "port", "text", "Port"); f["v"] = c.moonraker_port; f["max"] = 5; f["ph"] = "7125"; f["g"] = "host";
@@ -189,27 +187,30 @@ String knomi_settings_schema(void) {
     // ---- Bluetooth ----
 #if KNOMI_OCTOPRINT   // Bluetooth link to the plugin
     {
-        JsonObject s = section(secs, "bluetooth", "Bluetooth", "bluetooth", "Save Bluetooth");
+        // always on in this build: it's how the plugin reaches the KNOMI (the KNOMI isn't on your WiFi)
+        JsonObject s = section(secs, "bluetooth", "Bluetooth", "", nullptr);
         s["status"] = !knomi_ble_running() ? "off" : knomi_ble_link_active() ? "connected"
                     : knomi_ble_connected() ? "paired, waiting for data" : "advertising";
-        JsonObject f = field(s, "bt_enabled", "select", "Bluetooth link to OctoPrint", "Takes effect after a restart.");
-        opt(f, "0", "Off"); opt(f, "1", "On: prefer Bluetooth, WiFi as fallback");
-        f["v"] = (int)(c.bt_enabled ? 1 : 0);
-        f = field(s, "bt_wifi_off", "select", "WiFi while Bluetooth is connected");
-        opt(f, "0", "Keep WiFi on"); opt(f, "1", "Turn WiFi off");
-        f["v"] = (int)(c.bt_wifi_off ? 1 : 0);
-        if (!c.bt_wifi_off && !knomi_ble_link_active()) f["ro"] = true;
-        f["h"] = c.bt_wifi_off ? "WiFi turns off 10 s after Bluetooth connects." :
-                 knomi_ble_link_active() ? "Bluetooth is connected, so WiFi can be turned off." :
-                 "Available once the plugin is connected over Bluetooth.";
-        num(s, "bt_fallback", "WiFi fallback (seconds)", c.bt_fallback_s, 15, 3600,
-            "If Bluetooth isn't connected for this long, including after boot, WiFi turns back on.");
-        f = field(s, "bt_addr", "info", "KNOMI Bluetooth address"); f["v"] = knomi_ble_address();
-        f = field(s, "wifi_policy", "info", "WiFi right now"); f["v"] = knomi_wifi_policy();
-        action(s, "Forget paired devices", "bluetooth/forget", "Forget all paired devices? The Pi will need to pair again.", true);
+        JsonObject f = field(s, "bt_addr", "info", "KNOMI Bluetooth address"); f["v"] = knomi_ble_address();
+        action(s, "Forget paired devices", "bluetooth/forget",
+               "Forget all paired devices? The Pi will need to pair again, and the KNOMI's network gets a new password.", true);
     }
 #endif
 
+#if KNOMI_OCTOPRINT
+    // ---- the KNOMI's own network (the Pi joins it; knomi_link.cpp) ----
+    {
+        JsonObject s = section(secs, "link", "KNOMI network", "", "Save");
+        s["h"] = "The KNOMI runs its own WiFi network and the Pi joins it by itself, using details it gets over Bluetooth.";
+        JsonObject f = field(s, "link_ssid", "info", "Network"); f["v"] = knomi_link_ssid();
+        int n = knomi_link_clients();
+        f = field(s, "link_clients", "info", "Joined");
+        f["v"] = n == 0 ? String("nobody yet") : String(n) + (n == 1 ? " device (the Pi)" : " devices");
+        f = field(s, "link_ip", "info", "KNOMI address"); f["v"] = WiFi.softAPIP().toString();
+        f = field(s, "hostname", "text", "Name", "The Bluetooth name is KNOMI-name. Takes effect after a restart.");
+        f["v"] = c.hostname; f["max"] = 15;
+    }
+#else
     // ---- WiFi: join a network ----
     {
         JsonObject s = section(secs, "wifi", "WiFi network", "", "Connect");
@@ -242,6 +243,8 @@ String knomi_settings_schema(void) {
         f = field(s, "ap_ssid", "text", "AP name"); f["v"] = c.ap_ssid; f["max"] = 32; f["g"] = "ap";
         f = field(s, "ap_password", "password", "AP password", "6 or more characters."); f["set"] = c.ap_pwd[0] != 0; f["max"] = 64; f["g"] = "ap";
     }
+
+#endif
 
     // ---- Coaster ----
     {

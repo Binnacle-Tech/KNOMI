@@ -10,6 +10,7 @@
 #include "knomi_gif.h"
 #include "lv_overlay.h"
 #include "../knomi_coaster.h"
+#include "../knomi_ble.h"
 
 
 #define COLOR_BG    0x000000
@@ -79,7 +80,7 @@ void lv_setup_screens_init(void) {
     lv_obj_t * off = coaster_create(ui_ScreenWIFIDisconnect, 130);
     lv_obj_align(off, LV_ALIGN_CENTER, 0, -34);
     lv_obj_t * lost = label(ui_ScreenWIFIDisconnect, &ui_font_InterSemiBold18, COLOR_TEXT, 26);
-    lv_label_set_text(lost, "WiFi lost");
+    lv_label_set_text(lost, KNOMI_OCTOPRINT ? "Lost OctoPrint" : "WiFi lost");
     lost_label = label(ui_ScreenWIFIDisconnect, &ui_font_InterSemiBold14, COLOR_MUTED, 52);
     lv_obj_set_width(lost_label, 160);
     lv_label_set_long_mode(lost_label, LV_LABEL_LONG_WRAP);
@@ -115,10 +116,18 @@ void lv_setup_screens_loop(void) {
     lv_obj_t * scr = lv_scr_act();
     String ssid = knomi_config.sta_ssid;
 
+#if KNOMI_OCTOPRINT
+    // OctoPrint build: these screens are about the Bluetooth link to the plugin, not WiFi
+    if (scr == ui_ScreenWIFIConnecting) {
+        set_text(conn_label, knomi_ble_connected() ? String("Paired, waiting\nfor OctoPrint") : String("Waiting for\nthe OctoPrint plugin"));
+    } else if (scr == ui_ScreenWIFIDisconnect) {
+        set_text(lost_label, "Waiting for the\nBluetooth link");
+#else
     if (scr == ui_ScreenWIFIConnecting) {
         set_text(conn_label, ssid.isEmpty() ? String("Connecting") : "Connecting to\n" + ssid);
     } else if (scr == ui_ScreenWIFIDisconnect) {
         set_text(lost_label, ssid.isEmpty() ? String("Reconnecting") : "Reconnecting to\n" + ssid);
+#endif
     } else if (scr == ui_ScreenWelcome) {
         String qr, l1, l2;
         if (WiFi.softAPgetStationNum() > 0) {

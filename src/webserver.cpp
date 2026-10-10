@@ -15,6 +15,7 @@ String knomi_settings_schema(void);     // settings_schema.cpp
 #include "discover.h"
 #include "binnacle_css.h"
 #include "knomi_ble.h"
+#include "knomi_link.h"
 #include "backup.h"
 #include "layout_html.h"
 #include "coaster_html.h"
@@ -113,6 +114,8 @@ String knomi_html_processor(const String& var){
                                              : "<span class=\"pill now\">Moonraker</span>";
     } else if (var == "backend_row") {
         value = "hidden";   // the backend is fixed by the build (OctoPrint or Moonraker firmware)
+    } else if (var == "op_hide") {
+        value = KNOMI_OCTOPRINT ? "hidden" : "";   // OctoPrint build: no WiFi joining, no host settings, Bluetooth always on
     } else if (var == "bt_card") {
         value = KNOMI_OCTOPRINT ? "" : "hidden";   // no Bluetooth in the Moonraker build
     } else if (var == "bl") {
@@ -813,11 +816,18 @@ static void log_routes(void) {
         d["heap"] = ESP.getFreeHeap();
         d["heap_min"] = ESP.getMinFreeHeap();
         d["psram"] = ESP.getFreePsram();
+#if KNOMI_OCTOPRINT
+        d["wifi"] = String(knomi_link_ssid()) + " (the KNOMI's own) · " + String(knomi_link_clients()) + " device(s) · " +
+                    WiFi.softAPIP().toString();
+        d["backend"] = knomi_config.backend;
+        d["host"] = "the plugin, over Bluetooth";
+#else
         if (WiFi.status() == WL_CONNECTED)
             d["wifi"] = WiFi.SSID() + " · " + String(WiFi.RSSI()) + " dBm · " + WiFi.localIP().toString();
-        else d["wifi"] = knomi_ble_link_active() ? "off (Bluetooth link)" : "not connected";
+        else d["wifi"] = "not connected";
         d["backend"] = knomi_config.backend;
         d["host"] = String(knomi_config.moonraker_ip) + ":" + knomi_config.moonraker_port;
+#endif
         String st = coaster_state_json();
         PsJsonDocument cs(3072);
         deserializeJson(cs, st);

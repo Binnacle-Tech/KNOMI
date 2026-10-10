@@ -131,6 +131,8 @@ void MOONRAKER::http_post_loop(void) {
     xSemaphoreGive(post_lock());
     if (knomi_ble_link_active())
         knomi_ble_send_command(path); // plugin translates
+    else if (KNOMI_OCTOPRINT)
+        Serial.printf("not sent (no Bluetooth link to the plugin): %s\r\n", path.c_str());
     else if (knomi_backend_is_octoprint())
         octoprint_post(path);
     else
@@ -523,6 +525,7 @@ bool MOONRAKER::get_file_list(String &out) {
     if (knomi_ble_link_active()) {
         return knomi_ble_file_list(out);
     }
+    if (KNOMI_OCTOPRINT) return false;   // only the plugin has the list (over Bluetooth)
     if (!knomi_backend_is_octoprint()) {
         String list = send_request("GET", "/server/files/list?");
         if (list.isEmpty()) return false;
@@ -654,7 +657,8 @@ void moonraker_task(void * parameter) {
             ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(250));   // woken when a status arrives (was a 20 ms poll)
             continue;
         }
-        if (wifi_get_connect_status() != WIFI_STATUS_CONNECTED) {
+        // OctoPrint build: the plugin over Bluetooth is the only way in (the KNOMI isn't on your network)
+        if (KNOMI_OCTOPRINT || wifi_get_connect_status() != WIFI_STATUS_CONNECTED) {
             delay(200);
             continue;
         }

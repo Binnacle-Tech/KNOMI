@@ -3,6 +3,7 @@
 // Binnacle house style (ejknotts.com), trimmed for the KNOMI web pages.
 // Served at /binnacle.css. Fonts are optional: offline (AP mode) falls back to system fonts.
 const char binnacle_css[] PROGMEM = R"rawliteral(
+[hidden]{display:none!important}
 :root{
   --ink:#0E1419;--panel:#151E27;--panel-2:#1B2731;--well:#101922;
   --line:#26333E;--line-2:#334353;

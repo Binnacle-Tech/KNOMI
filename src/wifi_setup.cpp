@@ -3,6 +3,7 @@
 #include "knomi.h"
 #include "discover.h"
 #include "knomi_ble.h"
+#include "knomi_link.h"
 #include <ESPmDNS.h>
 
 #define DEFAULT_KLIPPER_PORT "80"
@@ -163,6 +164,10 @@ void knomi_config_sanitize_screen(void) {
 
 static void knomi_config_sanitize_bt(void) {
     if (knomi_config.bt_enabled > 1) knomi_config.bt_enabled = 0;
+#if KNOMI_OCTOPRINT
+    knomi_config.bt_enabled = 1;    // the only way in: always on
+    knomi_config.bt_wifi_off = 0;   // (WiFi is the KNOMI's own network, always on)
+#endif
     if (knomi_config.bt_wifi_off > 1 || !knomi_config.bt_enabled) knomi_config.bt_wifi_off = 0;
     if (knomi_config.bt_fallback_s < 15 || knomi_config.bt_fallback_s > 3600) knomi_config.bt_fallback_s = 60;
 }
@@ -557,6 +562,9 @@ static uint32_t bt_up_since = 0, bt_down_since = 0, wifi_forced_until = 0;
 bool knomi_wifi_suspended(void) { return wifi_suspended; }
 // for /log/info: what the WiFi-off setting is doing right now
 const char * knomi_wifi_policy(void) {
+#if KNOMI_OCTOPRINT
+    return "the KNOMI's own network, for the Pi";
+#endif
     if (!(knomi_config.bt_enabled && knomi_config.bt_wifi_off)) return "wifi stays on (setting)";
     if (wifi_suspended) return "wifi off (Bluetooth link up)";
     if (wifi_forced_until && (int32_t)(wifi_forced_until - millis()) > 0) return "wifi on (plugin asked, for 10 min)";
@@ -616,7 +624,37 @@ static void bt_wifi_policy_loop(void) {
     }
 }
 
+#if KNOMI_OCTOPRINT
+/* OctoPrint build: the KNOMI doesn't join a network. It runs its own for the Pi (knomi_link.cpp), and what the
+ * screen says follows the Bluetooth link to the plugin. */
+static void link_wifi_task(void) {
+    WiFi.persistent(false);
+    WiFi.hostname(knomi_config.hostname);
+    knomi_link_load();
+    knomi_link_start();
+    webserver_setup();
+    bool was_up = false;
+    int clients = -1;
+    for (;;) {
+        uint16_t req = knomi_config_require_take();
+        if (req & EEPROM_PARA_CHANGED) eeprom_write_knomi_config();
+        if (req & WEB_POST_RESTART) ESP.restart();
+        (void)knomi_ble_take_wifi_request();   // the plugin's "turn WiFi on": it's always on here
+        if (knomi_link_take_restart()) { WiFi.softAPdisconnect(false); delay(200); knomi_link_start(); }
+        int n = knomi_link_clients();
+        if (n != clients) { clients = n; Serial.printf("link: %d device(s) on the KNOMI's network\r\n", n); }
+        bool up = knomi_ble_link_active();
+        if (up) was_up = true;
+        wifi_status = up ? WIFI_STATUS_CONNECTED : was_up ? WIFI_STATUS_DISCONNECT : WIFI_STATUS_CONNECTING;
+        delay(100);
+    }
+}
+#endif
+
 void wifi_task(void * parameter) {
+#if KNOMI_OCTOPRINT
+    link_wifi_task();   // never returns
+#endif
 
     if (knomi_config.bt_enabled && knomi_config.bt_wifi_off && knomi_ble_running()) {
         // Boot with WiFi off and wait for Bluetooth. The stack still has to come up

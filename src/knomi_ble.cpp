@@ -8,6 +8,7 @@
 #include "knomi_ble.h"
 #include "knomi_coaster.h"
 #include "knomi_health.h"
+#include "knomi_link.h"
 #include <sys/time.h>
 #include <WiFi.h>
 #include <freertos/stream_buffer.h>
@@ -386,6 +387,15 @@ void knomi_ble_init(void) {
     tun_body = tun_body_mem ? xStreamBufferCreateStatic(tun_body_n, 1, tun_body_mem, &tun_body_s) : xStreamBufferCreate(4096, 1);
     tun_q = xQueueCreate(1, sizeof(tun_req_t));
     xTaskCreate(tunnel_task, "ble tunnel", 4096, NULL, 4, NULL);
+    // the KNOMI's own WiFi network, for the Pi to join: only to a paired device (encrypted + authenticated)
+    class LinkCB : public NimBLECharacteristicCallbacks {
+        void onRead(NimBLECharacteristic *c) override {
+            String s = knomi_link_secret_json();
+            c->setValue((const uint8_t *)s.c_str(), s.length());
+        }
+    };
+    svc->createCharacteristic(KNOMI_BLE_LINK_UUID,
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN, 160)->setCallbacks(new LinkCB());
     NimBLECharacteristic *info = svc->createCharacteristic(KNOMI_BLE_INFO_UUID, NIMBLE_PROPERTY::READ);
     String info_s = String("{\"fw\":\"" FW_VERSION "\",\"host\":\"") + knomi_config.hostname + "\"}";
     info->setValue((const uint8_t *)info_s.c_str(), info_s.length());
@@ -458,6 +468,7 @@ String knomi_ble_address(void) {
 
 void knomi_ble_forget_bonds(void) {
     if (running) NimBLEDevice::deleteAllBonds();
+    knomi_link_new_password();   // a Pi that isn't paired any more doesn't stay on the KNOMI's network either
 }
 
 uint32_t knomi_ble_take_passkey(void) {

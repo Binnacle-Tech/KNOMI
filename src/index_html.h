@@ -153,7 +153,7 @@ async function discoverOcto(){
   </section>
 
   <div class="stack2">
-  <section class="card">
+  <section class="card" $op_hide$>
     <div class="card-h"><span class="idx">01</span><span class="k">Printer connection</span></div>
     <div class="card-b">
       <form id="klipper-form" name="klipper-form" action="./" method="POST">
@@ -322,7 +322,7 @@ async function discoverOcto(){
     <form action="bluetooth" method="POST">
     <div class="card-b">
       <div class="cols">
-        <div class="row">
+        <div class="row" $op_hide$>
           <label class="field-label" for="bt_enabled">Bluetooth link to OctoPrint</label>
           <select id="bt_enabled" name="bt_enabled">
             <option value="0" $bt_off$>Off</option>
@@ -335,7 +335,7 @@ async function discoverOcto(){
           <input type="text" class="mono" id="bt_address" value="$bt_addr$" readonly placeholder="Bluetooth is off">
           <div class="hint">Pair from the Pi: <span class="mono">bluetoothctl</span>, then <span class="mono">pair</span> this address and type the code the KNOMI shows.</div>
         </div>
-        <div class="row">
+        <div class="row" $op_hide$>
           <label class="field-label" for="bt_wifi_off">WiFi while Bluetooth is connected</label>
           <select id="bt_wifi_off" name="bt_wifi_off" $wo_lock$>
             <option value="0" $wo_0$>Keep WiFi on</option>
@@ -343,7 +343,7 @@ async function discoverOcto(){
           </select>
           <div class="hint">$wo_hint$</div>
         </div>
-        <div class="row">
+        <div class="row" $op_hide$>
           <label class="field-label" for="bt_fallback">WiFi fallback (seconds)</label>
           <input type="number" class="mono" id="bt_fallback" name="bt_fallback" min="15" max="3600" value="$bt_fb$">
           <div class="hint">If Bluetooth isn't connected for this long, including after boot, WiFi turns back on.</div>
@@ -351,13 +351,13 @@ async function discoverOcto(){
       </div>
     </div>
     <div class="card-f">
-      <button type="submit" class="btn-primary">Save Bluetooth</button>
+      <button type="submit" class="btn-primary" $op_hide$>Save Bluetooth</button>
       <button type="submit" class="btn-ghost btn-danger" formaction="bluetooth/forget" onclick="return confirm('Forget all paired devices? The Pi will need to pair again.')">Forget paired devices</button>
     </div>
     </form>
   </section>
 
-  <section class="card">
+  <section class="card" $op_hide$>
     <div class="card-h"><span class="idx">06</span><span class="k">WiFi networks</span><span class="sp"></span>
       <form name="refresh" action="./" method="POST" style="margin:0"><button type="submit" class="btn-ghost" name="refresh" value="1">Rescan</button></form>
     </div>
@@ -371,7 +371,7 @@ async function discoverOcto(){
     </div>
   </section>
 
-  <section class="card">
+  <section class="card" $op_hide$>
     <div class="card-h"><span class="idx">07</span><span class="k">KNOMI network</span></div>
     <div class="card-b">
       <form id="knomi-form" name="knomi-form" action="./" method="POST">

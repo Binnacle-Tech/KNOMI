@@ -17,6 +17,7 @@
 #define KNOMI_BLE_CMD_UUID     "4b4e4f4d-4900-4c69-6e6b-000000000004"
 #define KNOMI_BLE_INFO_UUID    "4b4e4f4d-4900-4c69-6e6b-000000000005"
 #define KNOMI_BLE_TUNNEL_UUID  "4b4e4f4d-4900-4c69-6e6b-000000000006"
+#define KNOMI_BLE_LINK_UUID    "4b4e4f4d-4900-4c69-6e6b-000000000007"   // read (encrypted+MITM): the KNOMI's own WiFi network, {"ssid","psk","ip"}
 
 #if KNOMI_OCTOPRINT
 void knomi_ble_init(void);              // setup(): starts advertising if enabled in config
