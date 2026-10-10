@@ -64,11 +64,11 @@ Bookworm and newer).
 Run this over SSH, with `pi` replaced by the user OctoPrint runs as (`systemctl show -p User octoprint` shows it on OctoPi):
 
 ```
-echo 'polkit.addRule(function(a,s){if(s.user=="pi"&&["org.freedesktop.NetworkManager.settings.modify.system","org.freedesktop.NetworkManager.network-control"].indexOf(a.id)>=0)return polkit.Result.YES;});' | sudo tee /etc/polkit-1/rules.d/50-octoprint-knomi.rules
+echo 'polkit.addRule(function(a,s){if(s.user=="pi"&&["org.freedesktop.NetworkManager.settings.modify.system","org.freedesktop.NetworkManager.network-control"].indexOf(a.id)>=0)return polkit.Result.YES;});' | sudo tee /etc/polkit-1/rules.d/00-octoprint-knomi.rules
 ```
 
 It allows that user to set up and switch NetworkManager connections, nothing else, and takes effect right away (no
-restart). Check with `ls /etc/polkit-1/rules.d/`; undo with `sudo rm /etc/polkit-1/rules.d/50-octoprint-knomi.rules`.
+restart). Check with `ls /etc/polkit-1/rules.d/`; undo with `sudo rm /etc/polkit-1/rules.d/00-octoprint-knomi.rules`.
 The plugin also shows this command, with your user filled in, when it needs it.
 
 After that, **KNOMI network** in the plugin settings says *joined*.
