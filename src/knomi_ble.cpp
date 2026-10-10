@@ -467,7 +467,11 @@ String knomi_ble_address(void) {
 }
 
 void knomi_ble_forget_bonds(void) {
-    if (running) NimBLEDevice::deleteAllBonds();
+    if (running) {
+        NimBLEDevice::deleteAllBonds();
+        // and drop whoever is connected now: forgetting the bond doesn't end a live, already-encrypted link
+        if (server) for (uint16_t id : server->getPeerDevices()) server->disconnect(id);
+    }
     knomi_link_new_password();   // a Pi that isn't paired any more doesn't stay on the KNOMI's network either
 }
 

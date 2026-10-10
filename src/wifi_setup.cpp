@@ -102,7 +102,7 @@ static void knomi_config_default_display(void) {
 }
 
 static void knomi_config_default_bt(void) {
-    knomi_config.bt_enabled = 0;
+    knomi_config.bt_enabled = KNOMI_OCTOPRINT;   // OctoPrint build: the only way in, on from the first start
     knomi_config.bt_wifi_off = 0;
     knomi_config.bt_fallback_s = 60;
 }
@@ -631,7 +631,8 @@ static void link_wifi_task(void) {
     WiFi.persistent(false);
     WiFi.hostname(knomi_config.hostname);
     knomi_link_load();
-    knomi_link_start();
+    bool ap_ok = knomi_link_start();
+    uint32_t ap_retry = millis();
     webserver_setup();
     bool was_up = false;
     int clients = -1;
@@ -641,14 +642,15 @@ static void link_wifi_task(void) {
         if (req & EEPROM_PARA_CHANGED) eeprom_write_knomi_config();
         if (req & WEB_POST_RESTART) ESP.restart();
         (void)knomi_ble_take_wifi_request();   // the plugin's "turn WiFi on": it's always on here
-        if (knomi_link_take_restart()) { WiFi.softAPdisconnect(false); delay(200); knomi_link_start(); }
+        if (knomi_link_take_restart()) { WiFi.softAPdisconnect(false); delay(200); ap_ok = knomi_link_start(); }
+        if (!ap_ok && millis() - ap_retry > 10000) { ap_retry = millis(); ap_ok = knomi_link_start(); }   // didn't come up: again
         int n = knomi_link_clients();
         if (n != clients) { clients = n; Serial.printf("link: %d device(s) on the KNOMI's network\r\n", n); }
         bool up = knomi_ble_link_active();
         if (up) was_up = true;
         // nothing on Bluetooth for 2 minutes: show a QR code to join the KNOMI's network from a phone, so it can
         // always be reached (its pages, a firmware upload) even if pairing is broken. Physical access only.
-        if (up || knomi_ble_connected()) alone_since = millis();
+        if (up) alone_since = millis();   // (a connection that sends nothing, e.g. a stuck plugin, doesn't count)
         bool alone = millis() - alone_since > 120000UL;
         wifi_status = up ? WIFI_STATUS_CONNECTED : alone ? WIFI_STATUS_ERROR : was_up ? WIFI_STATUS_DISCONNECT : WIFI_STATUS_CONNECTING;
         delay(100);

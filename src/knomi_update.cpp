@@ -150,6 +150,7 @@ bool knomi_ota_upload_busy(void);   // webserver.cpp: a firmware upload has the 
 bool knomi_update_start(bool force) {
     if (knomi_ota_upload_busy()) return false;
     if (knomi_update_busy() || state == UP_DONE) return false;
+    if (KNOMI_OCTOPRINT) { fail("The KNOMI isn't on the internet: update it from OctoPrint, Settings > KNOMI"); return false; }
     if (WiFi.status() != WL_CONNECTED) { fail("The KNOMI isn't on WiFi"); return false; }
     force_flag = force;
     state = UP_CHECKING;

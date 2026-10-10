@@ -484,6 +484,7 @@ static void bluetooth_routes(void) {
         // a disabled <select> isn't submitted, so a missing field means "unchanged"
         uint8_t want_off = int_param(request, "bt_wifi_off", 0, 1, knomi_config.bt_wifi_off);
         uint16_t fallback = int_param(request, "bt_fallback", 15, 3600, knomi_config.bt_fallback_s);
+        if (KNOMI_OCTOPRINT) { want_enabled = 1; want_off = 0; }   // the only way in here: can't be switched off
 
         String note;
         if (want_off && !knomi_config.bt_wifi_off && !knomi_ble_link_active()) {

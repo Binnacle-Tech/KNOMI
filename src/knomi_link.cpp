@@ -68,8 +68,8 @@ bool knomi_link_start(void) {
     portENTER_CRITICAL(&link_mux);
     memcpy(ssid, link_ssid, sizeof(ssid)); memcpy(psk, link_psk, sizeof(psk));
     portEXIT_CRITICAL(&link_mux);
-    // WPA2, fixed channel, room for the Pi and one more (a phone, to look at the pages directly)
-    bool ok = WiFi.softAP(ssid, psk, KNOMI_LINK_CHANNEL, 0, 2);
+    // WPA2, fixed channel, room for the Pi and a couple more (a phone for the pages, or to recover)
+    bool ok = WiFi.softAP(ssid, psk, KNOMI_LINK_CHANNEL, 0, 3);
     memset(psk, 0, sizeof(psk));
     Serial.printf("link: %s %s on channel %d, %s\r\n", ok ? "network" : "COULDN'T START network", ssid,
                   KNOMI_LINK_CHANNEL, WiFi.softAPIP().toString().c_str());
