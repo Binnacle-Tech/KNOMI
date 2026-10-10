@@ -78,6 +78,12 @@ bool knomi_link_start(void) {
 
 int knomi_link_clients(void) { return WiFi.softAPgetStationNum(); }
 
+void knomi_link_password(char * out, size_t n) {   // for the join-me QR code on the KNOMI's own screen
+    portENTER_CRITICAL(&link_mux);
+    strlcpy(out, link_psk, n);
+    portEXIT_CRITICAL(&link_mux);
+}
+
 // for the plugin, over the encrypted Bluetooth link only (the password is never logged or shown)
 String knomi_link_secret_json(void) {
     char ssid[33], psk[33];

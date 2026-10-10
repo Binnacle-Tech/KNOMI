@@ -635,6 +635,7 @@ static void link_wifi_task(void) {
     webserver_setup();
     bool was_up = false;
     int clients = -1;
+    uint32_t alone_since = millis();
     for (;;) {
         uint16_t req = knomi_config_require_take();
         if (req & EEPROM_PARA_CHANGED) eeprom_write_knomi_config();
@@ -645,7 +646,11 @@ static void link_wifi_task(void) {
         if (n != clients) { clients = n; Serial.printf("link: %d device(s) on the KNOMI's network\r\n", n); }
         bool up = knomi_ble_link_active();
         if (up) was_up = true;
-        wifi_status = up ? WIFI_STATUS_CONNECTED : was_up ? WIFI_STATUS_DISCONNECT : WIFI_STATUS_CONNECTING;
+        // nothing on Bluetooth for 2 minutes: show a QR code to join the KNOMI's network from a phone, so it can
+        // always be reached (its pages, a firmware upload) even if pairing is broken. Physical access only.
+        if (up || knomi_ble_connected()) alone_since = millis();
+        bool alone = millis() - alone_since > 120000UL;
+        wifi_status = up ? WIFI_STATUS_CONNECTED : alone ? WIFI_STATUS_ERROR : was_up ? WIFI_STATUS_DISCONNECT : WIFI_STATUS_CONNECTING;
         delay(100);
     }
 }

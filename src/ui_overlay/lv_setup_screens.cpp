@@ -11,6 +11,9 @@
 #include "lv_overlay.h"
 #include "../knomi_coaster.h"
 #include "../knomi_ble.h"
+#if KNOMI_OCTOPRINT
+#include "../knomi_link.h"
+#endif
 
 
 #define COLOR_BG    0x000000
@@ -130,12 +133,23 @@ void lv_setup_screens_loop(void) {
 #endif
     } else if (scr == ui_ScreenWelcome) {
         String qr, l1, l2;
-        if (WiFi.softAPgetStationNum() > 0) {
+        if (!KNOMI_OCTOPRINT && WiFi.softAPgetStationNum() > 0) {   // (OctoPrint build: the Pi is usually on it)
             String ip = WiFi.softAPIP().toString();
             qr = "http://" + ip + "/";
             l1 = "Scan to open setup";
             l2 = ip;
-        } else {
+        }
+#if KNOMI_OCTOPRINT
+        else {   // the KNOMI's own network: a phone can always reach it this way, even with Bluetooth broken
+            char psk[33];
+            knomi_link_password(psk, sizeof(psk));
+            qr = String("WIFI:T:WPA;S:") + wifi_qr_escape(knomi_link_ssid()) + ";P:" + wifi_qr_escape(psk) + ";;";
+            memset(psk, 0, sizeof(psk));
+            l1 = "No OctoPrint: scan to join";
+            l2 = "then open " + WiFi.softAPIP().toString();
+        }
+#else
+        else {
             bool secured = knomi_config.ap_pwd[0] != 0;
             qr = String("WIFI:T:") + (secured ? "WPA" : "nopass") + ";S:" + wifi_qr_escape(knomi_config.ap_ssid) + ";";
             if (secured) qr += String("P:") + wifi_qr_escape(knomi_config.ap_pwd) + ";";
@@ -145,6 +159,7 @@ void lv_setup_screens_loop(void) {
             l1 = retrying ? String("Can't reach ") + ssid : String("Scan to set up");
             l2 = String("or join ") + knomi_config.ap_ssid;
         }
+#endif
         if (qr != qr_text) {
             qr_text = qr;
             lv_qrcode_update(setup_qr, qr.c_str(), qr.length());

@@ -12,5 +12,6 @@ void knomi_link_new_password(void);   // after forgetting paired devices (the ne
 bool knomi_link_take_restart(void);   // WiFi task: restart the network now
 const char * knomi_link_ssid(void);
 int knomi_link_clients(void);         // devices on the network now
+void knomi_link_password(char * out, size_t n);   // only for the QR code on the KNOMI's own screen
 String knomi_link_secret_json(void);  // {"ssid","psk","ip"}: only for the encrypted Bluetooth characteristic
 #endif
