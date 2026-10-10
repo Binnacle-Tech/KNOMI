@@ -40,13 +40,13 @@ jobs:
 
       - name: Install libraries and apply the LVGL display fix
         run: |
-          for env in knomiv2 knomiv1; do
+          for env in knomiv2 knomiv1 knomiv2_moonraker knomiv1_moonraker; do
             pio pkg install -e "$env"
             cp "lv_disp_(bugfix_backup).c" ".pio/libdeps/$env/lvgl/src/core/lv_disp.c"
           done
 
       - name: Build
-        run: pio run -e knomiv2 -e knomiv1
+        run: pio run -e knomiv2 -e knomiv1 -e knomiv2_moonraker -e knomiv1_moonraker
 
       - name: Pre-release checks (stack, web routes, tables, page scripts, size)
         run: python tools/check.py
@@ -54,8 +54,17 @@ jobs:
       - name: Collect binaries
         run: |
           mkdir dist
+          # OctoPrint builds keep their names (installed plugins look for them); Moonraker builds alongside
           cp .pio/build/knomiv2/firmware.bin dist/knomiv2-octoprint-firmware.bin
           cp .pio/build/knomiv1/firmware.bin dist/knomiv1-octoprint-firmware.bin
+          cp .pio/build/knomiv2_moonraker/firmware.bin dist/knomiv2-moonraker-firmware.bin
+          cp .pio/build/knomiv1_moonraker/firmware.bin dist/knomiv1-moonraker-firmware.bin
+          # each file must say which build it is (the KNOMI refuses the other flavour)
+          for f in dist/*.bin; do
+            want=$(basename "$f" | sed 's/^knomiv[12]-\([a-z]*\)-firmware.bin$/\1/')
+            got=$(dd if="$f" bs=1 skip=288 count=32 2>/dev/null | tr -d '\0')
+            [ "$got" = "KNOMI-FLAVOR:$want" ] || { echo "::error::$f says '$got', expected $want"; exit 1; }
+          done
           ls -l dist
 
       - uses: actions/upload-artifact@v4

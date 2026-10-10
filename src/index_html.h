@@ -157,7 +157,7 @@ async function discoverOcto(){
     <div class="card-h"><span class="idx">01</span><span class="k">Printer connection</span></div>
     <div class="card-b">
       <form id="klipper-form" name="klipper-form" action="./" method="POST">
-        <div class="row">
+        <div class="row" $backend_row$>
           <label class="field-label" for="backend">Backend</label>
           <select id="backend" name="backend" onchange="syncBackend()">
             <option value="moonraker" $be_moonraker$>Moonraker (Klipper)</option>
@@ -317,7 +317,7 @@ async function discoverOcto(){
     </form>
   </section>
 
-  <section class="card" id="bluetooth">
+  <section class="card" id="bluetooth" $bt_card$>
     <div class="card-h"><span class="idx">05</span><span class="k">Bluetooth</span><span class="sp"></span>$bt_state$</div>
     <form action="bluetooth" method="POST">
     <div class="card-b">

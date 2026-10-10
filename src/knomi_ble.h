@@ -1,6 +1,7 @@
 #ifndef KNOMI_BLE_H
 #define KNOMI_BLE_H
 #include <Arduino.h>
+#include "knomi_flavor.h"
 
 // BLE link to the OctoPrint-KNOMI plugin (KNOMI = peripheral, Pi = central).
 // GATT service (all values UTF-8):
@@ -17,6 +18,7 @@
 #define KNOMI_BLE_INFO_UUID    "4b4e4f4d-4900-4c69-6e6b-000000000005"
 #define KNOMI_BLE_TUNNEL_UUID  "4b4e4f4d-4900-4c69-6e6b-000000000006"
 
+#if KNOMI_OCTOPRINT
 void knomi_ble_init(void);              // setup(): starts advertising if enabled in config
 bool knomi_ble_running(void);
 bool knomi_ble_connected(void);         // a paired (encrypted + authenticated) central is connected
@@ -33,4 +35,18 @@ bool knomi_ble_take_wifi_request(void); // plugin asked for WiFi to come back on
 
 // status decoding, split out so it can be tested off-device
 bool knomi_ble_apply_status(const char *json, size_t len);
+#else   // Moonraker build: no Bluetooth (the radio never starts)
+static inline void knomi_ble_init(void) {}
+static inline bool knomi_ble_running(void) { return false; }
+static inline bool knomi_ble_connected(void) { return false; }
+static inline bool knomi_ble_link_active(void) { return false; }
+static inline bool knomi_ble_process(void) { return false; }
+static inline bool knomi_ble_send_command(const String &) { return false; }
+static inline bool knomi_ble_file_list(String &) { return false; }
+static inline String knomi_ble_address(void) { return String(); }
+static inline void knomi_ble_forget_bonds(void) {}
+static inline uint32_t knomi_ble_take_passkey(void) { return 0; }
+static inline int knomi_ble_take_pair_result(void) { return 0; }
+static inline bool knomi_ble_take_wifi_request(void) { return false; }
+#endif
 #endif

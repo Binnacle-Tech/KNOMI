@@ -111,6 +111,10 @@ String knomi_html_processor(const String& var){
     } else if (var == "backend_pill") {
         value = knomi_backend_is_octoprint() ? "<span class=\"pill now\">OctoPrint</span>"
                                              : "<span class=\"pill now\">Moonraker</span>";
+    } else if (var == "backend_row") {
+        value = "hidden";   // the backend is fixed by the build (OctoPrint or Moonraker firmware)
+    } else if (var == "bt_card") {
+        value = KNOMI_OCTOPRINT ? "" : "hidden";   // no Bluetooth in the Moonraker build
     } else if (var == "bl") {
         value = String(knomi_config.backlight);
     } else if (var == "dim_lvl") {
@@ -294,12 +298,6 @@ web_post_info_t web_post_info[] = {
         .name = "tool",
         .value = knomi_config.moonraker_tool,
         .v_len = sizeof(knomi_config.moonraker_tool),
-        .require = WEB_POST_MOONRAKER,
-    },
-    {
-        .name = "backend",
-        .value = knomi_config.backend,
-        .v_len = sizeof(knomi_config.backend),
         .require = WEB_POST_MOONRAKER,
     },
     {
@@ -695,7 +693,7 @@ static const char * reset_reason_text(void) {
 /* Firmware upload (POST /update: "MD5" field first, then the file). Same as AsyncElegantOTA's, which this
  * replaces, except: it says why an upload failed, logs it, and only restarts when the new firmware is in.
  * AsyncElegantOTA restarted either way, so over Bluetooth a failed upload just looked like "stopped answering". */
-typedef struct { bool begun, error, done; char msg[96]; } ota_state_t;
+typedef struct { bool begun, error, done, flavor_checked; char msg[96]; uint8_t head[KNOMI_FLAVOR_TAG_OFFSET + 32]; size_t head_n; } ota_state_t;
 static AsyncWebServerRequest * volatile ota_owner = nullptr;   // the upload that has the flash (one at a time)
 
 bool knomi_ota_upload_busy(void) { return ota_owner != nullptr; }   // the GitHub updater checks this
@@ -746,6 +744,22 @@ static void ota_upload_route(void) {
             Serial.printf("update: receiving %s\r\n", filename.c_str());
         }
         if (!st || st->error || ota_owner != request) return;
+        // the start of the image says which build it is (OctoPrint or Moonraker): refuse the other one
+        if (!st->flavor_checked && filename != "filesystem") {
+            size_t take = min(len, sizeof(st->head) - st->head_n);
+            memcpy(st->head + st->head_n, data, take);
+            st->head_n += take;
+            if (st->head_n == sizeof(st->head) || final) {
+                st->flavor_checked = true;
+                const char * f = knomi_flavor_of(st->head, st->head_n);
+                if (*f && strcmp(f, knomi_flavor_self()) != 0) {
+                    char m[96];
+                    snprintf(m, sizeof(m), "That's the %s firmware; this KNOMI runs the %s one", f, knomi_flavor_self());
+                    ota_fail(request, st, m);
+                    return;
+                }
+            }
+        }
         if (len && Update.write(data, len) != len) { ota_fail(request, st, "Writing to flash failed"); return; }
         if (final) {
             if (Update.end(true)) { st->done = true; ota_owner = nullptr; }
@@ -920,10 +934,11 @@ static void gif_routes(void) {
         if (quiet(request)) { quiet_reply(request, "Removed"); return; }
         request->redirect("../gifs");
     });
-    server.on("/discover", HTTP_GET, [](AsyncWebServerRequest *request){
-        if (request->hasParam("start")) octoprint_discover_start();
-        request->send(200, "application/json", octoprint_discover_json());
-    });
+    if (KNOMI_OCTOPRINT)   // finding OctoPrint on the network (mDNS)
+        server.on("/discover", HTTP_GET, [](AsyncWebServerRequest *request){
+            if (request->hasParam("start")) octoprint_discover_start();
+            request->send(200, "application/json", octoprint_discover_json());
+        });
 }
 
 void webserver_setup(void) {
@@ -950,7 +965,7 @@ void webserver_setup(void) {
     }).setFilter(exact("/update"));
     ota_upload_route();   // before AsyncElegantOTA, so ours answers the upload
     AsyncElegantOTA.begin(&server);   // after /update/github and /update/progress, or its /update grabs them
-    bluetooth_routes();
+    if (KNOMI_OCTOPRINT) bluetooth_routes();   // the Moonraker build has no Bluetooth
     backup_routes(server);
 
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){

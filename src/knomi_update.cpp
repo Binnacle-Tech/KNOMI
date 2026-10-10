@@ -19,11 +19,8 @@ static void * tls_calloc(size_t n, size_t size) {
 }
 static void tls_free(void * p) { heap_caps_free(p); }
 
-#ifdef KNOMIV1
-#define BOARD_ASSET "knomiv1-octoprint-firmware.bin"
-#else
-#define BOARD_ASSET "knomiv2-octoprint-firmware.bin"
-#endif
+#include "knomi_flavor.h"
+#define BOARD_ASSET KNOMI_ASSET   // this board and build flavour
 
 enum { UP_IDLE, UP_CHECKING, UP_CURRENT, UP_DOWNLOADING, UP_DONE, UP_ERROR };
 static const char * STATE_NAMES[] = {"idle", "checking", "current", "downloading", "done", "error"};

@@ -97,16 +97,19 @@ String knomi_settings_schema(void) {
     // ---- printer connection ----
     {
         JsonObject s = section(secs, "printer", "Printer connection", "", "Save connection");
+        // the backend is fixed by the build (OctoPrint or Moonraker firmware), not a setting
+        JsonObject f = field(s, "flavor", "info", "Firmware for"); f["v"] = KNOMI_FLAVOR_NAME;
+#if KNOMI_OCTOPRINT
         s["h"] = "Over Bluetooth the plugin sends the KNOMI everything; these are for its WiFi connection.";
-        JsonObject f = field(s, "backend", "select", "Backend");
-        opt(f, "moonraker", "Moonraker (Klipper)");
-        opt(f, "octoprint", "OctoPrint");
-        f["v"] = knomi_backend_is_octoprint() ? "octoprint" : "moonraker";
         f = field(s, "ip", "text", "Host"); f["v"] = c.moonraker_ip; f["max"] = 64; f["ph"] = "192.168.1.20 or octopi.local"; f["g"] = "host";
         f = field(s, "port", "text", "Port"); f["v"] = c.moonraker_port; f["max"] = 5; f["ph"] = "80"; f["g"] = "host";
-        f = field(s, "tool", "text", "Tool"); f["v"] = c.moonraker_tool; f["max"] = 6; f["ph"] = "tool0";
         f = field(s, "api_key", "password", "OctoPrint API key", "OctoPrint > User Settings > Application Keys");
         f["set"] = c.api_key[0] != 0; f["max"] = 64;
+#else
+        f = field(s, "ip", "text", "Host"); f["v"] = c.moonraker_ip; f["max"] = 64; f["ph"] = "192.168.1.20 or mainsailos.local"; f["g"] = "host";
+        f = field(s, "port", "text", "Port"); f["v"] = c.moonraker_port; f["max"] = 5; f["ph"] = "7125"; f["g"] = "host";
+        f = field(s, "tool", "text", "Tool"); f["v"] = c.moonraker_tool; f["max"] = 6; f["ph"] = "tool0";
+#endif
     }
 
     // ---- display ----
@@ -184,6 +187,7 @@ String knomi_settings_schema(void) {
     }
 
     // ---- Bluetooth ----
+#if KNOMI_OCTOPRINT   // Bluetooth link to the plugin
     {
         JsonObject s = section(secs, "bluetooth", "Bluetooth", "bluetooth", "Save Bluetooth");
         s["status"] = !knomi_ble_running() ? "off" : knomi_ble_link_active() ? "connected"
@@ -204,6 +208,7 @@ String knomi_settings_schema(void) {
         f = field(s, "wifi_policy", "info", "WiFi right now"); f["v"] = knomi_wifi_policy();
         action(s, "Forget paired devices", "bluetooth/forget", "Forget all paired devices? The Pi will need to pair again.", true);
     }
+#endif
 
     // ---- WiFi: join a network ----
     {
@@ -318,11 +323,7 @@ String knomi_settings_schema(void) {
         JsonObject f = field(s, "fw", "info", "Firmware"); f["v"] = FW_VERSION;
         f = field(s, "update", "firmware", "Update", "Installs the latest release from GitHub; settings stay.");
         f["repo"] = UPDATE_REPO;
-#ifdef KNOMIV1
-        f["asset"] = "knomiv1-octoprint-firmware.bin";
-#else
-        f["asset"] = "knomiv2-octoprint-firmware.bin";
-#endif
+        f["asset"] = KNOMI_ASSET;   // this board and build flavour
         f = field(s, "backup", "link", "Download backup", "Holds all settings and custom animations, including your WiFi password and API key. Keep it private.");
         f["src"] = "backup";
         f = field(s, "backup", "file", "Restore a backup", "Replaces all settings and custom animations, then restarts.");

@@ -89,9 +89,6 @@ wifi_auth_mode_t wifi_get_ahth_mode_from_scanned_list(void) {
 #define EEPROM_SIGN_SIZE 4
 static_assert(sizeof(knomi_config_t) + EEPROM_SIGN_SIZE <= 1024, "knomi_config_t no longer fits the 1KB EEPROM area");
 
-bool knomi_backend_is_octoprint(void) {
-    return strcmp(knomi_config.backend, BACKEND_OCTOPRINT) == 0;
-}
 
 static void knomi_config_default_display(void) {
     knomi_config.backlight = 16;
@@ -183,10 +180,8 @@ static void knomi_config_sanitize_display(void) {
 static void knomi_config_sanitize_backend(void) {
     knomi_config.backend[sizeof(knomi_config.backend) - 1] = 0;
     knomi_config.api_key[sizeof(knomi_config.api_key) - 1] = 0;
-    if (strcmp(knomi_config.backend, BACKEND_OCTOPRINT) != 0 &&
-        strcmp(knomi_config.backend, BACKEND_MOONRAKER) != 0) {
-        strlcpy(knomi_config.backend, BACKEND_MOONRAKER, sizeof(knomi_config.backend));
-    }
+    // the backend is the build's now (kept in the config so backups and older layouts still line up)
+    strlcpy(knomi_config.backend, KNOMI_FLAVOR, sizeof(knomi_config.backend));
 }
 // Init the EEPROM and restore all NV vars.
 void eeprom_init(void) {
@@ -203,7 +198,7 @@ void eeprom_init(void) {
         // so read the whole struct and default whatever didn't exist yet.
         EEPROM.get<knomi_config_t>(0x00 + EEPROM_SIGN_SIZE, knomi_config);
         if (eeprom_sign == EEPROM_SIGN_V1) {
-            strlcpy(knomi_config.backend, BACKEND_MOONRAKER, sizeof(knomi_config.backend));
+            strlcpy(knomi_config.backend, KNOMI_FLAVOR, sizeof(knomi_config.backend));
             knomi_config.api_key[0] = 0;
         }
         if (eeprom_sign == EEPROM_SIGN_V1 || eeprom_sign == EEPROM_SIGN_V2) knomi_config_default_display();
@@ -258,7 +253,7 @@ void eeprom_init(void) {
         strlcpy(knomi_config.moonraker_tool, DEFAULT_KLIPPER_TOOL, sizeof(knomi_config.moonraker_tool));
         strlcpy(knomi_config.mode, "ap", sizeof(knomi_config.mode));
         knomi_config.theme_color = lv_color_hex(LV_DEFAULT_COLOR);
-        strlcpy(knomi_config.backend, BACKEND_MOONRAKER, sizeof(knomi_config.backend));
+        strlcpy(knomi_config.backend, KNOMI_FLAVOR, sizeof(knomi_config.backend));
         knomi_config.api_key[0] = 0;
         knomi_config_default_display();
         knomi_config_default_bt();

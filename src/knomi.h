@@ -66,7 +66,8 @@ typedef struct {
 
 #define BACKEND_MOONRAKER "moonraker"
 #define BACKEND_OCTOPRINT "octoprint"
-bool knomi_backend_is_octoprint(void);
+#include "knomi_flavor.h"
+static inline bool knomi_backend_is_octoprint(void) { return KNOMI_OCTOPRINT; }   // fixed by the build
 
 typedef struct {
     int32_t rssi[SCAN_SSIDS_NUM]; // RSSI returned RSSI values

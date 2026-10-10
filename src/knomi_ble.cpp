@@ -1,3 +1,5 @@
+#include "knomi_flavor.h"
+#if KNOMI_OCTOPRINT   // the Bluetooth link exists only in the OctoPrint build
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <ArduinoJson.h>
@@ -475,3 +477,4 @@ bool knomi_ble_take_wifi_request(void) {
     wifi_request = false;
     return r;
 }
+#endif   // KNOMI_OCTOPRINT

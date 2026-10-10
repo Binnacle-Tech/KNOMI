@@ -7,6 +7,8 @@
 #include "knomi_ble.h"
 #include "knomi_health.h"
 #include "knomi_perf.h"
+#include "config.h"
+#include "knomi_flavor.h"
 #include <esp_ota_ops.h>
 
 
@@ -63,6 +65,7 @@ void setup() {
     while (!Serial)
         delay(10);
     Serial.println("\r\n\r\n------------- Knomi startup -----------\r\n");
+    Serial.printf("firmware %s, %s build\r\n", FW_VERSION, knomi_flavor_self());
     self_rescue();
     knomi_perf_init();
     Serial.println("SPI Flash: ");
