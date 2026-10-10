@@ -48,16 +48,30 @@ then **Pair** next to it, and type the 6-digit code the KNOMI shows. Details in 
 
 ## 4. Let the Pi join the KNOMI network
 The Pi needs a WiFi interface that isn't busy with your own network:
-- **Pi on Ethernet:** its built-in WiFi is free, once it stops joining your WiFi. If it was on WiFi before, run
-  `sudo nmcli connection modify "<your network>" connection.autoconnect no && sudo nmcli connection down "<your network>"`
-  over SSH **while connected by Ethernet** (the plugin shows this with your network's name filled in).
+- **Pi on Ethernet:** its built-in WiFi is free, once it stops joining your WiFi. If it was on WiFi before, run this
+  over SSH **while connected by Ethernet**, with `YOUR-WIFI` replaced by your network's name (`nmcli connection show`
+  lists it; the plugin also shows the command with the name filled in):
+  ```
+  sudo nmcli connection modify "YOUR-WIFI" connection.autoconnect no && sudo nmcli connection down "YOUR-WIFI"
+  ```
 - **Pi on WiFi:** add a USB WiFi adapter for the KNOMI network, or skip the fast link and stay on Bluetooth.
 
 The plugin picks a free interface on its own (or set one under **WiFi interface**). It never takes an interface that
-is on, or could rejoin, another network, or that carries the Pi's internet. NetworkManager (Raspberry Pi OS Bookworm
-and newer) has to allow OctoPrint's user to set up the connection: the first time, the plugin shows a one-time
-`sudo tee /etc/polkit-1/rules.d/50-octoprint-knomi.rules` command to run over SSH. After that, **KNOMI network**
-in the plugin settings says *joined*.
+is on, or could rejoin, another network, or that carries the Pi's internet. This needs NetworkManager (Raspberry Pi OS
+Bookworm and newer).
+
+**Permission for OctoPrint (once).** NetworkManager won't let OctoPrint's user set up a WiFi connection on its own.
+Run this over SSH, with `pi` replaced by the user OctoPrint runs as (`systemctl show -p User octoprint` shows it on OctoPi):
+
+```
+echo 'polkit.addRule(function(a,s){if(s.user=="pi"&&["org.freedesktop.NetworkManager.settings.modify.system","org.freedesktop.NetworkManager.network-control"].indexOf(a.id)>=0)return polkit.Result.YES;});' | sudo tee /etc/polkit-1/rules.d/50-octoprint-knomi.rules
+```
+
+It allows that user to set up and switch NetworkManager connections, nothing else, and takes effect right away (no
+restart). Check with `ls /etc/polkit-1/rules.d/`; undo with `sudo rm /etc/polkit-1/rules.d/50-octoprint-knomi.rules`.
+The plugin also shows this command, with your user filled in, when it needs it.
+
+After that, **KNOMI network** in the plugin settings says *joined*.
 
 ## 5. Klipper macros (optional, for steps run inside PRINT_START)
 The plugin can only see commands that OctoPrint sends itself (G28, QUAD_GANTRY_LEVEL, BED_MESH_CALIBRATE, M109/M190...).
