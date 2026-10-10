@@ -2,30 +2,64 @@
 
 > Only tested on a KNOMI 2 with OctoPrint on a Raspberry Pi 5.
 
-This fork adds an OctoPrint backend next to the stock Moonraker one. You pick the backend on the KNOMI web page.
+Each release has an OctoPrint build and a Moonraker build of the same source; this guide is about the OctoPrint one.
 
-## 1. Flash
-Build with PlatformIO: `pio pkg install -e knomiv2`, copy `lv_disp_(bugfix_backup).c` over
-`.pio/libdeps/knomiv2/lvgl/src/core/lv_disp.c`, then `pio run -e knomiv2`, or use the prebuilt `release/knomiv2-octoprint-firmware.bin`.
-The first boot after flashing formats the GIF storage, which adds a few seconds once.
-If the KNOMI is already on WiFi, open `http://<knomi-ip>/update` and upload the .bin (OTA).
-Saved WiFi and printer settings carry over. The backend defaults to Moonraker until you change it.
+## How it connects (OctoPrint build)
+- **Bluetooth** to the OctoPrint-KNOMI plugin is the control link: the plugin pushes printer status the moment it
+  changes, sends the file list, and runs the KNOMI's buttons inside OctoPrint. No API key, no polling.
+- **The KNOMI network** (OP58+): the KNOMI runs its own small WPA2 network (`KNOMI-XXXXXX`, the KNOMI at
+  `192.168.77.1`) and the Pi joins it on a spare WiFi interface. The KNOMI's pages, GIF uploads and firmware go over
+  it. Without it everything still works over Bluetooth, just slower for those.
+- The KNOMI never joins your WiFi. Its network's password is made up on the KNOMI and handed to the Pi only over the
+  paired, encrypted Bluetooth link; it's never shown in logs, settings or backups.
 
-## 2. Configure (KNOMI web page)
-- Backend: OctoPrint
-- Printer IP / Port: press **Find OctoPrint on network** to pick it from a list (uses OctoPrint's
-  mDNS announcement, on by default). Or type it in: port 80 on OctoPi, 5000 on a bare install.
-- Tool ID: tool0
-- OctoPrint API Key: make one in OctoPrint → User Settings → Application Keys.
-  Use an admin user if you want Host Reboot/Shutdown/Restart OctoPrint from the KNOMI.
+The Moonraker build is the stock arrangement instead: the KNOMI joins your WiFi and polls Moonraker.
 
-## 3. OctoPrint plugin (optional, recommended)
-`OctoPrint-KNOMI` provides `/api/plugin/knomi`, which drives the homing / probing / QGL animations.
-Install it from OctoPrint → Plugin Manager → "... from an uploaded file" (upload `OctoPrint-KNOMI.zip`),
-or run `pip install ./OctoPrint-KNOMI` in OctoPrint's venv, then restart OctoPrint.
-Without the plugin, everything works except those three animations. Heating is still detected from temperatures.
+## Upgrading to OP58
+OP58 changes how the OctoPrint build connects: **the KNOMI leaves your WiFi.** Before installing it:
+1. Update the plugin to 0.14.0 or newer.
+2. Pair over Bluetooth if you haven't, and check that the plugin's **Link** says *connected*. Bluetooth is how the
+   Pi reaches the KNOMI from now on.
+3. Optional, for the fast link: move the Pi to Ethernet (or plug in a USB WiFi adapter), see step 4 below.
+4. Install OP58 from Settings › KNOMI. The KNOMI restarts on its own network, the plugin reads its details over
+   Bluetooth and the Pi joins.
 
-## 4. Klipper macros (optional, for steps run inside PRINT_START)
+Settings, animations, layouts and Coaster's feelings carry over. The old WiFi and OctoPrint address/API key settings
+are no longer used. If something goes wrong, the KNOMI shows a QR code after 2 minutes without Bluetooth: join its
+network from a phone and open `http://192.168.77.1/update` to upload any firmware, including an older one.
+
+## 1. Install the plugin
+OctoPrint → Settings → Plugin Manager → **Get More…** → **…from URL**:
+`https://github.com/Binnacle-Tech/OctoPrint-KNOMI/archive/refs/heads/main.zip`, then restart OctoPrint.
+Use 0.14.0 or newer with OP58 and later.
+
+## 2. Flash
+From stock firmware (or a Moonraker build): open `http://<knomi-ip>/update` and upload
+`knomiv2-octoprint-firmware.bin` from the [latest release](https://github.com/Binnacle-Tech/KNOMI/releases/latest)
+(`knomiv1-…` for a KNOMI 1). The first boot after flashing formats the GIF storage, which adds a few seconds once.
+After that, updates come from OctoPrint (see [Updates](#updates)).
+
+Building it yourself: `pio pkg install -e knomiv2`, copy `lv_disp_(bugfix_backup).c` over
+`.pio/libdeps/knomiv2/lvgl/src/core/lv_disp.c`, then `pio run -e knomiv2`.
+
+## 3. Pair over Bluetooth
+OctoPrint, Settings, **KNOMI**, **Bluetooth**: tick **Connect to the KNOMI over Bluetooth**, click **Find KNOMI**,
+then **Pair** next to it, and type the 6-digit code the KNOMI shows. Details in [Bluetooth](#bluetooth).
+
+## 4. Let the Pi join the KNOMI network
+The Pi needs a WiFi interface that isn't busy with your own network:
+- **Pi on Ethernet:** its built-in WiFi is free, once it stops joining your WiFi. If it was on WiFi before, run
+  `sudo nmcli connection modify "<your network>" connection.autoconnect no && sudo nmcli connection down "<your network>"`
+  over SSH **while connected by Ethernet** (the plugin shows this with your network's name filled in).
+- **Pi on WiFi:** add a USB WiFi adapter for the KNOMI network, or skip the fast link and stay on Bluetooth.
+
+The plugin picks a free interface on its own (or set one under **WiFi interface**). It never takes an interface that
+is on, or could rejoin, another network, or that carries the Pi's internet. NetworkManager (Raspberry Pi OS Bookworm
+and newer) has to allow OctoPrint's user to set up the connection: the first time, the plugin shows a one-time
+`sudo tee /etc/polkit-1/rules.d/50-octoprint-knomi.rules` command to run over SSH. After that, **KNOMI network**
+in the plugin settings says *joined*.
+
+## 5. Klipper macros (optional, for steps run inside PRINT_START)
 The plugin can only see commands that OctoPrint sends itself (G28, QUAD_GANTRY_LEVEL, BED_MESH_CALIBRATE, M109/M190...).
 To make the steps inside your macros show up, include `knomi_octoprint.cfg` and replace each
 `SET_GCODE_VARIABLE MACRO=_KNOMI_STATUS VARIABLE=x VALUE=True|False`
@@ -33,9 +67,8 @@ with `_KNOMI_SET VAR=x VALUE=1|0`. That macro still sets the variable (so Mainsa
 and it also prints `// KNOMI x=1`, which the plugin reads.
 
 ## Live updates
-The KNOMI opens OctoPrint's websocket (`/sockjs/websocket`) and gets state pushed about twice a second.
-The plugin pushes its flags the moment they change. If the socket drops or goes quiet for 5s,
-the KNOMI falls back to HTTP polling until the socket is back. It also resyncs over HTTP every 10s.
+The plugin pushes status over Bluetooth the moment something changes (and a heartbeat every few seconds), and wakes
+the KNOMI's printer task as it arrives, so the screen follows within a fraction of a second. Nothing is polled.
 
 ## Extra animation states
 The KNOMI has four more states: **input shaping, PID tuning, nozzle cleaning, filament load/unload**.
@@ -49,7 +82,8 @@ If your macros have other names, call `_KNOMI_SET VAR=cleaning VALUE=1` / `VALUE
 Coaster acts each state out (see Coaster below). You can upload your own GIF for any of them instead (next section).
 
 ## Custom animations
-Open `http://<knomi-ip>/gifs`. Every busy state has a slot: WiFi setup, homing, probing, QGL, the four new
+In OctoPrint, Settings › KNOMI › **KNOMI's web pages** › Animations (`http://<knomi-ip>/gifs` on the Moonraker
+build). Every busy state has a slot: WiFi setup, homing, probing, QGL, the four new
 states, printing, finished. Coaster acts them out unless you upload a GIF to a slot, which then plays instead
 right away. "Back to Coaster" removes it. Files live in the 7MB flash partition, so they survive firmware updates.
 Limits: 1.5MB per GIF and 5MB loaded in total. The screen is 240x240 and round.
@@ -74,7 +108,7 @@ Everything the touchscreen menus set, plus a few things they can't. Changes appl
 - **Preheat presets:** names and nozzle/bed temperatures for Temperature › Preheat.
 - **Extrude choices:** the five lengths and speeds on the extruder screen, and which are selected at boot.
 ## Print screen designer
-Open `http://<knomi-ip>/layout` (the **Print screen** tab). Drag elements around a preview of the round screen:
+Open the **Print screen** tab of the KNOMI's web pages (in OctoPrint, or `http://<knomi-ip>/layout` on the Moonraker build). Drag elements around a preview of the round screen:
 - **Text** with live values: `{pct}` `{time}` `{left}` `{elapsed}` `{total}` `{file}` `{noz}` `{noz_t}` `{bed}` `{bed_t}` `{deg}` `{z}` `{layer}` `{layers}` `{pos}` `{state}`. Pick the size, color, alignment and width. Long text can scroll.
 - **Rings and arcs:** full rings, gauges or any angle range. They can show progress or just be decoration.
 - **Progress bar.**
@@ -114,7 +148,7 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 
 **Report card:** after a print, the "after the print" screen shows how the ride went: done or where it stopped, how many times Coaster screamed, peak g, dizzy spells and jolts. The last one is also on the /coaster page and in the OctoPrint sidebar.
 
-**Decorations** change with the seasons: holiday lights, snow and a Santa hat in December, fireworks at New Year and on the 4th of July, hearts around Valentine's, petals in spring, sunglasses in summer, falling leaves in autumn, a witch hat and bats for Halloween, and a party hat on Coaster's birthday (September 28, changeable). Holidays last a few days, not just the date. On the /coaster page you can pick one by hand, turn them off, choose the lights' colors and effect, switch to the southern hemisphere, and try any date. The date comes from the internet once the KNOMI is on WiFi.
+**Decorations** change with the seasons: holiday lights, snow and a Santa hat in December, fireworks at New Year and on the 4th of July, hearts around Valentine's, petals in spring, sunglasses in summer, falling leaves in autumn, a witch hat and bats for Halloween, and a party hat on Coaster's birthday (September 28, changeable). Holidays last a few days, not just the date. On the /coaster page you can pick one by hand, turn them off, choose the lights' colors and effect, switch to the southern hemisphere, and try any date. The date comes from the Pi's clock over Bluetooth (from the internet on the Moonraker build).
 
 **Feelings:** under the quick moods, Coaster has a slower feeling that lasts hours and survives restarts. Printing makes it happier, finishing prints (especially a streak) more so. Getting dizzy, failed prints, being left off for days, losing OctoPrint and heating up with nothing to print make it unhappier; heating for nothing gets it mad. Crashes, power blips and waking up at night leave it confused for a moment. Happy, it smiles more and hums; down, it droops, sighs and sulks. Each Coaster is also born with its own likes and dislikes (a favorite season, one it could do without, long or quick prints, fast moves, being poked, late nights, fans, heat, quiet time). They're rolled once, kept on the KNOMI, and can't be changed. It also learns from you: after five prints it knows your usual print length and time of day, and a print that breaks the habit (much longer, much shorter, an odd hour, a much wilder ride) gets a reaction. Some Coasters love a change of pace, others are creatures of habit and get uneasy. What you print a lot it slowly warms up to (lots of quick prints and it grows fond of them, late nights make a night owl), on top of what it was born with. The /coaster page shows how it feels, why, and what it likes.
 
@@ -138,7 +172,7 @@ calm, riding, excited, screaming, startled (endstop hits), dizzy, shivering (inp
 
 **Quirks:** every few seconds Coaster does something small on its own, printing or not: glances around, blinks, winks, yawns, hums, sneezes, stretches, rolls its eyes, sighs when it's down, huffs when it's mad. It nods at each layer change and cheers at 25, 50 and 75 %. Each KNOMI gets its own personality from its chip ID.
 
-**OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood, how it's feeling (plugin 0.7.1+) and the last report card. The KNOMI sends its mood to the plugin (over WiFi or Bluetooth).
+**OctoPrint sidebar (plugin 0.6+):** a live copy of Coaster in OctoPrint's sidebar, with its mood, how it's feeling (plugin 0.7.1+) and the last report card. The KNOMI sends its mood to the plugin over Bluetooth.
 
 **Touch:** tap Coaster on the idle screen to poke it, hold to keep tickling. On the print screen a tap still changes pages; hold to tickle.
 
@@ -156,45 +190,42 @@ It clears on RESUME, cancel, or print events. If Klipper paused on its own (M600
 knowing, Resume on the KNOMI sends `RESUME` to Klipper instead of OctoPrint's resume.
 
 ## Bluetooth
-The KNOMI can get printer status straight from the plugin over Bluetooth LE, with WiFi as the fallback.
-Over Bluetooth there's no API key and no polling: the plugin pushes status on change (and every 2 s),
-sends the file list, and runs the KNOMI's buttons inside OctoPrint.
+In the OctoPrint build Bluetooth is always on: it's how the plugin reaches the KNOMI.
 
-1. KNOMI settings page, **Bluetooth**: set *On*, save, restart the KNOMI (System, then Restart).
-2. OctoPrint, Settings, **KNOMI**, **Bluetooth**: click **Find KNOMI**, then **Pair** next to it, and type the
-   6-digit code the KNOMI shows. That's it: the plugin pairs, trusts it, remembers the address and connects.
-   The **Link** line shows the state. (You can still pair by hand with `bluetoothctl` if you prefer.)
-   If the Pi's Bluetooth is disabled (`dtoverlay=disable-bt` in `/boot/config.txt`, common on Klipper setups
+1. OctoPrint, Settings, **KNOMI**, **Bluetooth**: tick **Connect to the KNOMI over Bluetooth**, click **Find KNOMI**,
+   then **Pair** next to it, and type the 6-digit code the KNOMI shows. The plugin pairs, trusts it, remembers the
+   address and connects. The **Link** line shows the state. (Pairing by hand with `bluetoothctl` works too.)
+   If the Pi's Bluetooth is disabled (`dtoverlay=disable-bt` in `/boot/firmware/config.txt`, common on Klipper setups
    that use the GPIO UART), remove that line and reboot first.
-3. If it doesn't connect, **Reconnect** retries, and **Forget** unpairs it on the Pi.
-4. Optional, once it says *connected*: on the KNOMI page set **WiFi while Bluetooth is connected** to
-   *Turn WiFi off*. This option only unlocks while a Bluetooth link is live, so you can't strand the KNOMI.
-   - WiFi turns off 10 s after Bluetooth connects.
-   - If Bluetooth is down for the **fallback** time (default 60 s), including after boot, WiFi comes back.
-   - **Turn KNOMI WiFi on** in the plugin settings brings WiFi back for 10 minutes (to reach the web page).
-   - With WiFi off, the KNOMI's pages (settings, GIF uploads, firmware) still work through the plugin (below).
+2. If it doesn't connect, **Reconnect** retries, and **Forget** unpairs it on the Pi.
+3. Once connected, the plugin reads the KNOMI network's details and the Pi joins it (see step 4 above).
 
-**The KNOMI's pages without WiFi (OP41+, plugin 0.12.3+):** OctoPrint, Settings, **KNOMI**, *KNOMI's own settings*:
-**Open here** (or **New tab**) shows all of the KNOMI's web pages (settings, animations, print screen, Coaster,
-firmware, log) inside OctoPrint. The plugin fetches them over WiFi when the KNOMI has it on, and over Bluetooth
-when it doesn't. Over Bluetooth pages take a few seconds, a GIF upload about a minute, a firmware file a few
-minutes. Only OctoPrint users allowed to change settings can open them.
+**The KNOMI's pages in OctoPrint:** Settings, **KNOMI**: *KNOMI's own settings* shows every setting, and
+**KNOMI's web pages** opens all of its pages (animations, print screen designer, Coaster, firmware, log) inside
+OctoPrint. The plugin fetches them over the KNOMI network when the Pi is on it, and over Bluetooth when it isn't
+(a few seconds per page, a GIF upload about a minute, a firmware file a few minutes). Only OctoPrint users allowed to
+change settings can open them.
 
-To pair again from scratch: **Forget** in the plugin settings, and **Forget paired devices** on the KNOMI's settings page.
+To pair again from scratch: **Forget** in the plugin settings, and **Forget paired devices** on the KNOMI's settings
+page. Forgetting on the KNOMI also gives its network a new password and drops whoever is connected, so a Pi that's no
+longer paired can't stay on it.
 
 ## Backup and restore
 Settings page → System → **Download backup** saves one `.knomi` file with every setting and custom animation.
 **Restore** loads it back and restarts the KNOMI. A restore replaces all custom animations, and only after the whole
-file has arrived; an incomplete or wrong file changes nothing. The file contains your WiFi password and OctoPrint
-API key, so keep it private.
+file has arrived; an incomplete or wrong file changes nothing. It can contain a WiFi password and API key saved by
+older firmware (not the KNOMI network's password), so keep it private.
 
 ## Updates
-**One click:** Settings › System › **Update from GitHub** (or **Install now** on the banner that appears when a newer
-release exists). The KNOMI asks GitHub for the latest release, downloads the .bin for its board over HTTPS (with the
-certificates checked) straight into its spare firmware slot, and restarts into it. Settings, animations and layouts stay.
-Printer polling pauses while it downloads. If it fails, the old firmware keeps running; the reason is on the page and in the log.
+**From OctoPrint:** Settings › KNOMI › **Update the KNOMI**. **Install latest from GitHub** has the Pi download the
+release for the KNOMI's board and build, and send it over (the KNOMI network if the Pi is on it, Bluetooth if not);
+**Install this .bin** sends a file you pick. Coaster mentions it when a new release is out. Settings, animations and
+layouts stay. If it fails, the old firmware keeps running and the reason is shown.
 
-Manual updates still work: upload a .bin at `/update`.
+The Moonraker build updates itself from its own settings page (**Update from GitHub**), since it's on the internet.
+
+The KNOMI checks which build an upload is: the OctoPrint build won't install a Moonraker `.bin` and the other way round.
+Firmware from before OP58 has no marker and is accepted, so going back to an older release works.
 
 **Self-rescue:** if new firmware crashes three times in a row, each within a minute of starting, the KNOMI switches back
 to the firmware in its other slot (the one it had before the update) and says so in the log. It only does this once, so
@@ -203,16 +234,25 @@ hold BOOT while plugging it in, then write `boot_app0.bin` at `0xe000` and the f
 [esptool-js](https://espressif.github.io/esptool-js/).
 
 ## Log
-`http://<knomi-ip>/log` shows what the KNOMI prints to its serial port (the last 32 KB, with uptime stamps), plus
-firmware, memory, WiFi, printer connection, why it last restarted, which firmware slot it's running from and how much stack each task has left. **Download** saves it as a text file to send
+The **Log** tab of the KNOMI's web pages (`http://<knomi-ip>/log` on the Moonraker build) shows what the KNOMI prints to its serial port (the last 32 KB, with uptime stamps), plus
+firmware, build, memory, network, printer connection, why it last restarted, which firmware slot it's running from and how much stack each task has left. **Download** saves it as a text file to send
 along with a bug report. Passwords and API keys are never logged.
 
-## WiFi behaviour
+## The KNOMI network
+- Name `KNOMI-XXXXXX` (from the KNOMI's address), WPA2, channel 6, the KNOMI at `192.168.77.1` (the Pi gets an
+  address from it). Up to 3 devices: the Pi and a phone or two.
+- The password is made up on the KNOMI's first start and kept. **Forget paired devices** makes a new one.
+- The Pi's side is a NetworkManager connection called `knomi-link`. It's never the Pi's way to the internet and doesn't
+  connect by itself: the plugin brings it up on the interface it checked is free, and checks on it every 30 s.
+- If your own network uses `192.168.77.x`, the plugin says so instead of joining (routing would break).
+- No Bluetooth for 2 minutes (the plugin stopped, the Pi is off, pairing broke): the KNOMI shows a QR code to join its
+  network from a phone. Then open `http://192.168.77.1/`.
+
+On the Moonraker build the KNOMI joins your WiFi instead:
 - First-time setup: the KNOMI shows a QR code. Scan it with your phone camera to join the KNOMI's setup network
   (`BTT-KNOMI` by default). Once your phone is connected, the QR switches to the setup page (`http://192.168.20.1/`).
 - If the saved network can't be reached (router rebooting, out of range), the KNOMI keeps its settings, opens its
   setup access point alongside, and retries every 30 s. Retries pause while someone is connected to the setup AP.
-  When the network comes back, the setup AP closes again.
 - Hidden networks: on the settings page, click **join a hidden network** under the network list.
 
 ## Accelerometer bars
@@ -221,16 +261,15 @@ toolhead movement: X side-to-side, Y front-to-back, Z up-down. That works uprigh
 upside-down, rotated, or lying flat.
 
 ## What maps to what
-Over WiFi:
+The KNOMI sends its buttons to the plugin over Bluetooth as Moonraker-style paths, and the plugin runs them in OctoPrint:
 
-| KNOMI action | OctoPrint call |
+| KNOMI action | In OctoPrint |
 |---|---|
-| status / temps | GET /api/printer (409 = printer not operational) |
-| progress, file | GET /api/job |
-| file list | GET /api/files/local?recursive=true (streamed + filtered) |
-| gcode (home, QGL, ABL, preheat, extrude, temps) | POST /api/printer/command |
-| print file | POST /api/files/local/<path> {select, print} |
-| pause / resume / cancel | POST /api/job |
+| gcode (home, QGL, ABL, preheat, extrude, temps) | sent to the printer as G-code |
+| print file | selects and prints the file from OctoPrint's local storage |
+| pause / resume / cancel | OctoPrint's job controls |
 | Klipper Restart / Firmware Restart | gcode RESTART / FIRMWARE_RESTART (through OctoKlipper) |
-| Host Reboot / Shutdown | POST /api/system/commands/core/reboot or shutdown |
-| Service Control → OctoPrint → Restart | POST /api/system/commands/core/restart (Start/Stop not supported) |
+| Host Reboot / Shutdown, Restart OctoPrint | the commands set in OctoPrint › Settings › Server |
+| resume while paused inside Klipper (M600, MMU) | gcode RESUME |
+
+Status (temps, progress, file, layer, flags) goes the other way, pushed by the plugin on change.
