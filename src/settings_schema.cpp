@@ -202,12 +202,17 @@ String knomi_settings_schema(void) {
     // ---- the KNOMI's own network (the Pi joins it; knomi_link.cpp) ----
     {
         JsonObject s = section(secs, "link", "KNOMI network", "", "Save");
-        s["h"] = "The KNOMI runs its own WiFi network and the Pi joins it by itself, using details it gets over Bluetooth.";
+        s["h"] = "The Pi hosts a small WiFi network just for the KNOMI and the KNOMI joins it. The plugin sets it up by "
+                 "itself, using details it gets over Bluetooth.";
         JsonObject f = field(s, "link_ssid", "info", "Network"); f["v"] = knomi_link_ssid();
-        int n = knomi_link_clients();
-        f = field(s, "link_clients", "info", "Joined");
-        f["v"] = n == 0 ? String("nobody yet") : String(n) + (n == 1 ? " device (the Pi)" : " devices");
-        f = field(s, "link_ip", "info", "KNOMI address"); f["v"] = WiFi.softAPIP().toString();
+        f = field(s, "link_state", "info", "On it");
+        f["v"] = knomi_link_joined() ? String("yes, ") + knomi_link_rssi() + " dBm" : String("not yet");
+        f = field(s, "link_ip", "info", "KNOMI address"); f["v"] = IPAddress(KNOMI_LINK_IP).toString();
+        if (knomi_link_rescue()) {
+            f = field(s, "link_rescue", "info", "Own network");
+            f["v"] = String(knomi_link_rescue_ssid()) + " at " + IPAddress(KNOMI_RESCUE_IP).toString() + ", " +
+                     String(knomi_link_clients()) + " device(s)";
+        }
         f = field(s, "hostname", "text", "Name", "The Bluetooth name is KNOMI-name. Takes effect after a restart.");
         f["v"] = c.hostname; f["max"] = 15;
     }

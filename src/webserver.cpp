@@ -825,8 +825,10 @@ static void log_routes(void) {
         d["heap_min"] = ESP.getMinFreeHeap();
         d["psram"] = ESP.getFreePsram();
 #if KNOMI_OCTOPRINT
-        d["wifi"] = String(knomi_link_ssid()) + " (the KNOMI's own) · " + String(knomi_link_clients()) + " device(s) · " +
-                    WiFi.softAPIP().toString();
+        d["wifi"] = String(knomi_link_ssid()) + " (hosted by the Pi) · " +
+                    (knomi_link_joined() ? String(knomi_link_rssi()) + " dBm · " + WiFi.localIP().toString() : String("not on it")) +
+                    (knomi_link_rescue() ? String(" · own network ") + knomi_link_rescue_ssid() + " open, " +
+                                               String(knomi_link_clients()) + " device(s)" : String(""));
         d["backend"] = knomi_config.backend;
         d["host"] = "the plugin, over Bluetooth";
 #else

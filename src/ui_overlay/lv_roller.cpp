@@ -273,9 +273,10 @@ void lv_roller_setting_clicked(lv_event_t * e, uint16_t opt_id) {
             lv_label_set_text(ui_label_ap_ip_name, "Net:");
             lv_label_set_text_fmt(ui_label_ap_ip, "%s", knomi_link_ssid());
             lv_label_set_text(ui_label_local_name, "IP:");
-            lv_label_set_text(ui_label_local, WiFi.softAPIP().toString().c_str());
+            lv_label_set_text(ui_label_local, IPAddress(KNOMI_LINK_IP).toString().c_str());
             lv_label_set_text(ui_label_host_name, "On it:");
-            lv_label_set_text_fmt(ui_label_host, "%d device(s)", knomi_link_clients());
+            if (knomi_link_joined()) lv_label_set_text_fmt(ui_label_host, "yes, %d dBm", knomi_link_rssi());
+            else lv_label_set_text(ui_label_host, knomi_link_rescue() ? "no, own net open" : "no");
 #else
             lv_label_set_text(ui_label_sta_ip, WiFi.localIP().toString().c_str());
             lv_label_set_text(ui_label_ap_ip, WiFi.softAPIP().toString().c_str());

@@ -1,8 +1,11 @@
-// The KNOMI's own WiFi network for the Pi (OctoPrint build). The KNOMI never joins your WiFi: Bluetooth is the
-// control link, and this network carries the heavy things (pages, firmware, animations, later the camera).
-// Name and password are made up on first start and kept; the plugin reads them over the paired, encrypted
-// Bluetooth link and the Pi joins on a spare WiFi interface. Forgetting paired devices makes a new password,
-// so a Pi that's no longer paired can't stay on either.
+// The KNOMI network (OctoPrint build): a small WiFi network just between the Pi and the KNOMI. The KNOMI never
+// joins your WiFi: Bluetooth is the control link, and this network carries the heavy things (pages, firmware,
+// animations, later the camera).
+// The KNOMI makes up the name and password on first start and keeps them; the plugin reads them over the paired,
+// encrypted Bluetooth link. The Pi hosts the network (OP60+) and the KNOMI joins it: hosting one itself, the ESP32
+// has to listen for WiFi all the time and Bluetooth starved (OP58/59: 4 failed connects a second once the Pi was
+// on). Only when it can't reach the Pi at all does the KNOMI host one of its own, so a phone can always get in.
+// Forgetting paired devices makes a new password, so a Pi that's no longer paired can't stay on either.
 #include "knomi_flavor.h"
 #if KNOMI_OCTOPRINT
 #include <Arduino.h>
@@ -61,22 +64,57 @@ bool knomi_link_take_restart(void) { bool r = restart_wanted; restart_wanted = f
 
 const char * knomi_link_ssid(void) { return link_ssid; }
 
+// join the Pi's network (normal running): fixed addresses, so neither side needs to hand any out
 bool knomi_link_start(void) {
-    WiFi.mode(WIFI_AP);
-    WiFi.softAPConfig(KNOMI_LINK_IP, KNOMI_LINK_IP, IPAddress(255, 255, 255, 0));
     char ssid[33], psk[33];
     portENTER_CRITICAL(&link_mux);
     memcpy(ssid, link_ssid, sizeof(ssid)); memcpy(psk, link_psk, sizeof(psk));
     portEXIT_CRITICAL(&link_mux);
-    // WPA2, fixed channel, room for the Pi and a couple more (a phone for the pages, or to recover)
-    bool ok = WiFi.softAP(ssid, psk, KNOMI_LINK_CHANNEL, 0, 3);
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(true);   // modem sleep: what lets Bluetooth share the radio
+    WiFi.config(KNOMI_LINK_IP, KNOMI_LINK_PI_IP, IPAddress(255, 255, 255, 0));
+    WiFi.setAutoReconnect(true);
+    bool ok = WiFi.begin(ssid, psk) != WL_CONNECT_FAILED;
     memset(psk, 0, sizeof(psk));
-    Serial.printf("link: %s %s on channel %d, %s\r\n", ok ? "network" : "COULDN'T START network", ssid,
-                  KNOMI_LINK_CHANNEL, WiFi.softAPIP().toString().c_str());
+    Serial.printf("link: joining %s (hosted by the Pi) as %s\r\n", ssid, IPAddress(KNOMI_LINK_IP).toString().c_str());
     return ok;
 }
 
-int knomi_link_clients(void) { return WiFi.softAPgetStationNum(); }
+bool knomi_link_joined(void) { return WiFi.status() == WL_CONNECTED; }
+int knomi_link_rssi(void) { return knomi_link_joined() ? WiFi.RSSI() : 0; }
+
+// can't reach the Pi at all: host a network of our own as well (a phone can join it; the QR code on the screen)
+static bool rescue = false;
+bool knomi_link_rescue(void) { return rescue; }
+void knomi_link_set_rescue(bool on) {
+    if (on == rescue) return;
+    rescue = on;
+    if (on) {
+        char ssid[40], psk[33];
+        portENTER_CRITICAL(&link_mux);
+        snprintf(ssid, sizeof(ssid), "%s-setup", link_ssid); memcpy(psk, link_psk, sizeof(psk));
+        portEXIT_CRITICAL(&link_mux);
+        WiFi.mode(WIFI_AP_STA);   // keeps looking for the Pi's network meanwhile
+        WiFi.softAPConfig(KNOMI_RESCUE_IP, KNOMI_RESCUE_IP, IPAddress(255, 255, 255, 0));
+        bool ok = WiFi.softAP(ssid, psk, KNOMI_LINK_CHANNEL, 0, 2);
+        memset(psk, 0, sizeof(psk));
+        Serial.printf("link: can't reach the Pi, %s my own network %s at %s\r\n", ok ? "opened" : "COULDN'T OPEN",
+                      ssid, IPAddress(KNOMI_RESCUE_IP).toString().c_str());
+    } else {
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_STA);
+        Serial.println("link: closed my own network again");
+    }
+}
+const char * knomi_link_rescue_ssid(void) {
+    static char b[40];
+    portENTER_CRITICAL(&link_mux);
+    snprintf(b, sizeof(b), "%s-setup", link_ssid);
+    portEXIT_CRITICAL(&link_mux);
+    return b;
+}
+
+int knomi_link_clients(void) { return rescue ? WiFi.softAPgetStationNum() : 0; }
 
 void knomi_link_password(char * out, size_t n) {   // for the join-me QR code on the KNOMI's own screen
     portENTER_CRITICAL(&link_mux);
@@ -90,8 +128,10 @@ String knomi_link_secret_json(void) {
     portENTER_CRITICAL(&link_mux);
     memcpy(ssid, link_ssid, sizeof(ssid)); memcpy(psk, link_psk, sizeof(psk));
     portEXIT_CRITICAL(&link_mux);
-    String s = String("{\"ssid\":\"") + ssid + "\",\"psk\":\"" + psk + "\",\"ip\":\"" +
-               IPAddress(KNOMI_LINK_IP).toString() + "\"}";
+    // host "pi": the Pi hosts the network at "pi" and the KNOMI joins as "ip" (plugin 0.16+; older ones just try to join)
+    String s = String("{\"ssid\":\"") + ssid + "\",\"psk\":\"" + psk + "\",\"host\":\"pi\",\"ip\":\"" +
+               IPAddress(KNOMI_LINK_IP).toString() + "\",\"pi\":\"" + IPAddress(KNOMI_LINK_PI_IP).toString() + "\",\"ch\":" +
+               String(KNOMI_LINK_CHANNEL) + "}";
     memset(psk, 0, sizeof(psk));
     return s;
 }

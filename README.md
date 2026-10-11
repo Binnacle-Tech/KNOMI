@@ -32,7 +32,7 @@ Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print
 
 - **OctoPrint support.** Temps, progress, file list, print/pause/resume/cancel, preheat, extrude, home, QGL and bed mesh from the KNOMI touchscreen.
 - **Bluetooth LE link to the plugin** (OctoPrint build). The plugin pushes status the moment it changes and runs the KNOMI's buttons inside OctoPrint. No API key, no polling. Pairing takes a 6-digit code from the KNOMI's screen.
-- **Its own WiFi network for the Pi** (OctoPrint build, OP58+). The KNOMI runs a small WPA2 network and the Pi joins it on a spare WiFi interface, with details it gets over the paired Bluetooth link. Pages, animations and firmware updates go over it fast; Bluetooth stays the control link. Your WiFi password never goes on the KNOMI.
+- **A WiFi network just for the Pi and the KNOMI** (OctoPrint build, OP58+). From OP60 the Pi hosts a small WPA2 network on a spare WiFi interface and the KNOMI joins it, with details handed over the paired Bluetooth link. Pages, animations and firmware updates go over it fast; Bluetooth stays the control link. Your WiFi password never goes on the KNOMI.
 - **All settings from OctoPrint:** the KNOMI describes its settings (`/settings.json`, see `src/settings_schema.cpp`) and the plugin builds its settings tab from that. Add a setting there and it shows up in OctoPrint with no plugin change.
 - **Custom GIF animations without reflashing.** Upload a GIF to any slot from the web page (homing, probing, QGL, printing, done and more), stored on the KNOMI's flash.
 - **More animation states:** input shaper calibration, PID tuning, nozzle cleaning, filament load/unload and **paused** (M600, PAUSE, MMU/ERCF).
@@ -46,7 +46,7 @@ Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print
 - **Auto-dim and screen-off**, saved brightness, and wake on touch or printer activity.
 - **Animations can follow the UI color** instead of always being red.
 - **Redesigned web settings page** with dark, medium, light and high-contrast modes.
-- **Dark boot and setup screens, with QR codes.** Moonraker build: scan the KNOMI's screen to join its setup network, then scan again to open the setup page. OctoPrint build: if nothing reaches it over Bluetooth for 2 minutes, it shows a QR code to join its own network from a phone, so it can always be reached.
+- **Dark boot and setup screens, with QR codes.** Moonraker build: scan the KNOMI's screen to join its setup network, then scan again to open the setup page. OctoPrint build: if nothing reaches it over Bluetooth for 2 minutes, it opens a network of its own and shows a QR code to join it from a phone, so it can always be reached.
 - **Update check.** The settings page tells you when a newer release is out and links the right `.bin`.
 - **Backup and restore** of all settings and custom animations as one file.
 - **WiFi fixes** (Moonraker build):
@@ -74,6 +74,7 @@ Tune how it reacts on the KNOMI's **Coaster face** page, or put it on your print
 4. For the fast link, the Pi needs a free WiFi interface (its built-in one with the Pi on Ethernet, or a USB WiFi adapter) and a one-time permission command, which the plugin shows you.
 
 Already on an older OctoPrint build (OP57 or earlier)? Read **[Upgrading to OP58](OCTOPRINT.md#upgrading-to-op58)** first: the KNOMI leaves your WiFi.
+On OP58 or OP59? See **[Upgrading to OP60](OCTOPRINT.md#upgrading-to-op60)**: update the plugin and rerun its permission command first.
 
 **Moonraker:** flash `knomiv2-moonraker-firmware.bin` the same way and set your Moonraker address on its settings page, as with stock.
 
@@ -98,13 +99,13 @@ Not with the stock firmware, which needs Moonraker. With this firmware's OctoPri
 No. That's the point of this fork. The KNOMI talks to OctoPrint through the plugin, over Bluetooth.
 
 **Why doesn't the KNOMI join my WiFi any more (OctoPrint build)?**
-Since OP58 it runs its own network that only the Pi joins, and Bluetooth carries the status and buttons. That keeps your WiFi password off the KNOMI, and it no longer depends on your router. The KNOMI's pages are in OctoPrint (Settings › KNOMI).
+Since OP58 it's on a small network of its own with the Pi only (from OP60 the Pi hosts it), and Bluetooth carries the status and buttons. That keeps your WiFi password off the KNOMI, and it no longer depends on your router. The KNOMI's pages are in OctoPrint (Settings › KNOMI).
 
 **My Pi only has WiFi. Can I still use it?**
 Yes. Everything works over Bluetooth alone, just slower for pages, GIF uploads and firmware. For the fast link, put the Pi on Ethernet or add a USB WiFi adapter. The plugin never takes the WiFi interface the Pi uses for your network.
 
 **How do I reach the KNOMI if Bluetooth stops working?**
-After 2 minutes without Bluetooth, the KNOMI shows a QR code. Scan it with your phone to join the KNOMI's network, then open `http://192.168.77.1/` for its pages, including firmware upload.
+After 2 minutes without Bluetooth, the KNOMI shows a QR code. Scan it with your phone to join the KNOMI's own network, then open `http://192.168.78.1/` (`http://192.168.77.1/` on OP58/59) for its pages, including firmware upload.
 
 **Can I use my own GIFs on the KNOMI without rebuilding the firmware?**
 Yes. In OctoPrint, Settings › KNOMI › KNOMI's web pages › Animations (or `http://<knomi-ip>/gifs` on the Moonraker build), upload a GIF to any slot. It shows up immediately.
@@ -137,7 +138,7 @@ python tools/check.py --device <knomi-ip> --flash      # flash the build over Wi
 python tools/check.py --device <knomi-ip> --perf 600   # measure fps, draw time, CPU per core/task and memory over WiFi; saves knomi-perf.csv
 ```
 
-Output: `.pio/build/<env>/firmware.bin`. Flash it from `/update` (or the plugin's **Install this .bin**), or with `pio run -e knomiv2 -t upload` over USB. Use `-e knomiv1` for the KNOMI 1. The device checks (`--device`) need the KNOMI's address: the Moonraker build's on your WiFi, or `192.168.77.1` from a machine on the OctoPrint build's network.
+Output: `.pio/build/<env>/firmware.bin`. Flash it from `/update` (or the plugin's **Install this .bin**), or with `pio run -e knomiv2 -t upload` over USB. Use `-e knomiv1` for the KNOMI 1. The device checks (`--device`) need the KNOMI's address: the Moonraker build's on your WiFi, or `192.168.77.2` from the Pi on the OctoPrint build's network (`192.168.77.1` on OP58/59).
 
 ## Credits and license
 

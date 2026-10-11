@@ -626,16 +626,15 @@ static void bt_wifi_policy_loop(void) {
 }
 
 #if KNOMI_OCTOPRINT
-/* OctoPrint build: the KNOMI doesn't join a network. It runs its own for the Pi (knomi_link.cpp), and what the
- * screen says follows the Bluetooth link to the plugin. */
+/* OctoPrint build: the KNOMI doesn't join your WiFi. It joins the small network the Pi hosts for it
+ * (knomi_link.cpp), and what the screen says follows the Bluetooth link to the plugin. */
 static void link_wifi_task(void) {
     WiFi.persistent(false);
     WiFi.hostname(knomi_config.hostname);
     knomi_link_load();
-    bool ap_ok = knomi_link_start();
-    uint32_t ap_retry = millis();
+    knomi_link_start();
     webserver_setup();
-    bool was_up = false;
+    bool was_up = false, joined = false;
     int clients = -1;
     uint32_t alone_since = millis();
     for (;;) {
@@ -643,16 +642,28 @@ static void link_wifi_task(void) {
         if (req & EEPROM_PARA_CHANGED) eeprom_write_knomi_config();
         if (req & WEB_POST_RESTART) ESP.restart();
         (void)knomi_ble_take_wifi_request();   // the plugin's "turn WiFi on": it's always on here
-        if (knomi_link_take_restart()) { WiFi.softAPdisconnect(false); delay(200); ap_ok = knomi_link_start(); }
-        if (!ap_ok && millis() - ap_retry > 10000) { ap_retry = millis(); ap_ok = knomi_link_start(); }   // didn't come up: again
+        if (knomi_link_take_restart()) {   // new password: rejoin with it (the Pi gets it over Bluetooth)
+            knomi_link_set_rescue(false);
+            WiFi.disconnect(false);
+            delay(200);
+            knomi_link_start();
+        }
+        bool j = knomi_link_joined();
+        if (j != joined) {
+            joined = j;
+            if (j) Serial.printf("link: on the Pi's network, %d dBm\r\n", knomi_link_rssi());
+            else Serial.println("link: not on the Pi's network");
+        }
         int n = knomi_link_clients();
-        if (n != clients) { clients = n; Serial.printf("link: %d device(s) on the KNOMI's network\r\n", n); }
+        if (n != clients) { clients = n; if (knomi_link_rescue()) Serial.printf("link: %d device(s) on my own network\r\n", n); }
         bool up = knomi_ble_link_active();
         if (up) was_up = true;
-        // nothing on Bluetooth for 2 minutes: show a QR code to join the KNOMI's network from a phone, so it can
-        // always be reached (its pages, a firmware upload) even if pairing is broken. Physical access only.
+        // nothing on Bluetooth for 2 minutes: open a network of our own too and show a QR code to join it from a
+        // phone, so the KNOMI can always be reached (its pages, a firmware upload) even with pairing broken or the
+        // Pi gone. Physical access only. Stays open while someone's on it.
         if (up) alone_since = millis();   // (a connection that sends nothing, e.g. a stuck plugin, doesn't count)
         bool alone = millis() - alone_since > 120000UL;
+        knomi_link_set_rescue(alone || (knomi_link_rescue() && n > 0));
         wifi_status = up ? WIFI_STATUS_CONNECTED : alone ? WIFI_STATUS_ERROR : was_up ? WIFI_STATUS_DISCONNECT : WIFI_STATUS_CONNECTING;
         delay(100);
     }

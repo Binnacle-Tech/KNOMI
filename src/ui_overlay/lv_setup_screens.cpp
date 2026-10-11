@@ -143,10 +143,10 @@ void lv_setup_screens_loop(void) {
         else {   // the KNOMI's own network: a phone can always reach it this way, even with Bluetooth broken
             char psk[33];
             knomi_link_password(psk, sizeof(psk));
-            qr = String("WIFI:T:WPA;S:") + wifi_qr_escape(knomi_link_ssid()) + ";P:" + wifi_qr_escape(psk) + ";;";
+            qr = String("WIFI:T:WPA;S:") + wifi_qr_escape(knomi_link_rescue_ssid()) + ";P:" + wifi_qr_escape(psk) + ";;";
             memset(psk, 0, sizeof(psk));
             l1 = "No OctoPrint: scan to join";
-            l2 = "then open " + WiFi.softAPIP().toString();
+            l2 = "then open " + IPAddress(KNOMI_RESCUE_IP).toString();
         }
 #else
         else {

@@ -113,7 +113,12 @@ function upload(){
     x.upload.onprogress = function(e){ if (e.lengthComputable){ var p = Math.round(e.loaded * 100 / e.total); bar("up-bar", p); say("up-status", "Installing · " + p + "%"); } };
     x.onload = function(){
       if (x.status == 200 && /OK/i.test(x.responseText)){ bar("up-bar", 100); say("up-status", "Installed. Restarting…", "ok"); waitBack("up-status"); }
-      else { say("up-status", "The KNOMI didn't take it: " + (x.responseText || x.status), "bad"); b.disabled = false; }
+      else {   // (an error page from the plugin's proxy is HTML: just its words)
+        var t = (x.responseText || "").replace(/<(style|script|title|a)\b[\s\S]*?<\/\1>/gi, " ")
+                  .replace(/<[^>]*>/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+                  .replace(/\s+/g, " ").trim();
+        say("up-status", "The KNOMI didn't take it: " + (t || ("HTTP " + x.status)), "bad"); b.disabled = false;
+      }
     };
     x.onerror = function(){ say("up-status", "The upload broke off. Try again.", "bad"); b.disabled = false; };
     x.open("POST", "update"); x.send(fd);

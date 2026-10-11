@@ -7,13 +7,27 @@ Each release has an OctoPrint build and a Moonraker build of the same source; th
 ## How it connects (OctoPrint build)
 - **Bluetooth** to the OctoPrint-KNOMI plugin is the control link: the plugin pushes printer status the moment it
   changes, sends the file list, and runs the KNOMI's buttons inside OctoPrint. No API key, no polling.
-- **The KNOMI network** (OP58+): the KNOMI runs its own small WPA2 network (`KNOMI-XXXXXX`, the KNOMI at
-  `192.168.77.1`) and the Pi joins it on a spare WiFi interface. The KNOMI's pages, GIF uploads and firmware go over
-  it. Without it everything still works over Bluetooth, just slower for those.
+- **The KNOMI network** (OP58+): a small WPA2 network just between the Pi and the KNOMI (`KNOMI-XXXXXX`), on a spare
+  WiFi interface of the Pi. From OP60 the Pi hosts it (`192.168.77.1`) and the KNOMI joins (`192.168.77.2`). The
+  KNOMI's pages, GIF uploads and firmware go over it. Without it everything still works over Bluetooth, just slower
+  for those.
 - The KNOMI never joins your WiFi. Its network's password is made up on the KNOMI and handed to the Pi only over the
   paired, encrypted Bluetooth link; it's never shown in logs, settings or backups.
 
 The Moonraker build is the stock arrangement instead: the KNOMI joins your WiFi and polls Moonraker.
+
+## Upgrading to OP60
+OP60 turns the KNOMI network around: **the Pi hosts it and the KNOMI joins.** On OP58/59 the KNOMI hosted it, and an
+ESP32 hosting a network starves its own Bluetooth once anything joins (the link kept dropping, and installs over the
+network failed).
+1. Update the plugin to 0.16.0 or newer.
+2. Run the permission command again (step 4 below, or copy it from the plugin's settings): hosting needs one more
+   permission than joining did.
+3. If Bluetooth keeps dropping on OP58/59, take the Pi off the KNOMI's network first so the install can go over
+   Bluetooth: `sudo nmcli connection down knomi-link`, and set **WiFi interface** to `none` in the plugin settings.
+   Set it back to empty (automatic) after the update.
+4. Install OP60 from Settings › KNOMI. The plugin reads the new details over Bluetooth, starts the network on the Pi
+   and the KNOMI joins it.
 
 ## Upgrading to OP58
 OP58 changes how the OctoPrint build connects: **the KNOMI leaves your WiFi.** Before installing it:
@@ -26,7 +40,7 @@ OP58 changes how the OctoPrint build connects: **the KNOMI leaves your WiFi.** B
 
 Settings, animations, layouts and Coaster's feelings carry over. The old WiFi and OctoPrint address/API key settings
 are no longer used. If something goes wrong, the KNOMI shows a QR code after 2 minutes without Bluetooth: join its
-network from a phone and open `http://192.168.77.1/update` to upload any firmware, including an older one.
+network from a phone and open `http://192.168.77.1/update` (`http://192.168.78.1/update` from OP60) to upload any firmware, including an older one.
 
 ## 1. Install the plugin
 OctoPrint → Settings → Plugin Manager → **Get More…** → **…from URL**:
@@ -46,7 +60,7 @@ Building it yourself: `pio pkg install -e knomiv2`, copy `lv_disp_(bugfix_backup
 OctoPrint, Settings, **KNOMI**, **Bluetooth**: tick **Connect to the KNOMI over Bluetooth**, click **Find KNOMI**,
 then **Pair** next to it, and type the 6-digit code the KNOMI shows. Details in [Bluetooth](#bluetooth).
 
-## 4. Let the Pi join the KNOMI network
+## 4. Let the Pi run the KNOMI network
 The Pi needs a WiFi interface that isn't busy with your own network:
 - **Pi on Ethernet:** its built-in WiFi is free, once it stops joining your WiFi. If it was on WiFi before, run this
   over SSH **while connected by Ethernet**, with `YOUR-WIFI` replaced by your network's name (`nmcli connection show`
@@ -60,18 +74,19 @@ The plugin picks a free interface on its own (or set one under **WiFi interface*
 is on, or could rejoin, another network, or that carries the Pi's internet. This needs NetworkManager (Raspberry Pi OS
 Bookworm and newer).
 
-**Permission for OctoPrint (once).** NetworkManager won't let OctoPrint's user set up a WiFi connection on its own.
+**Permission for OctoPrint (once; again for OP60).** NetworkManager won't let OctoPrint's user set up a WiFi
+connection, or host one, on its own.
 Run this over SSH, with `pi` replaced by the user OctoPrint runs as (`systemctl show -p User octoprint` shows it on OctoPi):
 
 ```
-echo 'polkit.addRule(function(a,s){if(s.user=="pi"&&["org.freedesktop.NetworkManager.settings.modify.system","org.freedesktop.NetworkManager.network-control"].indexOf(a.id)>=0)return polkit.Result.YES;});' | sudo tee /etc/polkit-1/rules.d/00-octoprint-knomi.rules
+echo 'polkit.addRule(function(a,s){if(s.user=="pi"&&["org.freedesktop.NetworkManager.settings.modify.system","org.freedesktop.NetworkManager.network-control","org.freedesktop.NetworkManager.wifi.share.protected"].indexOf(a.id)>=0)return polkit.Result.YES;});' | sudo tee /etc/polkit-1/rules.d/00-octoprint-knomi.rules
 ```
 
-It allows that user to set up and switch NetworkManager connections, nothing else, and takes effect right away (no
+It allows that user to set up and switch NetworkManager connections and host a WPA2 network, nothing else, and takes effect right away (no
 restart). Check with `ls /etc/polkit-1/rules.d/`; undo with `sudo rm /etc/polkit-1/rules.d/00-octoprint-knomi.rules`.
 The plugin also shows this command, with your user filled in, when it needs it.
 
-After that, **KNOMI network** in the plugin settings says *joined*.
+After that, **KNOMI network** in the plugin settings says *up*.
 
 ## 5. Klipper macros (optional, for steps run inside PRINT_START)
 The plugin can only see commands that OctoPrint sends itself (G28, QUAD_GANTRY_LEVEL, BED_MESH_CALIBRATE, M109/M190...).
@@ -259,14 +274,17 @@ firmware, build, memory, network, printer connection, why it last restarted, whi
 along with a bug report. Passwords and API keys are never logged.
 
 ## The KNOMI network
-- Name `KNOMI-XXXXXX` (from the KNOMI's address), WPA2, channel 6, the KNOMI at `192.168.77.1` (the Pi gets an
-  address from it). Up to 3 devices: the Pi and a phone or two.
+- Name `KNOMI-XXXXXX` (from the KNOMI's address), WPA2 (AES), 2.4 GHz channel 6. From OP60 the Pi hosts it at
+  `192.168.77.1` and the KNOMI joins at `192.168.77.2`, both fixed. (OP58/59: the KNOMI hosted it at `192.168.77.1`.)
+  The plugin sees which from what the KNOMI hands over and sets the Pi up to match.
 - The password is made up on the KNOMI's first start and kept. **Forget paired devices** makes a new one.
 - The Pi's side is a NetworkManager connection called `knomi-link`. It's never the Pi's way to the internet and doesn't
   connect by itself: the plugin brings it up on the interface it checked is free, and checks on it every 30 s.
 - If your own network uses `192.168.77.x`, the plugin says so instead of joining (routing would break).
-- No Bluetooth for 2 minutes (the plugin stopped, the Pi is off, pairing broke): the KNOMI shows a QR code to join its
-  network from a phone. Then open `http://192.168.77.1/`.
+- No Bluetooth for 2 minutes (the plugin stopped, the Pi is off, pairing broke): the KNOMI opens a network of its own,
+  `KNOMI-XXXXXX-setup` (same password), and shows a QR code to join it from a phone. Then open `http://192.168.78.1/`.
+  It closes again once Bluetooth is back and nobody's on it. (OP58/59: the QR joins its one network,
+  `http://192.168.77.1/`.)
 
 On the Moonraker build the KNOMI joins your WiFi instead:
 - First-time setup: the KNOMI shows a QR code. Scan it with your phone camera to join the KNOMI's setup network
